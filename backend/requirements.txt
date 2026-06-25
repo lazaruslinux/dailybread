@@ -1,0 +1,6 @@
+# Web framework and the ASGI server that runs it
+fastapi
+uvicorn[standard]
+
+# Reads settings from environment variables / .env
+pydantic-settings
