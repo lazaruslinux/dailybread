@@ -4,3 +4,7 @@ uvicorn[standard]
 
 # Reads settings from environment variables / .env
 pydantic-settings
+
+# Database: SQLAlchemy (Core/ORM) + the psycopg3 driver (postgresql+psycopg://)
+sqlalchemy
+psycopg[binary]

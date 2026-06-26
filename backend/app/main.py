@@ -1,7 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.db import db_ok
 
 app = FastAPI(title="dailybread", version="0.0.1")
 
@@ -23,3 +24,11 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok", "mode": settings.app_mode, "demo": settings.demo_mode}
+
+
+@app.get("/health/db")
+def health_db(response: Response):
+    ok, detail = db_ok()
+    if not ok:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    return {"db": "ok" if ok else "error", "detail": detail}
