@@ -1,0 +1,90 @@
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.config import settings
+from app.db import get_db
+from app.deps import get_current_user, require_parent
+from app.models import Role, User
+from app.schemas import BootstrapIn, CreateUserIn, LoginIn, UserOut
+from app.security import create_access_token, hash_password, verify_password
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _set_session_cookie(response: Response, user: User) -> None:
+    """Attach a fresh signed-JWT session cookie to the response."""
+    token = create_access_token(str(user.id))
+    response.set_cookie(
+        key=settings.cookie_name,
+        value=token,
+        httponly=True,  # JavaScript can't read it -> XSS can't steal it
+        samesite="lax",  # not sent on cross-site requests -> CSRF mitigation
+        secure=settings.cookie_secure,  # HTTPS-only on the home server
+        max_age=settings.session_days * 24 * 3600,
+        path="/",
+    )
+
+
+@router.post("/bootstrap", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+def bootstrap(data: BootstrapIn, response: Response, db: Session = Depends(get_db)):
+    """Create the first parent account. Allowed only while no users exist."""
+    user_count = db.scalar(select(func.count()).select_from(User))
+    if user_count:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Already initialized")
+
+    user = User(
+        username=data.username,
+        display_name=data.display_name,
+        password_hash=hash_password(data.password),
+        role=Role.parent,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    _set_session_cookie(response, user)
+    return user
+
+
+@router.post("/login", response_model=UserOut)
+def login(data: LoginIn, response: Response, db: Session = Depends(get_db)):
+    user = db.scalar(select(User).where(User.username == data.username))
+    # Same error whether the user is missing or the password is wrong, so an
+    # attacker can't tell which usernames exist.
+    if user is None or not verify_password(data.password, user.password_hash):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
+    _set_session_cookie(response, user)
+    return user
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(response: Response):
+    response.delete_cookie(settings.cookie_name, path="/")
+
+
+@router.get("/me", response_model=UserOut)
+def me(user: User = Depends(get_current_user)):
+    """Who am I? Used by the frontend to restore the session on page load."""
+    return user
+
+
+@router.post("/users", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+def create_user(
+    data: CreateUserIn,
+    db: Session = Depends(get_db),
+    _parent: User = Depends(require_parent),
+):
+    """Parent-only: create another family member's account."""
+    if db.scalar(select(User).where(User.username == data.username)):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Username already taken")
+
+    user = User(
+        username=data.username,
+        display_name=data.display_name,
+        password_hash=hash_password(data.password),
+        role=data.role,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user

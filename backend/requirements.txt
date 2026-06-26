@@ -8,3 +8,7 @@ pydantic-settings
 # Database: SQLAlchemy (Core/ORM) + the psycopg3 driver (postgresql+psycopg://)
 sqlalchemy
 psycopg[binary]
+
+# Auth: Argon2 password hashing + JWT (PyJWT) session tokens
+argon2-cffi
+pyjwt

@@ -10,5 +10,12 @@ class Settings(BaseSettings):
     database_url: str = ""
     secret_key: str = "change-me"
 
+    # Session/auth settings.
+    session_days: int = 7  # how long a login stays valid
+    cookie_name: str = "db_session"
+    # Whether the session cookie is HTTPS-only. False for local http dev;
+    # set COOKIE_SECURE=true on the home server where Caddy serves HTTPS.
+    cookie_secure: bool = False
+
 
 settings = Settings()

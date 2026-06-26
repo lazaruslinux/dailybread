@@ -1,10 +1,24 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 
+from app import models  # noqa: F401 — imported so its tables register on Base
 from app.config import settings
-from app.db import db_ok
+from app.db import Base, db_ok, engine
+from app.routers import auth
 
-app = FastAPI(title="dailybread", version="0.0.1")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Create any missing tables on startup. Fine for now; we'll switch to
+    # Alembic migrations before real family data lives in the DB.
+    if engine is not None:
+        Base.metadata.create_all(engine)
+    yield
+
+
+app = FastAPI(title="dailybread", version="0.0.1", lifespan=lifespan)
 
 # Allow the Vite dev server to call the API during development.
 app.add_middleware(
@@ -14,6 +28,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth.router)
 
 
 @app.get("/")
