@@ -13,6 +13,7 @@ class UserOut(BaseModel):
     username: str
     display_name: str
     role: Role
+    is_admin: bool
 
     # Let Pydantic read attributes off a SQLAlchemy User object directly.
     model_config = {"from_attributes": True}
@@ -32,6 +33,8 @@ class BootstrapIn(BaseModel):
 
 
 class CreateUserIn(BootstrapIn):
-    """Parent creating another family member; role defaults to child."""
+    """An admin creating another family member; role defaults to child."""
 
     role: Role = Role.child
+    # None means "use the default for the role" (parent -> admin, child -> not).
+    is_admin: bool | None = None

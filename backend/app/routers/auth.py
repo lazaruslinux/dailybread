@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_db
-from app.deps import get_current_user, require_parent
+from app.deps import get_current_user, require_admin
 from app.models import Role, User
 from app.schemas import BootstrapIn, CreateUserIn, LoginIn, UserOut
 from app.security import create_access_token, hash_password, verify_password
@@ -38,6 +38,7 @@ def bootstrap(data: BootstrapIn, response: Response, db: Session = Depends(get_d
         display_name=data.display_name,
         password_hash=hash_password(data.password),
         role=Role.parent,
+        is_admin=True,  # the first account is always the master admin
     )
     db.add(user)
     db.commit()
@@ -72,17 +73,23 @@ def me(user: User = Depends(get_current_user)):
 def create_user(
     data: CreateUserIn,
     db: Session = Depends(get_db),
-    _parent: User = Depends(require_parent),
+    _admin: User = Depends(require_admin),
 ):
-    """Parent-only: create another family member's account."""
+    """Admin-only: create another family member's account."""
     if db.scalar(select(User).where(User.username == data.username)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Username already taken")
+
+    # Default admin from role unless explicitly set. A child can never be admin.
+    is_admin = data.is_admin if data.is_admin is not None else (data.role == Role.parent)
+    if data.role == Role.child and is_admin:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "A child account cannot be an admin")
 
     user = User(
         username=data.username,
         display_name=data.display_name,
         password_hash=hash_password(data.password),
         role=data.role,
+        is_admin=is_admin,
     )
     db.add(user)
     db.commit()
