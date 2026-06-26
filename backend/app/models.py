@@ -26,7 +26,7 @@ class User(Base):
     # Login name, unique and indexed for fast lookups.
     username: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     display_name: Mapped[str] = mapped_column(String(100))
-    # Argon2 hash — never the raw password.
+    # Argon2 hash, never the raw password.
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[Role] = mapped_column(SAEnum(Role, name="user_role"), default=Role.child)
     # Can this user see the admin dashboard? Defaults follow role at creation

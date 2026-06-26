@@ -22,13 +22,13 @@ function App() {
         <HealthBadge />
       </header>
 
-      {/* Skeleton note — remove once real data lands. */}
+      {/* Skeleton note. Remove once the backend serves real data. */}
       <motion.p
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         className="mb-4 text-xs text-white/40"
       >
-        Showing sample data — backend wiring comes next.
+        Showing example items for now.
       </motion.p>
 
       <main className="flex flex-col gap-3">
@@ -37,7 +37,7 @@ function App() {
         ))}
       </main>
 
-      <footer className="mt-10 text-center text-xs text-white/30">dailybread · v0.0.1</footer>
+      <footer className="mt-10 text-center text-xs text-white/30">dailybread v0.0.1</footer>
     </div>
   )
 }

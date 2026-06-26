@@ -6,7 +6,7 @@ export function HealthBadge() {
   const { status, data } = useHealth()
 
   const label =
-    status === 'loading' ? 'Connecting' : status === 'ok' ? `Online · ${data?.mode}` : 'Offline'
+    status === 'loading' ? 'Connecting' : status === 'ok' ? `Online (${data?.mode})` : 'Offline'
 
   const dotColor =
     status === 'loading' ? 'bg-amber-400' : status === 'ok' ? 'bg-emerald-400' : 'bg-rose-400'
