@@ -61,6 +61,12 @@ cp .env.example .env     # then edit values
 docker compose up        # starts database, backend, and frontend
 ```
 
+## Built with AI assistance
+
+I build this project with the help of Claude, Anthropic's AI assistant. It
+contributes to the code, architecture, and documentation. I direct the work,
+review it, and decide what ships.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
