@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_db
-from app.models import User
+from app.models import Role, User
 from app.security import decode_token
 
 
@@ -28,4 +28,12 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
     """Gate admin-only actions (the dashboard: managing accounts, settings)."""
     if not user.is_admin:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Admins only")
+    return user
+
+
+def require_parent(user: User = Depends(get_current_user)) -> User:
+    """Gate parent-only actions (managing the board). Distinct from admin:
+    a non-admin parent still runs the family's day-to-day."""
+    if user.role != Role.parent:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Parents only")
     return user

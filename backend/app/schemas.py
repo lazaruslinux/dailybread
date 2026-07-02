@@ -1,6 +1,8 @@
+import datetime as dt
+
 from pydantic import BaseModel, Field
 
-from app.models import Role
+from app.models import ItemKind, MoodLevel, Role
 
 
 # Pydantic models define the JSON shapes for requests/responses and validate
@@ -62,3 +64,93 @@ class SetupOut(BaseModel):
     """
 
     initialized: bool
+
+
+# ---- items and the home feed -------------------------------------------------
+
+
+class ItemIn(BaseModel):
+    """A parent creating a card for the board."""
+
+    kind: ItemKind
+    title: str = Field(min_length=1, max_length=120)
+    notes: str = Field(default="", max_length=300)
+    assignee_id: int | None = None  # None means the whole family
+    time_of_day: dt.time | None = None
+    date_for: dt.date | None = None  # todos/events; routines leave it unset
+
+
+class ItemUpdate(BaseModel):
+    """Editing a card. Omitted fields stay unchanged; explicit nulls clear.
+
+    Pydantic can't tell "omitted" from "sent as null" without this trick:
+    model_fields_set records which keys were actually in the JSON body.
+    """
+
+    title: str | None = Field(default=None, min_length=1, max_length=120)
+    notes: str | None = Field(default=None, max_length=300)
+    assignee_id: int | None = None
+    time_of_day: dt.time | None = None
+    date_for: dt.date | None = None
+
+
+class FeedItemOut(BaseModel):
+    id: int
+    kind: ItemKind
+    title: str
+    notes: str
+    assignee: UserOut | None
+    time_of_day: dt.time | None
+    date_for: dt.date | None
+    completed: bool
+    # Consecutive days done, routines only. None for todos/events.
+    streak: int | None
+
+    model_config = {"from_attributes": True}
+
+
+class FeedOut(BaseModel):
+    """Everything the home screen needs for one day, in three buckets."""
+
+    date: dt.date
+    today: list[FeedItemOut]  # timed + dated cards, sorted by time
+    anytime: list[FeedItemOut]  # undated, uncompleted todos
+    upcoming: list[FeedItemOut]  # dated cards in the next 7 days
+
+
+# ---- profiles and moods --------------------------------------------------------
+
+
+class MoodOut(BaseModel):
+    level: MoodLevel
+    hidden: bool
+
+    model_config = {"from_attributes": True}
+
+
+class MoodIn(BaseModel):
+    date_for: dt.date
+    level: MoodLevel
+    hidden: bool = False
+
+
+class FamilyMemberOut(UserOut):
+    """A member as others see them on the family strip: user + today's mood.
+
+    mood is None when the member has not set one OR chose to hide it; the
+    two cases are deliberately indistinguishable to other members.
+    """
+
+    mood: MoodOut | None = None
+
+
+class ProfileOut(FamilyMemberOut):
+    bio: str
+    created_at: dt.datetime
+
+
+class ProfileUpdateIn(BaseModel):
+    """A member editing their own profile."""
+
+    display_name: str | None = Field(default=None, min_length=1, max_length=100)
+    bio: str | None = Field(default=None, max_length=500)

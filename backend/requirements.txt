@@ -9,6 +9,9 @@ pydantic-settings
 sqlalchemy
 psycopg[binary]
 
+# Schema migrations, run automatically at container startup
+alembic
+
 # Auth: Argon2 password hashing + JWT (PyJWT) session tokens
 argon2-cffi
 pyjwt

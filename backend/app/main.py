@@ -1,25 +1,16 @@
-from contextlib import asynccontextmanager
-
 from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app import models  # noqa: F401  (imported so its tables register on Base)
 from app.config import settings
-from app.db import Base, db_ok, engine
-from app.routers import auth
+from app.db import db_ok
+from app.routers import auth, items, users
 
+# Schema management moved to Alembic: the container entrypoint runs
+# "alembic upgrade head" before starting the server, so by the time the app
+# is up the database is guaranteed to be current.
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Create any missing tables on startup. Fine for now; we'll switch to
-    # Alembic migrations before real family data lives in the DB.
-    if engine is not None:
-        Base.metadata.create_all(engine)
-    yield
-
-
-app = FastAPI(title="dailybread", version="0.0.1", lifespan=lifespan)
+app = FastAPI(title="dailybread", version="0.0.1")
 
 # Allow the Vite dev server to call the API during development.
 app.add_middleware(
@@ -45,6 +36,8 @@ async def block_cross_site_writes(request: Request, call_next):
 
 
 app.include_router(auth.router)
+app.include_router(items.router)
+app.include_router(users.router)
 
 
 @app.get("/")
