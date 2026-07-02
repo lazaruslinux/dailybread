@@ -3,10 +3,10 @@ import { ChevronLeft, LogOut, Users } from 'lucide-react'
 import { useState } from 'react'
 import { useAuth } from './auth/AuthContext'
 import { HealthBadge } from './components/HealthBadge'
-import { NotificationCard } from './components/NotificationCard'
-import { SAMPLE_FEED } from './data/mock'
 import { Admin } from './pages/Admin'
+import { Home } from './pages/Home'
 import { Login } from './pages/Login'
+import { Profile } from './pages/Profile'
 import { Setup } from './pages/Setup'
 
 function greeting(): string {
@@ -24,33 +24,13 @@ function todayLabel(): string {
   })
 }
 
-function Home() {
-  return (
-    <>
-      {/* Skeleton note. Remove once the backend serves real data. */}
-      <motion.p
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="mb-4 text-xs text-white/40"
-      >
-        Showing example items for now.
-      </motion.p>
-
-      <main className="flex flex-col gap-3">
-        {SAMPLE_FEED.map((card, i) => (
-          <NotificationCard key={card.id} card={card} index={i} />
-        ))}
-      </main>
-    </>
-  )
-}
-
-type View = 'home' | 'admin'
+type View = { name: 'home' } | { name: 'admin' } | { name: 'profile'; id: number }
 
 function AppShell() {
   const { user, logout } = useAuth()
-  const [view, setView] = useState<View>('home')
+  const [view, setView] = useState<View>({ name: 'home' })
   const firstName = user?.display_name.split(/\s+/)[0] ?? ''
+  const atHome = view.name === 'home'
 
   return (
     <div className="mx-auto min-h-svh w-full max-w-md px-5 py-8">
@@ -59,11 +39,11 @@ function AppShell() {
             The greeting gets its own full-width line below so long names
             never fight the buttons for space. */}
         <div className="mb-1 flex items-center justify-between gap-3">
-          {view === 'home' ? (
+          {atHome ? (
             <p className="text-sm text-white/50">{todayLabel()}</p>
           ) : (
             <button
-              onClick={() => setView('home')}
+              onClick={() => setView({ name: 'home' })}
               className="-ml-1 flex items-center gap-1 rounded-lg py-1 pr-2 text-sm font-semibold text-white/60 transition-colors hover:text-white"
             >
               <ChevronLeft className="h-4 w-4" /> Home
@@ -74,10 +54,10 @@ function AppShell() {
             <HealthBadge />
             {user?.is_admin && (
               <button
-                onClick={() => setView(view === 'admin' ? 'home' : 'admin')}
+                onClick={() => setView(view.name === 'admin' ? { name: 'home' } : { name: 'admin' })}
                 aria-label="Admin dashboard"
                 className={`glass rounded-full p-2 transition-colors ${
-                  view === 'admin' ? 'text-indigo-300' : 'text-white/60 hover:text-white'
+                  view.name === 'admin' ? 'text-indigo-300' : 'text-white/60 hover:text-white'
                 }`}
               >
                 <Users className="h-4 w-4" />
@@ -93,7 +73,7 @@ function AppShell() {
           </div>
         </div>
 
-        {view === 'home' && (
+        {atHome && (
           <h1 className="text-3xl font-bold tracking-tight">
             {greeting()}, {firstName}
           </h1>
@@ -102,13 +82,17 @@ function AppShell() {
 
       <AnimatePresence mode="wait">
         <motion.div
-          key={view}
+          key={view.name === 'profile' ? `profile-${view.id}` : view.name}
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -10 }}
           transition={{ duration: 0.18 }}
         >
-          {view === 'home' ? <Home /> : <Admin />}
+          {view.name === 'home' && (
+            <Home onOpenProfile={(id) => setView({ name: 'profile', id })} />
+          )}
+          {view.name === 'admin' && <Admin />}
+          {view.name === 'profile' && <Profile userId={view.id} />}
         </motion.div>
       </AnimatePresence>
 

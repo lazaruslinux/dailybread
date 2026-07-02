@@ -107,3 +107,93 @@ export const updateUser = (id: number, payload: UpdateUserPayload) =>
 
 export const deleteUser = (id: number) =>
   request<void>(`/auth/users/${id}`, { method: 'DELETE' })
+
+// ---- items and the home feed --------------------------------------------------
+
+// The phone's local calendar date, YYYY-MM-DD. Sent with every "today"
+// request because the server may live in a different timezone.
+export function localDate(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+export type ItemKind = 'routine' | 'todo' | 'event'
+
+export interface FeedItem {
+  id: number
+  kind: ItemKind
+  title: string
+  notes: string
+  assignee: User | null
+  time_of_day: string | null // "HH:MM:SS"
+  date_for: string | null // "YYYY-MM-DD"
+  completed: boolean
+  streak: number | null
+}
+
+export interface Feed {
+  date: string
+  today: FeedItem[]
+  anytime: FeedItem[]
+  upcoming: FeedItem[]
+}
+
+export interface ItemPayload {
+  kind: ItemKind
+  title: string
+  notes?: string
+  assignee_id?: number | null
+  time_of_day?: string | null
+  date_for?: string | null
+}
+
+export const getFeed = () => request<Feed>(`/items/feed?date=${localDate()}`)
+
+export const createItem = (payload: ItemPayload) =>
+  request<FeedItem>('/items', { method: 'POST', body: JSON.stringify(payload) })
+
+export const updateItem = (id: number, payload: Partial<ItemPayload>) =>
+  request<FeedItem>(`/items/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+
+export const deleteItem = (id: number) => request<void>(`/items/${id}`, { method: 'DELETE' })
+
+export const completeItem = (id: number) =>
+  request<FeedItem>(`/items/${id}/complete?date=${localDate()}`, { method: 'POST' })
+
+export const uncompleteItem = (id: number) =>
+  request<FeedItem>(`/items/${id}/complete?date=${localDate()}`, { method: 'DELETE' })
+
+// ---- profiles and moods ---------------------------------------------------------
+
+export type MoodLevel = 'sunny' | 'partly' | 'cloudy' | 'rainy' | 'stormy'
+
+export interface Mood {
+  level: MoodLevel
+  hidden: boolean
+}
+
+export interface FamilyMember extends User {
+  mood: Mood | null
+}
+
+export interface Profile extends FamilyMember {
+  bio: string
+  created_at: string
+}
+
+export const getFamily = () => request<FamilyMember[]>(`/users?date=${localDate()}`)
+
+export const getProfile = (id: number) =>
+  request<Profile>(`/users/${id}/profile?date=${localDate()}`)
+
+export const updateMyProfile = (payload: { display_name?: string; bio?: string }) =>
+  request<Profile>('/me/profile', { method: 'PATCH', body: JSON.stringify(payload) })
+
+export const setMyMood = (level: MoodLevel, hidden: boolean) =>
+  request<Mood>('/me/mood', {
+    method: 'PUT',
+    body: JSON.stringify({ date_for: localDate(), level, hidden }),
+  })
+
+export const clearMyMood = () =>
+  request<void>(`/me/mood?date=${localDate()}`, { method: 'DELETE' })
