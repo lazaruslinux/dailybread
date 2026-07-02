@@ -6,7 +6,7 @@ from app.config import settings
 from app.db import get_db
 from app.deps import get_current_user, require_admin
 from app.models import Role, User
-from app.schemas import BootstrapIn, CreateUserIn, LoginIn, UserOut
+from app.schemas import BootstrapIn, CreateUserIn, LoginIn, SetupOut, UpdateUserIn, UserOut
 from app.security import create_access_token, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -24,6 +24,13 @@ def _set_session_cookie(response: Response, user: User) -> None:
         max_age=settings.session_days * 24 * 3600,
         path="/",
     )
+
+
+@router.get("/setup", response_model=SetupOut)
+def setup_state(db: Session = Depends(get_db)):
+    """Is this install set up yet? Drives the first-run wizard vs. login."""
+    user_count = db.scalar(select(func.count()).select_from(User))
+    return SetupOut(initialized=bool(user_count))
 
 
 @router.post("/bootstrap", response_model=UserOut, status_code=status.HTTP_201_CREATED)
@@ -95,3 +102,73 @@ def create_user(
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.get("/users", response_model=list[UserOut])
+def list_users(db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
+    """Admin-only: everyone in the family, for the dashboard."""
+    return db.scalars(select(User).order_by(User.created_at)).all()
+
+
+@router.patch("/users/{user_id}", response_model=UserOut)
+def update_user(
+    user_id: int,
+    data: UpdateUserIn,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Admin-only: edit a family member (name, role, admin flag, password)."""
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such user")
+
+    # Work out what the account would look like AFTER the edit, then validate
+    # that final state. This catches bad combinations across fields.
+    new_role = data.role if data.role is not None else user.role
+    new_admin = data.is_admin if data.is_admin is not None else user.is_admin
+
+    if new_role == Role.child and new_admin:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "A child account cannot be an admin. Remove admin access first.",
+        )
+
+    # Lockout protection: you cannot take away your own admin access. Since
+    # only admins can reach this endpoint, this also guarantees the install
+    # always keeps at least one admin.
+    if user.id == admin.id and user.is_admin and not new_admin:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "You cannot remove your own admin access.",
+        )
+
+    user.role = new_role
+    user.is_admin = new_admin
+    if data.display_name is not None:
+        user.display_name = data.display_name
+    if data.password is not None:
+        user.password_hash = hash_password(data.password)
+
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Admin-only: remove a family member's account."""
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such user")
+
+    # Same lockout rule as above: an admin can never delete themselves, so
+    # there is always a working admin account left to sign in with.
+    if user.id == admin.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "You cannot delete your own account.")
+
+    db.delete(user)
+    db.commit()
