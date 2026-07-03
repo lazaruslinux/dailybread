@@ -1,11 +1,11 @@
 import { motion } from 'framer-motion'
-import { EyeOff, Pencil, ShieldCheck } from 'lucide-react'
+import { Check, Circle, EyeOff, Pencil, ShieldCheck } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { Avatar } from '../components/Avatar'
 import { Button, FormError } from '../components/ui'
-import { MOODS, MOOD_ORDER } from '../lib/moods'
+import { formatTime, MOODS, MOOD_ORDER } from '../lib/moods'
 
 // A member's page: who they are, their bio, and how their day is going.
 // Everything self-serve is inline: your own page grows a mood picker and a
@@ -15,6 +15,8 @@ export function Profile({ userId }: { userId: number }) {
   const isSelf = viewer?.id === userId
 
   const [profile, setProfile] = useState<api.Profile | null>(null)
+  // This member's slice of the board: cards assigned to them, today + anytime.
+  const [day, setDay] = useState<{ today: api.FeedItem[]; anytime: api.FeedItem[] } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [editingBio, setEditingBio] = useState(false)
   const [bioDraft, setBioDraft] = useState('')
@@ -22,7 +24,10 @@ export function Profile({ userId }: { userId: number }) {
 
   const refresh = useCallback(async () => {
     try {
-      setProfile(await api.getProfile(userId))
+      const [p, feed] = await Promise.all([api.getProfile(userId), api.getFeed()])
+      setProfile(p)
+      const mine = (items: api.FeedItem[]) => items.filter((i) => i.assignee?.id === userId)
+      setDay({ today: mine(feed.today), anytime: mine(feed.anytime) })
       setError(null)
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Could not load this profile.')
@@ -214,6 +219,55 @@ export function Profile({ userId }: { userId: number }) {
           <p className="text-sm text-white/40">No mood shared today.</p>
         )}
       </motion.div>
+
+      {day && (
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          className="glass mt-4 p-5"
+        >
+          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-white/40">
+            {isSelf ? 'On your board' : 'On their board'}
+          </p>
+
+          {day.today.length === 0 && day.anytime.length === 0 ? (
+            <p className="text-sm text-white/40">Nothing assigned today.</p>
+          ) : (
+            <ul className="flex flex-col gap-1">
+              {[...day.today, ...day.anytime].map((item) => (
+                <li key={item.id} className="flex items-center gap-3 rounded-xl px-1 py-2">
+                  <span
+                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${
+                      item.completed ? 'bg-emerald-400/25' : 'bg-white/10'
+                    }`}
+                  >
+                    {item.completed ? (
+                      <Check className="h-3.5 w-3.5 text-emerald-300" strokeWidth={2.5} />
+                    ) : (
+                      <Circle className="h-3 w-3 text-white/40" strokeWidth={2} />
+                    )}
+                  </span>
+                  <span
+                    className={`min-w-0 flex-1 truncate text-sm ${
+                      item.completed
+                        ? 'text-white/45 line-through decoration-white/30'
+                        : 'text-white/85'
+                    }`}
+                  >
+                    {item.title}
+                  </span>
+                  {item.time_of_day && (
+                    <span className="shrink-0 text-xs font-medium text-white/45">
+                      {formatTime(item.time_of_day)}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </motion.div>
+      )}
 
       <FormError message={error} />
     </div>
