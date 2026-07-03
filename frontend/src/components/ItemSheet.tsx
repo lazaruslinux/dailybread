@@ -6,7 +6,7 @@ import { Button, Field, FormError } from './ui'
 
 const KIND_LABEL: Record<api.ItemKind, string> = {
   routine: 'Routine',
-  todo: 'To-do',
+  todo: 'Task',
   event: 'Schedule',
 }
 
@@ -131,7 +131,7 @@ export function ItemSheet({
 
           <label className="block">
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-white/50">
-              Who is it for
+              For
             </span>
             <select
               value={assignee}
@@ -148,9 +148,9 @@ export function ItemSheet({
           </label>
 
           <div className={`grid gap-3 ${kind === 'routine' ? '' : 'grid-cols-2'}`}>
-            <Field label="Time (optional)" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+            <Field label="Time (optional)" type="time" value={time} onChange={(e) => setTime(e.target.value)} onClear={() => setTime('')} />
             {kind !== 'routine' && (
-              <Field label="Date (optional)" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              <Field label="Date (optional)" type="date" value={date} onChange={(e) => setDate(e.target.value)} onClear={() => setDate('')} />
             )}
           </div>
 

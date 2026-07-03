@@ -53,6 +53,30 @@ body {
 .field::placeholder {
   color: rgba(255, 255, 255, 0.35);
 }
+/* iOS WebKit renders date/time inputs as inline-flex at fit-content width,
+   so they ignore width:100% and collapse to a tiny pill when empty. Forcing
+   block display + a minimum height makes them behave like every other field. */
+.field[type='date'],
+.field[type='time'] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  min-width: 0;
+  min-height: 2.95rem;
+  /* Slightly tighter than text fields so a full mm/dd/yyyy plus the clear
+     button fits inside one grid column on a phone. */
+  padding-left: 0.75rem;
+  padding-right: 0.5rem;
+  font-size: 0.95rem;
+}
+/* Desktop Chrome shows a picker icon inside these inputs; scoot it left so
+   the clear button doesn't sit on top of it, and tint it for the dark theme. */
+.field[type='date']::-webkit-calendar-picker-indicator,
+.field[type='time']::-webkit-calendar-picker-indicator {
+  margin-right: 1.4rem;
+  filter: invert(1);
+  opacity: 0.45;
+}
 .field:focus {
   border-color: rgba(129, 140, 248, 0.7);
   background: rgba(255, 255, 255, 0.1);

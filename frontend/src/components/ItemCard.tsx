@@ -7,7 +7,7 @@ import { Avatar } from './Avatar'
 
 const KIND_STYLE: Record<ItemKind, { Icon: LucideIcon; tint: string; label: string }> = {
   routine: { Icon: Repeat, tint: 'text-sky-300', label: 'Routine' },
-  todo: { Icon: Circle, tint: 'text-amber-300', label: 'To-do' },
+  todo: { Icon: Circle, tint: 'text-amber-300', label: 'Task' },
   event: { Icon: Calendar, tint: 'text-violet-300', label: 'Schedule' },
 }
 

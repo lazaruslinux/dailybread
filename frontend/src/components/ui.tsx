@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion'
+import { X } from 'lucide-react'
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
 
 // Small shared building blocks so every form and button in the app looks the
@@ -6,16 +7,34 @@ import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react
 
 interface FieldProps extends InputHTMLAttributes<HTMLInputElement> {
   label: string
+  // iOS date/time inputs have no native way to empty them once set; passing
+  // onClear renders an x button whenever the field has a value.
+  onClear?: () => void
 }
 
-export function Field({ label, id, ...rest }: FieldProps) {
+export function Field({ label, id, onClear, ...rest }: FieldProps) {
   const inputId = id ?? `field-${label.toLowerCase().replace(/\s+/g, '-')}`
+  const clearable = onClear && Boolean(rest.value)
   return (
-    <label htmlFor={inputId} className="block">
+    // min-w-0 lets the field shrink inside grid/flex rows; without it the
+    // browser holds the input at its intrinsic width and it overflows.
+    <label htmlFor={inputId} className="block min-w-0">
       <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-white/50">
         {label}
       </span>
-      <input id={inputId} className="field" {...rest} />
+      <div className="relative">
+        <input id={inputId} className={`field ${clearable ? 'pr-9' : ''}`} {...rest} />
+        {clearable && (
+          <button
+            type="button"
+            onClick={onClear}
+            aria-label={`Clear ${label.toLowerCase()}`}
+            className="absolute top-1/2 right-2 -translate-y-1/2 rounded-full bg-white/10 p-1 text-white/60 hover:bg-white/20 hover:text-white"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
     </label>
   )
 }
