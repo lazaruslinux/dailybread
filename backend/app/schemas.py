@@ -118,6 +118,30 @@ class FeedOut(BaseModel):
     upcoming: list[FeedItemOut]  # dated cards in the next 7 days
 
 
+# ---- grocery list --------------------------------------------------------------
+
+
+class GroceryItemIn(BaseModel):
+    """A parent adding a line to the list."""
+
+    title: str = Field(min_length=1, max_length=120)
+
+
+class GroceryItemUpdate(BaseModel):
+    """Editing a line: rename it, or (un)check it. Omitted fields stay put."""
+
+    title: str | None = Field(default=None, min_length=1, max_length=120)
+    checked: bool | None = None
+
+
+class GroceryItemOut(BaseModel):
+    id: int
+    title: str
+    checked: bool
+
+    model_config = {"from_attributes": True}
+
+
 # ---- profiles and moods --------------------------------------------------------
 
 

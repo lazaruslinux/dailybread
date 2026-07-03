@@ -163,6 +163,28 @@ export const completeItem = (id: number) =>
 export const uncompleteItem = (id: number) =>
   request<FeedItem>(`/items/${id}/complete?date=${localDate()}`, { method: 'DELETE' })
 
+// ---- grocery list -----------------------------------------------------------
+
+export interface GroceryItem {
+  id: number
+  title: string
+  checked: boolean
+}
+
+export const listGrocery = () => request<GroceryItem[]>('/grocery')
+
+export const addGrocery = (title: string) =>
+  request<GroceryItem>('/grocery', { method: 'POST', body: JSON.stringify({ title }) })
+
+export const updateGrocery = (id: number, payload: { title?: string; checked?: boolean }) =>
+  request<GroceryItem>(`/grocery/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+
+export const deleteGrocery = (id: number) =>
+  request<void>(`/grocery/${id}`, { method: 'DELETE' })
+
+export const clearCheckedGrocery = () =>
+  request<GroceryItem[]>('/grocery/clear-checked', { method: 'POST' })
+
 // ---- profiles and moods ---------------------------------------------------------
 
 export type MoodLevel = 'sunny' | 'partly' | 'cloudy' | 'rainy' | 'stormy'

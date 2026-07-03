@@ -90,6 +90,22 @@ class Completion(Base):
     completed_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class GroceryItem(Base):
+    """One line on the family's shared grocery list.
+
+    Deliberately minimal: no assignee, no date. Checked items stay on the
+    list (struck through in the UI) until a parent clears them, which
+    forgives mis-taps in the store aisle.
+    """
+
+    __tablename__ = "grocery_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(120))
+    checked: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class MoodLevel(str, enum.Enum):
     """Five-step mood scale rendered as weather in the UI (sun to storm)."""
 
