@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
-from app.deps import get_current_user, require_parent
+from app.deps import require_family, require_parent
 from app.models import Completion, Item, ItemKind, Role, User
 from app.schemas import FeedItemOut, FeedOut, ItemIn, ItemUpdate
 
@@ -23,15 +23,20 @@ def _check_date(date_for: dt.date) -> dt.date:
     return date_for
 
 
-def _get_item(db: Session, item_id: int) -> Item:
+def _get_item(db: Session, item_id: int, family_id: int) -> Item:
+    """Fetch an item only if it belongs to the caller's family. Cross-family
+    ids 404 like they don't exist, so nothing leaks across households."""
     item = db.get(Item, item_id)
-    if item is None:
+    if item is None or item.family_id != family_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such item")
     return item
 
 
-def _check_assignee(db: Session, assignee_id: int | None) -> None:
-    if assignee_id is not None and db.get(User, assignee_id) is None:
+def _check_assignee(db: Session, assignee_id: int | None, family_id: int) -> None:
+    if assignee_id is None:
+        return
+    assignee = db.get(User, assignee_id)
+    if assignee is None or assignee.family_id != family_id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Assignee does not exist")
 
 
@@ -75,7 +80,7 @@ def _feed_item(item: Item, completed: bool, streak: int | None) -> FeedItemOut:
 def feed(
     date_for: dt.date = Query(alias="date"),
     db: Session = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    user: User = Depends(require_family),
 ):
     """The whole home screen in one request: today, anytime, upcoming."""
     _check_date(date_for)
@@ -86,7 +91,8 @@ def feed(
             select(Item)
             .options(selectinload(Item.assignee))
             .where(
-                (Item.date_for.is_(None)) | (Item.date_for.between(date_for, horizon))
+                Item.family_id == user.family_id,
+                (Item.date_for.is_(None)) | (Item.date_for.between(date_for, horizon)),
             )
         )
         .unique()
@@ -136,14 +142,15 @@ def feed(
 def create_item(
     data: ItemIn,
     db: Session = Depends(get_db),
-    _parent: User = Depends(require_parent),
+    parent: User = Depends(require_parent),
 ):
-    """Parents put cards on the board."""
-    _check_assignee(db, data.assignee_id)
+    """Parents put cards on their family's board."""
+    _check_assignee(db, data.assignee_id, parent.family_id)
     if data.kind == ItemKind.routine and data.date_for is not None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Routines repeat daily; no date")
 
     item = Item(
+        family_id=parent.family_id,
         kind=data.kind,
         title=data.title,
         notes=data.notes,
@@ -162,13 +169,13 @@ def update_item(
     item_id: int,
     data: ItemUpdate,
     db: Session = Depends(get_db),
-    _parent: User = Depends(require_parent),
+    parent: User = Depends(require_parent),
 ):
-    item = _get_item(db, item_id)
+    item = _get_item(db, item_id, parent.family_id)
     fields = data.model_fields_set  # only touch keys the client actually sent
 
     if "assignee_id" in fields:
-        _check_assignee(db, data.assignee_id)
+        _check_assignee(db, data.assignee_id, parent.family_id)
         item.assignee_id = data.assignee_id
     if "title" in fields and data.title is not None:
         item.title = data.title
@@ -196,9 +203,9 @@ def update_item(
 def delete_item(
     item_id: int,
     db: Session = Depends(get_db),
-    _parent: User = Depends(require_parent),
+    parent: User = Depends(require_parent),
 ):
-    item = _get_item(db, item_id)
+    item = _get_item(db, item_id, parent.family_id)
     db.delete(item)  # completions cascade away with it
     db.commit()
 
@@ -215,10 +222,10 @@ def complete_item(
     item_id: int,
     date_for: dt.date = Query(alias="date"),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_family),
 ):
     _check_date(date_for)
-    item = _get_item(db, item_id)
+    item = _get_item(db, item_id, user.family_id)
     if not _can_check(item, user):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "This card is someone else's")
 
@@ -240,11 +247,11 @@ def uncomplete_item(
     item_id: int,
     date_for: dt.date = Query(alias="date"),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_family),
 ):
     """Undo an accidental check-off for that day."""
     _check_date(date_for)
-    item = _get_item(db, item_id)
+    item = _get_item(db, item_id, user.family_id)
     if not _can_check(item, user):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "This card is someone else's")
 

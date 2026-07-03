@@ -16,6 +16,9 @@ class UserOut(BaseModel):
     display_name: str
     role: Role
     is_admin: bool
+    # None only while a new-household account hasn't created its family yet;
+    # the frontend uses this to show the create-your-family wizard.
+    family_id: int | None = None
 
     # Let Pydantic read attributes off a SQLAlchemy User object directly.
     model_config = {"from_attributes": True}
@@ -27,11 +30,12 @@ class LoginIn(BaseModel):
 
 
 class BootstrapIn(BaseModel):
-    """Payload for creating the very first parent account."""
+    """Payload for creating the very first parent account (and its family)."""
 
     username: str = Field(min_length=3, max_length=50)
     display_name: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=8, max_length=128)
+    family_name: str = Field(default="Home", min_length=1, max_length=80)
 
 
 class CreateUserIn(BootstrapIn):
@@ -40,6 +44,20 @@ class CreateUserIn(BootstrapIn):
     role: Role = Role.child
     # None means "use the default for the role" (parent -> admin, child -> not).
     is_admin: bool | None = None
+    # True creates the account with NO family: on first login they get the
+    # create-your-family wizard and become head of their own household.
+    new_household: bool = False
+
+
+class FamilyIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+class FamilyOut(BaseModel):
+    id: int
+    name: str
+
+    model_config = {"from_attributes": True}
 
 
 class UpdateUserIn(BaseModel):

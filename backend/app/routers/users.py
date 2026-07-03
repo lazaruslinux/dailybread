@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.deps import get_current_user
+from app.deps import require_family
 from app.models import Mood, User
 from app.schemas import FamilyMemberOut, MoodIn, MoodOut, ProfileOut, ProfileUpdateIn
 
@@ -46,15 +46,20 @@ def _member_out(user: User, mood: Mood | None, viewer: User) -> FamilyMemberOut:
 def family(
     date_for: dt.date = Query(alias="date"),
     db: Session = Depends(get_db),
-    viewer: User = Depends(get_current_user),
+    viewer: User = Depends(require_family),
 ):
     """The family strip: every member plus their visible mood for the day.
-    Any signed-in member can see this; it's their household."""
+    Any signed-in member can see this; it's their household — and ONLY theirs."""
     _check_date(date_for)
-    members = db.scalars(select(User).order_by(User.created_at)).all()
+    members = db.scalars(
+        select(User).where(User.family_id == viewer.family_id).order_by(User.created_at)
+    ).all()
+    member_ids = [u.id for u in members]
     moods = {
         m.user_id: m
-        for m in db.scalars(select(Mood).where(Mood.date_for == date_for))
+        for m in db.scalars(
+            select(Mood).where(Mood.date_for == date_for, Mood.user_id.in_(member_ids))
+        )
     }
     return [_member_out(u, moods.get(u.id), viewer) for u in members]
 
@@ -64,11 +69,12 @@ def profile(
     user_id: int,
     date_for: dt.date = Query(alias="date"),
     db: Session = Depends(get_db),
-    viewer: User = Depends(get_current_user),
+    viewer: User = Depends(require_family),
 ):
     _check_date(date_for)
     user = db.get(User, user_id)
-    if user is None:
+    # Cross-family profiles 404 like they don't exist, so ids don't leak.
+    if user is None or user.family_id != viewer.family_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such user")
     mood = db.scalar(
         select(Mood).where(Mood.user_id == user.id, Mood.date_for == date_for)
@@ -89,7 +95,7 @@ def profile(
 def update_my_profile(
     data: ProfileUpdateIn,
     db: Session = Depends(get_db),
-    me: User = Depends(get_current_user),
+    me: User = Depends(require_family),
 ):
     """Your profile is yours: bio and display name, no one else's. Roles and
     admin flags stay in the admin-only endpoints."""
@@ -118,7 +124,7 @@ def update_my_profile(
 def set_my_mood(
     data: MoodIn,
     db: Session = Depends(get_db),
-    me: User = Depends(get_current_user),
+    me: User = Depends(require_family),
 ):
     """Set (or change) your mood for a day. Upsert: one row per member per day."""
     _check_date(data.date_for)
@@ -139,7 +145,7 @@ def set_my_mood(
 def clear_my_mood(
     date_for: dt.date = Query(alias="date"),
     db: Session = Depends(get_db),
-    me: User = Depends(get_current_user),
+    me: User = Depends(require_family),
 ):
     _check_date(date_for)
     mood = db.scalar(

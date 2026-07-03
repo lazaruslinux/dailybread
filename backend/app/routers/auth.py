@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db import get_db
 from app.deps import get_current_user, require_admin
-from app.models import Role, User
+from app.models import Family, Role, User
 from app.schemas import BootstrapIn, CreateUserIn, LoginIn, SetupOut, UpdateUserIn, UserOut
 from app.security import hash_password, set_session_cookie, verify_password
 
@@ -21,12 +21,16 @@ def setup_state(db: Session = Depends(get_db)):
 
 @router.post("/bootstrap", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def bootstrap(data: BootstrapIn, response: Response, db: Session = Depends(get_db)):
-    """Create the first parent account. Allowed only while no users exist."""
+    """Create the first family and its head. Allowed only while no users exist."""
     user_count = db.scalar(select(func.count()).select_from(User))
     if user_count:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Already initialized")
 
+    family = Family(name=data.family_name.strip())
+    db.add(family)
+    db.flush()
     user = User(
+        family_id=family.id,
         username=data.username,
         display_name=data.display_name,
         password_hash=hash_password(data.password),
@@ -66,11 +70,17 @@ def me(user: User = Depends(get_current_user)):
 def create_user(
     data: CreateUserIn,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
 ):
-    """Admin-only: create another family member's account."""
+    """Admin-only: create a member of your own family — or, with
+    new_household, an account that will found its own family on first login."""
     if db.scalar(select(User).where(User.username == data.username)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Username already taken")
+
+    if data.new_household and data.role != Role.parent:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "A new household's first account must be a parent"
+        )
 
     # Default admin from role unless explicitly set. A child can never be admin.
     is_admin = data.is_admin if data.is_admin is not None else (data.role == Role.parent)
@@ -78,11 +88,14 @@ def create_user(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "A child account cannot be an admin")
 
     user = User(
+        # New-household accounts start family-less; the wizard fills this in
+        # and promotes them. Everyone else is born into the admin's family.
+        family_id=None if data.new_household else admin.family_id,
         username=data.username,
         display_name=data.display_name,
         password_hash=hash_password(data.password),
         role=data.role,
-        is_admin=is_admin,
+        is_admin=False if data.new_household else is_admin,
     )
     db.add(user)
     db.commit()
@@ -91,9 +104,22 @@ def create_user(
 
 
 @router.get("/users", response_model=list[UserOut])
-def list_users(db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
-    """Admin-only: everyone in the family, for the dashboard."""
-    return db.scalars(select(User).order_by(User.created_at)).all()
+def list_users(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """Admin-only: everyone in YOUR family, for the dashboard."""
+    return db.scalars(
+        select(User).where(User.family_id == admin.family_id).order_by(User.created_at)
+    ).all()
+
+
+def _managed_user(db: Session, user_id: int, admin: User) -> User:
+    """An account this admin may manage: their own family's members, plus
+    family-less new-household accounts (someone must be able to reset a
+    forgotten password before the wizard runs). Cross-family lookups 404 so
+    other households' ids don't leak."""
+    user = db.get(User, user_id)
+    if user is None or (user.family_id is not None and user.family_id != admin.family_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such user")
+    return user
 
 
 @router.patch("/users/{user_id}", response_model=UserOut)
@@ -104,9 +130,7 @@ def update_user(
     admin: User = Depends(require_admin),
 ):
     """Admin-only: edit a family member (name, role, admin flag, password)."""
-    user = db.get(User, user_id)
-    if user is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such user")
+    user = _managed_user(db, user_id, admin)
 
     # Work out what the account would look like AFTER the edit, then validate
     # that final state. This catches bad combinations across fields.
@@ -147,9 +171,7 @@ def delete_user(
     admin: User = Depends(require_admin),
 ):
     """Admin-only: remove a family member's account."""
-    user = db.get(User, user_id)
-    if user is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such user")
+    user = _managed_user(db, user_id, admin)
 
     # Same lockout rule as above: an admin can never delete themselves, so
     # there is always a working admin account left to sign in with.

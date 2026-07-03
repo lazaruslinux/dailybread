@@ -19,10 +19,26 @@ def _utcnow() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 
 
+class Family(Base):
+    """One household. Every piece of data in the app belongs to exactly one,
+    and nothing is ever visible across the boundary."""
+
+    __tablename__ = "families"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # NULL only for a freshly created "new household" account that hasn't run
+    # its create-your-family wizard yet; such accounts can't touch any data.
+    family_id: Mapped[int | None] = mapped_column(
+        ForeignKey("families.id"), nullable=True, index=True
+    )
     # Login name, unique and indexed for fast lookups.
     username: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     display_name: Mapped[str] = mapped_column(String(100))
@@ -49,6 +65,7 @@ class Item(Base):
     __tablename__ = "items"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
     kind: Mapped[ItemKind] = mapped_column(SAEnum(ItemKind, name="item_kind"))
     title: Mapped[str] = mapped_column(String(120))
     notes: Mapped[str] = mapped_column(String(300), default="")
@@ -100,6 +117,7 @@ class GroceryList(Base):
     __tablename__ = "grocery_lists"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
     name: Mapped[str] = mapped_column(String(60))
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
@@ -115,6 +133,7 @@ class GroceryItem(Base):
     __tablename__ = "grocery_items"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
     title: Mapped[str] = mapped_column(String(120))
     checked: Mapped[bool] = mapped_column(Boolean, default=False)
     # Which store this belongs to. NULL = the General list. If a store is

@@ -38,14 +38,22 @@ def get_current_user(
     return user
 
 
-def require_admin(user: User = Depends(get_current_user)) -> User:
+def require_family(user: User = Depends(get_current_user)) -> User:
+    """Gate every data endpoint: a new-household account that hasn't run its
+    create-your-family wizard belongs to no family and can't touch anything."""
+    if user.family_id is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Create your family first")
+    return user
+
+
+def require_admin(user: User = Depends(require_family)) -> User:
     """Gate admin-only actions (the dashboard: managing accounts, settings)."""
     if not user.is_admin:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Admins only")
     return user
 
 
-def require_parent(user: User = Depends(get_current_user)) -> User:
+def require_parent(user: User = Depends(require_family)) -> User:
     """Gate parent-only actions (managing the board). Distinct from admin:
     a non-admin parent still runs the family's day-to-day."""
     if user.role != Role.parent:
