@@ -12,6 +12,8 @@ export default defineConfig({
     // installable to a phone/desktop home screen ("Add to Home Screen").
     VitePWA({
       registerType: 'autoUpdate',
+      // Static files that must be precached alongside the manifest icons.
+      includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'dailybread',
         short_name: 'dailybread',
@@ -19,15 +21,13 @@ export default defineConfig({
         theme_color: '#0b1220',
         background_color: '#0b1220',
         display: 'standalone',
-        // Placeholder icon for now: the scaffold's SVG favicon. Replace with
-        // real 192px/512px PNG icons before shipping the PWA.
         icons: [
-          {
-            src: 'favicon.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
-            purpose: 'any maskable',
-          },
+          { src: 'pwa-192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'pwa-512.png', sizes: '512x512', type: 'image/png' },
+          // Android crops "maskable" icons into whatever shape the launcher
+          // uses (circle, squircle), so this variant keeps the loaf inside
+          // the safe zone instead of getting its corners chopped off.
+          { src: 'maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
     }),
