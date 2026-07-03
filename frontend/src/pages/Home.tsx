@@ -4,7 +4,6 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { FamilyStrip } from '../components/FamilyStrip'
-import { GroceryCard, GrocerySheet } from '../components/Grocery'
 import { ItemCard, NowDivider } from '../components/ItemCard'
 import { ItemSheet } from '../components/ItemSheet'
 import { FormError } from '../components/ui'
@@ -39,8 +38,6 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
 
   const [feed, setFeed] = useState<api.Feed | null>(null)
   const [family, setFamily] = useState<api.FamilyMember[]>([])
-  const [grocery, setGrocery] = useState<api.GroceryItem[]>([])
-  const [groceryOpen, setGroceryOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sheet, setSheet] = useState<{ open: boolean; item: api.FeedItem | null }>({ open: false, item: null })
   // Re-rendering once a minute keeps the Now line honest without any polling.
@@ -48,10 +45,9 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
 
   const refresh = useCallback(async () => {
     try {
-      const [f, fam, groc] = await Promise.all([api.getFeed(), api.getFamily(), api.listGrocery()])
+      const [f, fam] = await Promise.all([api.getFeed(), api.getFamily()])
       setFeed(f)
       setFamily(fam)
-      setGrocery(groc)
       setError(null)
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Could not load the board.')
@@ -93,8 +89,6 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
     <div>
       <FamilyStrip members={family} onOpen={onOpenProfile} />
       <FormError message={error} />
-
-      <GroceryCard items={grocery} onOpen={() => setGroceryOpen(true)} />
 
       {feed && feed.today.length === 0 && feed.anytime.length === 0 && (
         <p className="glass p-6 text-center text-sm text-white/50">
@@ -167,22 +161,11 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
           whileTap={{ scale: 0.9 }}
           onClick={() => setSheet({ open: true, item: null })}
           aria-label="Add to the board"
-          className="fixed bottom-6 right-1/2 z-30 flex h-14 w-14 translate-x-[calc(min(50vw,14rem)-2rem)] items-center justify-center rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 shadow-xl shadow-indigo-500/30"
+          className="fixed bottom-24 right-1/2 z-30 flex h-14 w-14 translate-x-[calc(min(50vw,14rem)-2rem)] items-center justify-center rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 shadow-xl shadow-indigo-500/30"
         >
           <Plus className="h-6 w-6" strokeWidth={2.5} />
         </motion.button>
       )}
-
-      <AnimatePresence>
-        {groceryOpen && (
-          <GrocerySheet
-            items={grocery}
-            canEdit={isParent}
-            onClose={() => setGroceryOpen(false)}
-            onChanged={refresh}
-          />
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>
         {sheet.open && (
