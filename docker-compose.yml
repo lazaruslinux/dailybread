@@ -30,5 +30,16 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
 
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    # nginx serves the built app and proxies /api to the backend, so this one
+    # port is the whole app. A reverse proxy terminating HTTPS (Caddy, Traefik,
+    # nginx...) should point at this container's port 80.
+    ports:
+      - "127.0.0.1:8080:80"
+
 volumes:
   postgres-data:
