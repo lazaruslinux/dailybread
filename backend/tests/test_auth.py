@@ -1,7 +1,11 @@
 """Auth, bootstrap lockout, and the admin-management guard rails."""
 
+import datetime as dt
+
+import jwt
 from fastapi.testclient import TestClient
 
+from app.config import settings
 from tests.conftest import CHILD, OWNER, login, user_id
 
 
@@ -90,3 +94,37 @@ def test_password_reset_invalidates_old_password(app, owner, child):
     assert old.status_code == 401
     fresh = login(app, {"username": CHILD["username"], "password": "brand-new-pass-1"})
     assert fresh.get("/auth/me").json()["username"] == CHILD["username"]
+
+
+def _token_issued_ago(user_id: int, days: float) -> str:
+    """A valid token backdated as if issued `days` ago (still unexpired)."""
+    now = dt.datetime.now(dt.timezone.utc)
+    return jwt.encode(
+        {
+            "sub": str(user_id),
+            "iat": now - dt.timedelta(days=days),
+            "exp": now + dt.timedelta(days=settings.session_days - days),
+        },
+        settings.secret_key,
+        algorithm="HS256",
+    )
+
+
+def test_day_old_session_slides_forward(owner):
+    owner.cookies.set(settings.cookie_name, _token_issued_ago(user_id(owner), days=3))
+    res = owner.get("/auth/me")
+    assert res.status_code == 200
+    # The stale-but-valid token gets replaced with a fresh one on any
+    # authenticated request, keeping the expiry moving as long as you use
+    # the app. Same attributes as at login: HttpOnly so JS can't read it.
+    reissued = res.headers.get("set-cookie", "")
+    assert settings.cookie_name in reissued
+    assert "HttpOnly" in reissued
+
+
+def test_fresh_session_is_left_alone(owner):
+    # Right after bootstrap the token is seconds old: no pointless re-issue
+    # (a Set-Cookie on every request would churn caches and logs).
+    res = owner.get("/auth/me")
+    assert res.status_code == 200
+    assert "set-cookie" not in res.headers

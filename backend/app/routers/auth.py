@@ -7,23 +7,9 @@ from app.db import get_db
 from app.deps import get_current_user, require_admin
 from app.models import Role, User
 from app.schemas import BootstrapIn, CreateUserIn, LoginIn, SetupOut, UpdateUserIn, UserOut
-from app.security import create_access_token, hash_password, verify_password
+from app.security import hash_password, set_session_cookie, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-def _set_session_cookie(response: Response, user: User) -> None:
-    """Attach a fresh signed-JWT session cookie to the response."""
-    token = create_access_token(str(user.id))
-    response.set_cookie(
-        key=settings.cookie_name,
-        value=token,
-        httponly=True,  # JavaScript can't read it -> XSS can't steal it
-        samesite="lax",  # not sent on cross-site requests -> CSRF mitigation
-        secure=settings.cookie_secure,  # HTTPS-only on the home server
-        max_age=settings.session_days * 24 * 3600,
-        path="/",
-    )
 
 
 @router.get("/setup", response_model=SetupOut)
@@ -50,7 +36,7 @@ def bootstrap(data: BootstrapIn, response: Response, db: Session = Depends(get_d
     db.add(user)
     db.commit()
     db.refresh(user)
-    _set_session_cookie(response, user)
+    set_session_cookie(response, str(user.id))
     return user
 
 
@@ -61,7 +47,7 @@ def login(data: LoginIn, response: Response, db: Session = Depends(get_db)):
     # attacker can't tell which usernames exist.
     if user is None or not verify_password(data.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
-    _set_session_cookie(response, user)
+    set_session_cookie(response, str(user.id))
     return user
 
 

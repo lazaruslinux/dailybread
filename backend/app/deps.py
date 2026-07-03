@@ -1,14 +1,18 @@
+import datetime as dt
+
 import jwt
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_db
 from app.models import Role, User
-from app.security import decode_token
+from app.security import decode_token, set_session_cookie
 
 
-def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
+def get_current_user(
+    request: Request, response: Response, db: Session = Depends(get_db)
+) -> User:
     """Resolve the logged-in user from the session cookie, or raise 401."""
     token = request.cookies.get(settings.cookie_name)
     if not token:
@@ -21,6 +25,16 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     user = db.get(User, int(payload["sub"]))
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User no longer exists")
+
+    # Sliding session: once the token is more than a day old, re-issue it so
+    # the expiry keeps moving forward. Anyone who opens the app at least once
+    # every session_days stays logged in; only true inactivity logs you out.
+    # (Cookie headers set on this injected Response merge into the real one.)
+    issued = dt.datetime.fromtimestamp(payload["iat"], tz=dt.timezone.utc)
+    age = dt.datetime.now(dt.timezone.utc) - issued
+    if age > dt.timedelta(hours=settings.session_refresh_after_hours):
+        set_session_cookie(response, str(user.id))
+
     return user
 
 

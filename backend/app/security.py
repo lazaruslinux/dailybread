@@ -3,6 +3,7 @@ import datetime as dt
 import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
+from fastapi import Response
 
 from app.config import settings
 
@@ -38,3 +39,17 @@ def create_access_token(subject: str) -> str:
 def decode_token(token: str) -> dict:
     """Verify signature + expiry and return the claims. Raises on bad/expired."""
     return jwt.decode(token, settings.secret_key, algorithms=[_ALGORITHM])
+
+
+def set_session_cookie(response: Response, subject: str) -> None:
+    """Attach a fresh signed-JWT session cookie to the response."""
+    token = create_access_token(subject)
+    response.set_cookie(
+        key=settings.cookie_name,
+        value=token,
+        httponly=True,  # JavaScript can't read it -> XSS can't steal it
+        samesite="lax",  # not sent on cross-site requests -> CSRF mitigation
+        secure=settings.cookie_secure,  # HTTPS-only on the home server
+        max_age=settings.session_days * 24 * 3600,
+        path="/",
+    )
