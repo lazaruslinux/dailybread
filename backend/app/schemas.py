@@ -121,25 +121,52 @@ class FeedOut(BaseModel):
 # ---- grocery list --------------------------------------------------------------
 
 
+class GroceryListIn(BaseModel):
+    """A parent adding a store."""
+
+    name: str = Field(min_length=1, max_length=60)
+
+
+class GroceryListOut(BaseModel):
+    id: int
+    name: str
+
+    model_config = {"from_attributes": True}
+
+
 class GroceryItemIn(BaseModel):
-    """A parent adding a line to the list."""
+    """A parent adding a line. list_id None means the General list."""
 
     title: str = Field(min_length=1, max_length=120)
+    list_id: int | None = None
 
 
 class GroceryItemUpdate(BaseModel):
-    """Editing a line: rename it, or (un)check it. Omitted fields stay put."""
+    """Editing a line: rename, (un)check, or move it to another store.
+
+    Omitted fields stay put; list_id sent as null moves the item to General
+    (told apart from "omitted" via model_fields_set, same as ItemUpdate).
+    """
 
     title: str | None = Field(default=None, min_length=1, max_length=120)
     checked: bool | None = None
+    list_id: int | None = None
 
 
 class GroceryItemOut(BaseModel):
     id: int
     title: str
     checked: bool
+    list_id: int | None
 
     model_config = {"from_attributes": True}
+
+
+class GroceryStateOut(BaseModel):
+    """Everything the Kitchen tab needs in one request."""
+
+    lists: list[GroceryListOut]
+    items: list[GroceryItemOut]
 
 
 # ---- profiles and moods --------------------------------------------------------

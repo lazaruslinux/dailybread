@@ -169,21 +169,45 @@ export interface GroceryItem {
   id: number
   title: string
   checked: boolean
+  list_id: number | null // null = the General list
 }
 
-export const listGrocery = () => request<GroceryItem[]>('/grocery')
+export interface GroceryList {
+  id: number
+  name: string
+}
 
-export const addGrocery = (title: string) =>
-  request<GroceryItem>('/grocery', { method: 'POST', body: JSON.stringify({ title }) })
+export interface GroceryState {
+  lists: GroceryList[]
+  items: GroceryItem[]
+}
 
-export const updateGrocery = (id: number, payload: { title?: string; checked?: boolean }) =>
-  request<GroceryItem>(`/grocery/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+export const getGrocery = () => request<GroceryState>('/grocery')
+
+export const addGroceryStore = (name: string) =>
+  request<GroceryList>('/grocery/lists', { method: 'POST', body: JSON.stringify({ name }) })
+
+export const removeGroceryStore = (id: number) =>
+  request<void>(`/grocery/lists/${id}`, { method: 'DELETE' })
+
+export const addGrocery = (title: string, listId: number | null) =>
+  request<GroceryItem>('/grocery', {
+    method: 'POST',
+    body: JSON.stringify({ title, list_id: listId }),
+  })
+
+export const updateGrocery = (
+  id: number,
+  payload: { title?: string; checked?: boolean; list_id?: number | null },
+) => request<GroceryItem>(`/grocery/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
 
 export const deleteGrocery = (id: number) =>
   request<void>(`/grocery/${id}`, { method: 'DELETE' })
 
-export const clearCheckedGrocery = () =>
-  request<GroceryItem[]>('/grocery/clear-checked', { method: 'POST' })
+export const clearCheckedGrocery = (listId: number | null) =>
+  request<GroceryState>(`/grocery/clear-checked${listId !== null ? `?list_id=${listId}` : ''}`, {
+    method: 'POST',
+  })
 
 // ---- profiles and moods ---------------------------------------------------------
 

@@ -90,6 +90,20 @@ class Completion(Base):
     completed_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class GroceryList(Base):
+    """A named store (Walmart, Safeway, ...) the family shops at.
+
+    Items that belong to no store live on the built-in "General" list, which
+    is just list_id NULL — it needs no row here and can never be deleted.
+    """
+
+    __tablename__ = "grocery_lists"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(60))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class GroceryItem(Base):
     """One line on the family's shared grocery list.
 
@@ -103,6 +117,11 @@ class GroceryItem(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String(120))
     checked: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Which store this belongs to. NULL = the General list. If a store is
+    # removed its items fall back to General instead of disappearing.
+    list_id: Mapped[int | None] = mapped_column(
+        ForeignKey("grocery_lists.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
