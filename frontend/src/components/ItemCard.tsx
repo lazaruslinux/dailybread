@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { Calendar, Check, Circle, Flame, Repeat, type LucideIcon } from 'lucide-react'
+import { Calendar, Check, Circle, Flame, Pencil, Repeat, type LucideIcon } from 'lucide-react'
 import type { FeedItem, ItemKind } from '../lib/api'
 import { formatTime } from '../lib/moods'
 import { useLongPress } from '../lib/useLongPress'
@@ -75,6 +75,21 @@ export function ItemCard({
         {time && <span className="text-xs font-medium text-white/50">{time}</span>}
         {item.assignee && <Avatar name={item.assignee.display_name} size="sm" />}
       </div>
+
+      {onEdit && (
+        // Visible way into the editor for parents; long-press still works as a
+        // shortcut. Pointer events stop here so a tap never toggles the card.
+        <button
+          type="button"
+          aria-label={`Edit ${item.title}`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          onClick={onEdit}
+          className="-my-2 -mr-2 shrink-0 rounded-xl p-2.5 text-white/35 transition-colors hover:bg-white/10 hover:text-white/70 active:bg-white/15"
+        >
+          <Pencil className="h-4 w-4" strokeWidth={2} />
+        </button>
+      )}
     </motion.div>
   )
 }
