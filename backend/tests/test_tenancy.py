@@ -60,7 +60,7 @@ def test_no_family_yet_means_locked_out_of_data(homeless):
     assert homeless.get(f"/items/feed?date={TODAY}").status_code == 403
     assert homeless.get("/grocery").status_code == 403
     assert homeless.get(f"/users?date={TODAY}").status_code == 403
-    assert homeless.post("/items", json={"kind": "todo", "title": "X"}).status_code == 403
+    assert homeless.post("/items", json={"kind": "task", "title": "X"}).status_code == 403
 
 
 def test_create_family_unlocks_and_promotes_to_head(other):
@@ -95,7 +95,7 @@ def test_cross_family_user_management_is_404(owner, other, child):
 
 
 def test_items_are_invisible_across_families(owner, other):
-    created = owner.post("/items", json={"kind": "todo", "title": "A-only secret"})
+    created = owner.post("/items", json={"kind": "task", "title": "A-only secret"})
     item_id = created.json()["id"]
 
     feed = other.get(f"/items/feed?date={TODAY}").json()
@@ -110,7 +110,7 @@ def test_items_are_invisible_across_families(owner, other):
 
 def test_cannot_assign_across_families(owner, other, child):
     kid_id = user_id(child)
-    res = other.post("/items", json={"kind": "todo", "title": "X", "assignee_ids": [kid_id]})
+    res = other.post("/items", json={"kind": "task", "title": "X", "assignee_ids": [kid_id]})
     assert res.status_code == 400
 
 

@@ -32,14 +32,16 @@ function AssigneeChip({
 
 const KIND_LABEL: Record<api.ItemKind, string> = {
   routine: 'Routine',
-  todo: 'Task',
-  event: 'Schedule',
+  task: 'Task',
+  activity: 'Activity',
+  appointment: 'Appointment',
 }
 
 const KIND_HINT: Record<api.ItemKind, string> = {
   routine: 'Repeats every day',
-  todo: 'One-off, date optional',
-  event: 'On a specific day',
+  task: 'One-off, with an optional due date',
+  activity: 'A time block on a set day',
+  appointment: 'A fixed date and time',
 }
 
 // Bottom sheet for parents to add or edit a card. Same pattern as the admin
@@ -101,6 +103,12 @@ export function ItemSheet({
     }
   }
 
+  // Activities and appointments are anchored in time: both fields required.
+  // Routines never take a date; tasks take an optional "due by" date.
+  const needsSchedule = kind === 'activity' || kind === 'appointment'
+  const showDate = kind !== 'routine'
+  const scheduleReady = !needsSchedule || (Boolean(date) && Boolean(time))
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -134,7 +142,7 @@ export function ItemSheet({
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-white/50">
               Type
             </span>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {(Object.keys(KIND_LABEL) as api.ItemKind[]).map((k) => (
                 <button
                   key={k}
@@ -185,15 +193,29 @@ export function ItemSheet({
             </p>
           </div>
 
-          <div className={`grid gap-3 ${kind === 'routine' ? '' : 'grid-cols-2'}`}>
-            <Field label="Time (optional)" type="time" value={time} onChange={(e) => setTime(e.target.value)} onClear={() => setTime('')} />
-            {kind !== 'routine' && (
-              <Field label="Date (optional)" type="date" value={date} onChange={(e) => setDate(e.target.value)} onClear={() => setDate('')} />
+          <div className={`grid gap-3 ${showDate ? 'grid-cols-2' : ''}`}>
+            <Field
+              label={needsSchedule ? 'Time' : 'Time (optional)'}
+              type="time"
+              value={time}
+              onChange={(e) => setTime(e.target.value)}
+              onClear={() => setTime('')}
+              required={needsSchedule}
+            />
+            {showDate && (
+              <Field
+                label={needsSchedule ? 'Date' : 'Due by (optional)'}
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                onClear={() => setDate('')}
+                required={needsSchedule}
+              />
             )}
           </div>
 
           <FormError message={error} />
-          <Button type="submit" disabled={busy || !title.trim()} className="mt-1">
+          <Button type="submit" disabled={busy || !title.trim() || !scheduleReady} className="mt-1">
             {busy ? 'Saving' : creating ? 'Add card' : 'Save changes'}
           </Button>
           {!creating && (

@@ -32,6 +32,18 @@ def _get_item(db: Session, item_id: int, family_id: int) -> Item:
     return item
 
 
+def _check_schedule(kind: ItemKind, date_for: dt.date | None, time_of_day: dt.time | None) -> None:
+    """Enforce each kind's date/time rules: routines never carry a date, while
+    activities and appointments always need both a date and a time. Tasks are
+    free-form (an optional 'due by' date), so they get no constraint."""
+    if kind == ItemKind.routine and date_for is not None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Routines repeat daily; no date")
+    if kind in (ItemKind.activity, ItemKind.appointment) and (date_for is None or time_of_day is None):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Activities and appointments need a date and time"
+        )
+
+
 def _resolve_assignees(db: Session, ids: list[int], family_id: int) -> list[User]:
     """Validate that every id is a member of this family and return the User
     rows. Duplicates are collapsed; an empty list means the whole family."""
@@ -158,8 +170,7 @@ def create_item(
 ):
     """Parents put cards on their family's board."""
     assignees = _resolve_assignees(db, data.assignee_ids, parent.family_id)
-    if data.kind == ItemKind.routine and data.date_for is not None:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Routines repeat daily; no date")
+    _check_schedule(data.kind, data.date_for, data.time_of_day)
 
     item = Item(
         family_id=parent.family_id,
@@ -195,9 +206,11 @@ def update_item(
     if "time_of_day" in fields:
         item.time_of_day = data.time_of_day
     if "date_for" in fields:
-        if item.kind == ItemKind.routine and data.date_for is not None:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Routines repeat daily; no date")
         item.date_for = data.date_for
+
+    # Validate the card's final shape, so an edit can't strand an activity or
+    # appointment without its date/time or hang a date on a routine.
+    _check_schedule(item.kind, item.date_for, item.time_of_day)
 
     db.commit()
     db.refresh(item)

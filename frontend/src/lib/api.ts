@@ -140,7 +140,7 @@ export function localDate(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-export type ItemKind = 'routine' | 'todo' | 'event'
+export type ItemKind = 'routine' | 'task' | 'activity' | 'appointment'
 
 export interface FeedItem {
   id: number

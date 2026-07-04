@@ -1,13 +1,14 @@
 import { motion } from 'framer-motion'
-import { Calendar, Check, Circle, Flame, Pencil, Repeat, type LucideIcon } from 'lucide-react'
+import { Activity, CalendarClock, Check, Circle, Flame, Pencil, Repeat, type LucideIcon } from 'lucide-react'
 import type { FeedItem, ItemKind } from '../lib/api'
 import { formatTime } from '../lib/moods'
 import { Avatar } from './Avatar'
 
 export const KIND_STYLE: Record<ItemKind, { Icon: LucideIcon; tint: string; label: string }> = {
   routine: { Icon: Repeat, tint: 'text-sky-300', label: 'Routine' },
-  todo: { Icon: Circle, tint: 'text-amber-300', label: 'Task' },
-  event: { Icon: Calendar, tint: 'text-violet-300', label: 'Schedule' },
+  task: { Icon: Circle, tint: 'text-amber-300', label: 'Task' },
+  activity: { Icon: Activity, tint: 'text-emerald-300', label: 'Activity' },
+  appointment: { Icon: CalendarClock, tint: 'text-violet-300', label: 'Appointment' },
 }
 
 // One card on the board. The circle on the left is the only thing that

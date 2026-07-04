@@ -8,7 +8,7 @@ TODAY = dt.date.today().isoformat()
 
 
 def make_item(client, **overrides):
-    payload = {"kind": "todo", "title": "Test card", **overrides}
+    payload = {"kind": "task", "title": "Test card", **overrides}
     res = client.post("/items", json=payload)
     assert res.status_code == 201, res.text
     return res.json()
@@ -16,14 +16,14 @@ def make_item(client, **overrides):
 
 def test_child_cannot_create_edit_or_delete(owner, child):
     item = make_item(owner)
-    assert child.post("/items", json={"kind": "todo", "title": "Nope"}).status_code == 403
+    assert child.post("/items", json={"kind": "task", "title": "Nope"}).status_code == 403
     assert child.patch(f"/items/{item['id']}", json={"title": "Nope"}).status_code == 403
     assert child.delete(f"/items/{item['id']}").status_code == 403
 
 
 def test_anon_gets_401_everywhere(anon):
     assert anon.get(f"/items/feed?date={TODAY}").status_code == 401
-    assert anon.post("/items", json={"kind": "todo", "title": "X"}).status_code == 401
+    assert anon.post("/items", json={"kind": "task", "title": "X"}).status_code == 401
 
 
 def test_routines_cannot_carry_a_date(owner):
@@ -114,7 +114,33 @@ def test_undated_todo_completed_yesterday_is_archived(owner):
 
 def test_upcoming_has_no_horizon(owner):
     far = (dt.date.today() + dt.timedelta(days=45)).isoformat()
-    item = make_item(owner, kind="event", title="Vacation", date_for=far)
+    item = make_item(owner, kind="appointment", title="Vacation", date_for=far, time_of_day="09:00")
 
     feed = owner.get(f"/items/feed?date={TODAY}").json()
     assert any(i["id"] == item["id"] for i in feed["upcoming"])
+
+
+def test_activity_and_appointment_need_a_date_and_time(owner):
+    # Missing both, or missing the time, is rejected.
+    assert owner.post("/items", json={"kind": "activity", "title": "Gym"}).status_code == 400
+    assert (
+        owner.post(
+            "/items", json={"kind": "appointment", "title": "Dentist", "date_for": TODAY}
+        ).status_code
+        == 400
+    )
+    ok = owner.post(
+        "/items",
+        json={"kind": "activity", "title": "Gym", "date_for": TODAY, "time_of_day": "17:00"},
+    )
+    assert ok.status_code == 201, ok.text
+
+
+def test_editing_cannot_strand_an_appointment(owner):
+    card = make_item(
+        owner, kind="appointment", title="Dentist", date_for=TODAY, time_of_day="09:00"
+    )
+    # Clearing the date on an appointment leaves it invalid, so it's refused.
+    assert owner.patch(f"/items/{card['id']}", json={"date_for": None}).status_code == 400
+    # Renaming it (leaving date/time intact) is fine.
+    assert owner.patch(f"/items/{card['id']}", json={"title": "Dentist checkup"}).status_code == 200

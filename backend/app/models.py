@@ -69,11 +69,12 @@ class User(Base):
 
 
 class ItemKind(str, enum.Enum):
-    """The three kinds of cards on the board."""
+    """The four kinds of cards on the board."""
 
-    routine = "routine"  # repeats every day (brush teeth, morning walk)
-    todo = "todo"  # one-off, optionally dated (call the dentist)
-    event = "event"  # scheduled block on a specific day (team standup)
+    routine = "routine"  # repeats every day, no date (brush teeth, morning walk)
+    task = "task"  # one-off; an optional "due by" date/time (call the dentist)
+    activity = "activity"  # a time block you spend on a day (gym, study) — date+time
+    appointment = "appointment"  # a fixed commitment (dentist, meeting) — date+time
 
 
 # A card can be for several members at once. An EMPTY assignee list means the

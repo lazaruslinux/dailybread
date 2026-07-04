@@ -114,7 +114,9 @@ export function ItemDetail({
           )}
           {item.date_for && (
             <div className="flex items-center gap-2">
-              <span className="w-12 text-xs font-semibold uppercase tracking-wide text-white/40">Date</span>
+              <span className="w-12 text-xs font-semibold uppercase tracking-wide text-white/40">
+                {item.kind === 'task' ? 'Due' : 'Date'}
+              </span>
               {formatDate(item.date_for)}
             </div>
           )}
