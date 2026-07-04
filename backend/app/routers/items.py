@@ -82,9 +82,12 @@ def feed(
     db: Session = Depends(get_db),
     user: User = Depends(require_family),
 ):
-    """The whole home screen in one request: today, anytime, upcoming."""
+    """The whole home screen in one request: today, anytime, upcoming.
+
+    Upcoming has no horizon: a card scheduled weeks out stays visible on the
+    board rather than silently waiting inside a seven-day window.
+    """
     _check_date(date_for)
-    horizon = date_for + dt.timedelta(days=7)
 
     items = (
         db.scalars(
@@ -92,7 +95,7 @@ def feed(
             .options(selectinload(Item.assignee))
             .where(
                 Item.family_id == user.family_id,
-                (Item.date_for.is_(None)) | (Item.date_for.between(date_for, horizon)),
+                (Item.date_for.is_(None)) | (Item.date_for >= date_for),
             )
         )
         .unique()
@@ -103,11 +106,13 @@ def feed(
     done_today = set(
         db.scalars(select(Completion.item_id).where(Completion.date_for == date_for))
     )
-    # Undated todos are "done" once they have a completion on ANY day.
-    done_ever = set(
+    # An undated todo finished on some EARLIER day is archived off the board;
+    # finished today it stays put, crossed out, until the day rolls over.
+    done_before = set(
         db.scalars(
             select(Completion.item_id).where(
-                Completion.item_id.in_([i.id for i in items if i.date_for is None])
+                Completion.item_id.in_([i.id for i in items if i.date_for is None]),
+                Completion.date_for != date_for,
             )
         )
     )
@@ -123,16 +128,15 @@ def feed(
         elif item.date_for == date_for:
             today.append(_feed_item(item, item.id in done_today, None))
         elif item.date_for is None:
-            # Undated todo: show until checked, then drop off the board.
-            if item.id not in done_ever:
-                anytime.append(_feed_item(item, False, None))
+            if item.id not in done_before:
+                anytime.append(_feed_item(item, item.id in done_today, None))
         elif item.date_for > date_for:
             upcoming.append(_feed_item(item, False, None))
 
     # Timed cards in day order; untimed ones sink to the end of the day.
     late = dt.time(23, 59)
     today.sort(key=lambda i: (i.time_of_day or late, i.title.lower()))
-    anytime.sort(key=lambda i: i.title.lower())
+    anytime.sort(key=lambda i: (i.completed, i.title.lower()))  # done sink to the bottom
     upcoming.sort(key=lambda i: (i.date_for, i.time_of_day or late, i.title.lower()))
 
     return FeedOut(date=date_for, today=today, anytime=anytime, upcoming=upcoming)

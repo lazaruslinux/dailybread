@@ -59,11 +59,31 @@ def test_feed_rejects_faraway_dates(owner):
     assert owner.get(f"/items/feed?date={far}").status_code == 400
 
 
-def test_completed_undated_todo_leaves_the_board(owner):
+def test_checked_undated_todo_stays_crossed_out_for_the_day(owner):
     item = make_item(owner)  # undated todo -> "anytime" bucket
     feed = owner.get(f"/items/feed?date={TODAY}").json()
     assert any(i["id"] == item["id"] for i in feed["anytime"])
 
+    # Checked today: stays on the board, flagged completed, sorted last.
     owner.post(f"/items/{item['id']}/complete?date={TODAY}")
     feed = owner.get(f"/items/feed?date={TODAY}").json()
+    mine = [i for i in feed["anytime"] if i["id"] == item["id"]]
+    assert mine and mine[0]["completed"] is True
+    assert feed["anytime"][-1]["id"] == item["id"]
+
+
+def test_undated_todo_completed_yesterday_is_archived(owner):
+    item = make_item(owner)
+    yesterday = (dt.date.today() - dt.timedelta(days=1)).isoformat()
+    owner.post(f"/items/{item['id']}/complete?date={yesterday}")
+
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
     assert not any(i["id"] == item["id"] for i in feed["anytime"])
+
+
+def test_upcoming_has_no_horizon(owner):
+    far = (dt.date.today() + dt.timedelta(days=45)).isoformat()
+    item = make_item(owner, kind="event", title="Vacation", date_for=far)
+
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    assert any(i["id"] == item["id"] for i in feed["upcoming"])
