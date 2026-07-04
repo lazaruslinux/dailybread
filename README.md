@@ -70,3 +70,10 @@ review it, and decide what ships.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+One carve-out: the daily verse text in `frontend/src/lib/verses.ts` is quoted
+from the New King James Version and is not covered by the MIT license.
+Scripture taken from the New King James Version&reg;. Copyright &copy; 1982 by
+Thomas Nelson. Used by permission. All rights reserved. Quoted under the
+publisher's gratis use policy (fewer than 500 verses, comprising a small
+fraction of this work).

@@ -12,10 +12,14 @@ Where dailybread is headed, in order. Done items stay for history.
   divider; assignees; a checkbox completes a card (optimistic, with an undo
   toast) and tapping the card body opens a detail sheet with the full info
   plus edit/delete for parents.
-- **Daily verse** — a verse of the day at the top of the board, rotating
-  through a bundled public-domain (KJV) set keyed to the calendar day, so it
-  needs no network and phones home to no one; tapping it opens the passage
-  on Bible.com.
+- **Daily verse** — a verse of the day at the bottom of the board, rotating
+  through a bundled NKJV set (quoted under the publisher's gratis use
+  policy) keyed to the calendar day, weighted toward the New Testament and
+  the words of Jesus, so it needs no network and phones home to no one;
+  tapping it opens the passage on Bible.com.
+- **Done stays visible** — checked cards stay on the board, crossed out,
+  until the day rolls over; scheduled cards show on the board no matter how
+  far out they are.
 - **Moods** — five-level daily mood rendered as weather, per-day, with a
   "keep it to myself" option that is indistinguishable from no mood at all.
 - **Profiles** — bio, mood picker, and each member's slice of the board.
@@ -42,16 +46,19 @@ Where dailybread is headed, in order. Done items stay for history.
    Activity / Appointment), "Up next" / "Later" sections, member colors with
    a mine/family filter, multi-assignee cards with per-person routine
    check-off, and a do-not-disturb dot.
-2. **Family-creation wizard (frontend)** — the UI for "new household"
+2. **Calendar + day history** — an Outlook-style calendar view of scheduled
+   cards, and every past day saved and revisitable, with the day rolling
+   over at midnight in the household's timezone.
+3. **Family-creation wizard (frontend)** — the UI for "new household"
    accounts to create their family on first login (the backend is done).
-3. **Themes** — selectable color schemes built on CSS variables.
-4. **Nutrition (Food tab)** — manual food log, then daily macro summary,
+4. **Themes** — selectable color schemes built on CSS variables.
+5. **Nutrition (Food tab)** — manual food log, then daily macro summary,
    then a barcode scanner (BarcodeDetector API with a WASM fallback) backed by
    Open Food Facts / USDA FoodData Central, importable into local Postgres so
    lookups never have to leave the server.
-5. **Meals (Kitchen tab)** — tonight's dinner card and a week strip.
-6. **Family chat** — messaging, then topic channels, then photo attachments.
-7. **Fitness sync** — workouts flowing into the app and auto-completing
+6. **Meals (Kitchen tab)** — tonight's dinner card and a week strip.
+7. **Family chat** — messaging, then topic channels, then photo attachments.
+8. **Fitness sync** — workouts flowing into the app and auto-completing
    matching board routines. Strava first (watch → Strava → server polling);
    direct Apple Health export as a self-hosted alternative path.
 

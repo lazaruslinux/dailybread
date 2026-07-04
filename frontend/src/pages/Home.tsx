@@ -152,7 +152,6 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
 
   return (
     <div>
-      <VerseCard />
       <FamilyStrip members={family} onOpen={onOpenProfile} />
       <FormError message={error} />
 
@@ -201,6 +200,8 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
           </div>
         </>
       )}
+
+      <VerseCard />
 
       {isParent && (
         <motion.button

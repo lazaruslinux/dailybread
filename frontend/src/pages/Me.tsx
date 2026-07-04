@@ -28,6 +28,13 @@ export function Me({ onOpenAdmin }: { onOpenAdmin: () => void }) {
           <LogOut className="h-4 w-4 text-rose-300" /> Sign out
         </button>
       </div>
+
+      {/* Thomas Nelson's gratis quotation policy requires this notice in any
+          work that quotes the NKJV (the daily verse card). */}
+      <p className="px-3 pt-1 text-center text-[10px] leading-relaxed text-white/30">
+        Scripture taken from the New King James Version&reg;. Copyright &copy; 1982 by Thomas
+        Nelson. Used by permission. All rights reserved.
+      </p>
     </div>
   )
 }
