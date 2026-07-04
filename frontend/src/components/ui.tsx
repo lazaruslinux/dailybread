@@ -93,10 +93,24 @@ export function AuthShell({ children }: { children: ReactNode }) {
   )
 }
 
-// Wordmark shown on the auth screens.
+// Wordmark shown on the auth screens: the bread loaf app icon above the
+// name. The SVG is inlined from public/favicon.svg so it renders before any
+// asset loads and always matches the installed icon.
 export function Brand({ subtitle }: { subtitle: string }) {
   return (
     <div className="mb-7 text-center">
+      <svg viewBox="0 0 512 512" aria-hidden="true" className="mx-auto mb-3 h-12 w-12">
+        <rect width="512" height="512" rx="116" fill="#0b1220" />
+        <path
+          d="M256 168c92 0 156 52 156 116 0 32-24 52-60 52H160c-36 0-60-20-60-52 0-64 64-116 156-116z"
+          fill="#e2a75e"
+        />
+        <g stroke="#0b1220" strokeWidth="16" strokeLinecap="round">
+          <line x1="196" y1="208" x2="174" y2="254" />
+          <line x1="268" y1="196" x2="246" y2="242" />
+          <line x1="338" y1="210" x2="316" y2="256" />
+        </g>
+      </svg>
       <h1 className="text-3xl font-bold tracking-tight">
         daily<span className="bg-gradient-to-r from-indigo-300 to-violet-300 bg-clip-text text-transparent">bread</span>
       </h1>
