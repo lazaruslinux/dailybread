@@ -35,17 +35,48 @@ def test_routines_cannot_carry_a_date(owner):
 
 def test_child_checks_own_and_family_cards(owner, child):
     kid_id = user_id(child)
-    own = make_item(owner, assignee_id=kid_id)
-    family = make_item(owner)  # no assignee = whole family
+    own = make_item(owner, assignee_ids=[kid_id])
+    family = make_item(owner)  # no assignees = whole family
 
     assert child.post(f"/items/{own['id']}/complete?date={TODAY}").status_code == 200
     assert child.post(f"/items/{family['id']}/complete?date={TODAY}").status_code == 200
 
 
 def test_child_cannot_check_someone_elses_card(owner, child):
-    owners_card = make_item(owner, assignee_id=user_id(owner))
+    owners_card = make_item(owner, assignee_ids=[user_id(owner)])
     res = child.post(f"/items/{owners_card['id']}/complete?date={TODAY}")
     assert res.status_code == 403
+
+
+def test_card_can_have_several_assignees(owner, child):
+    kid_id = user_id(child)
+    dad_id = user_id(owner)
+    card = make_item(owner, assignee_ids=[dad_id, kid_id])
+
+    # The feed echoes back both assignees.
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    mine = next(i for i in feed["anytime"] if i["id"] == card["id"])
+    assert {a["id"] for a in mine["assignees"]} == {dad_id, kid_id}
+
+    # A child listed among several assignees may still check the card off.
+    assert child.post(f"/items/{card['id']}/complete?date={TODAY}").status_code == 200
+
+
+def test_editing_assignees_replaces_the_whole_set(owner, child):
+    kid_id = user_id(child)
+    card = make_item(owner, assignee_ids=[user_id(owner)])
+    owner.patch(f"/items/{card['id']}", json={"assignee_ids": [kid_id]})
+
+    # Now it's the child's, not the owner's: the owner is no longer an assignee.
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    mine = next(i for i in feed["anytime"] if i["id"] == card["id"])
+    assert [a["id"] for a in mine["assignees"]] == [kid_id]
+
+    # Clearing to [] makes it a whole-family card again.
+    owner.patch(f"/items/{card['id']}", json={"assignee_ids": []})
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    mine = next(i for i in feed["anytime"] if i["id"] == card["id"])
+    assert mine["assignees"] == []
 
 
 def test_uncomplete_reverses_a_checkoff(owner):

@@ -4,18 +4,26 @@ import * as api from '../lib/api'
 // One place owns "who is logged in". Everything else reads it via useAuth().
 //
 // screen decides what the app shows:
-//   'loading' -> splash while we ask the backend who we are
-//   'setup'   -> brand-new install, show the create-admin wizard
-//   'login'   -> no session, show the sign-in form
-//   'app'     -> signed in, show the real app
+//   'loading'       -> splash while we ask the backend who we are
+//   'setup'         -> brand-new install, show the create-admin wizard
+//   'login'         -> no session, show the sign-in form
+//   'create-family' -> signed in but no family yet (a fresh new-household
+//                      account): show the create-your-family wizard
+//   'app'           -> signed in and in a family, show the real app
 
-type Screen = 'loading' | 'setup' | 'login' | 'app'
+type Screen = 'loading' | 'setup' | 'login' | 'create-family' | 'app'
+
+// A signed-in user lands on the app if they have a family, or on the
+// create-family wizard if they are a fresh new-household account.
+const screenForUser = (user: api.User): Screen =>
+  user.family_id === null ? 'create-family' : 'app'
 
 interface AuthState {
   screen: Screen
   user: api.User | null
   login: (username: string, password: string) => Promise<void>
   bootstrap: (username: string, displayName: string, password: string) => Promise<void>
+  createFamily: (name: string) => Promise<void>
   logout: () => Promise<void>
 }
 
@@ -35,7 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const me = await api.getMe()
         if (!active) return
         setUser(me)
-        setScreen('app')
+        setScreen(screenForUser(me))
       } catch {
         try {
           const { initialized } = await api.getSetup()
@@ -56,17 +64,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (username: string, password: string) => {
     const me = await api.login(username, password)
     setUser(me)
-    setScreen('app')
+    setScreen(screenForUser(me))
   }, [])
 
   const bootstrap = useCallback(
     async (username: string, displayName: string, password: string) => {
       const me = await api.bootstrap(username, displayName, password)
       setUser(me)
-      setScreen('app')
+      setScreen(screenForUser(me))
     },
     [],
   )
+
+  // A fresh new-household account names its family; the backend promotes them
+  // to parent + admin of it. Re-fetch so we pick up the new family_id/role.
+  const createFamily = useCallback(async (name: string) => {
+    await api.createFamily(name)
+    const me = await api.getMe()
+    setUser(me)
+    setScreen(screenForUser(me))
+  }, [])
 
   const logout = useCallback(async () => {
     try {
@@ -79,7 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ screen, user, login, bootstrap, logout }}>
+    <AuthContext.Provider value={{ screen, user, login, bootstrap, createFamily, logout }}>
       {children}
     </AuthContext.Provider>
   )

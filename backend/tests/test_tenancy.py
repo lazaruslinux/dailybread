@@ -43,6 +43,18 @@ def test_new_household_must_be_a_parent(owner):
     assert res.status_code == 400
 
 
+def test_only_the_owner_can_invite_a_household(other):
+    # `other` heads Family B: a parent AND a family admin, but not the server
+    # admin. Inviting a whole new household is a server-admin-only power.
+    res = other.post("/auth/users", json={**BKID, "role": "parent", "new_household": True})
+    assert res.status_code == 403
+
+
+def test_owner_flag_marks_only_the_server_admin(owner, other):
+    assert owner.get("/auth/me").json()["is_owner"] is True
+    assert other.get("/auth/me").json()["is_owner"] is False
+
+
 def test_no_family_yet_means_locked_out_of_data(homeless):
     assert homeless.get("/auth/me").status_code == 200  # can see who they are
     assert homeless.get(f"/items/feed?date={TODAY}").status_code == 403
@@ -98,7 +110,7 @@ def test_items_are_invisible_across_families(owner, other):
 
 def test_cannot_assign_across_families(owner, other, child):
     kid_id = user_id(child)
-    res = other.post("/items", json={"kind": "todo", "title": "X", "assignee_id": kid_id})
+    res = other.post("/items", json={"kind": "todo", "title": "X", "assignee_ids": [kid_id]})
     assert res.status_code == 400
 
 

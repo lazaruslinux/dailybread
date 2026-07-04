@@ -36,8 +36,8 @@ export default defineConfig({
     proxy: {
       // In dev the frontend calls /api/* and Vite forwards it to the FastAPI
       // backend, stripping the /api prefix. This keeps the browser same-origin
-      // (no CORS) and mirrors how the LAN-only Caddy proxy will route /api on
-      // the home server. Nothing here is public-facing.
+      // (no CORS) and mirrors how a production reverse proxy routes /api to the
+      // backend. Nothing here is public-facing.
       '/api': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,

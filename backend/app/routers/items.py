@@ -32,12 +32,20 @@ def _get_item(db: Session, item_id: int, family_id: int) -> Item:
     return item
 
 
-def _check_assignee(db: Session, assignee_id: int | None, family_id: int) -> None:
-    if assignee_id is None:
-        return
-    assignee = db.get(User, assignee_id)
-    if assignee is None or assignee.family_id != family_id:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Assignee does not exist")
+def _resolve_assignees(db: Session, ids: list[int], family_id: int) -> list[User]:
+    """Validate that every id is a member of this family and return the User
+    rows. Duplicates are collapsed; an empty list means the whole family."""
+    users: list[User] = []
+    seen: set[int] = set()
+    for uid in ids:
+        if uid in seen:
+            continue
+        seen.add(uid)
+        member = db.get(User, uid)
+        if member is None or member.family_id != family_id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Assignee does not exist")
+        users.append(member)
+    return users
 
 
 def _streak(db: Session, item: Item, date_for: dt.date) -> int:
@@ -68,7 +76,7 @@ def _feed_item(item: Item, completed: bool, streak: int | None) -> FeedItemOut:
         kind=item.kind,
         title=item.title,
         notes=item.notes,
-        assignee=item.assignee,
+        assignees=item.assignees,
         time_of_day=item.time_of_day,
         date_for=item.date_for,
         completed=completed,
@@ -92,7 +100,7 @@ def feed(
     items = (
         db.scalars(
             select(Item)
-            .options(selectinload(Item.assignee))
+            .options(selectinload(Item.assignees))
             .where(
                 Item.family_id == user.family_id,
                 (Item.date_for.is_(None)) | (Item.date_for >= date_for),
@@ -149,7 +157,7 @@ def create_item(
     parent: User = Depends(require_parent),
 ):
     """Parents put cards on their family's board."""
-    _check_assignee(db, data.assignee_id, parent.family_id)
+    assignees = _resolve_assignees(db, data.assignee_ids, parent.family_id)
     if data.kind == ItemKind.routine and data.date_for is not None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Routines repeat daily; no date")
 
@@ -158,7 +166,7 @@ def create_item(
         kind=data.kind,
         title=data.title,
         notes=data.notes,
-        assignee_id=data.assignee_id,
+        assignees=assignees,
         time_of_day=data.time_of_day,
         date_for=data.date_for,
     )
@@ -178,9 +186,8 @@ def update_item(
     item = _get_item(db, item_id, parent.family_id)
     fields = data.model_fields_set  # only touch keys the client actually sent
 
-    if "assignee_id" in fields:
-        _check_assignee(db, data.assignee_id, parent.family_id)
-        item.assignee_id = data.assignee_id
+    if "assignee_ids" in fields:
+        item.assignees = _resolve_assignees(db, data.assignee_ids or [], parent.family_id)
     if "title" in fields and data.title is not None:
         item.title = data.title
     if "notes" in fields and data.notes is not None:
@@ -218,7 +225,7 @@ def _can_check(item: Item, user: User) -> bool:
     """Parents can check anything. Children only their own or family cards."""
     if user.role == Role.parent:
         return True
-    return item.assignee_id is None or item.assignee_id == user.id
+    return not item.assignees or any(a.id == user.id for a in item.assignees)
 
 
 @router.post("/{item_id}/complete", response_model=FeedItemOut)

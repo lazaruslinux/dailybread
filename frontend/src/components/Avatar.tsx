@@ -15,10 +15,13 @@ export function Avatar({
   name,
   mood = null,
   size = 'md',
+  className = '',
 }: {
   name: string
   mood?: Mood | null
   size?: keyof typeof SIZES
+  // Extra classes on the initials circle, e.g. a ring when avatars overlap.
+  className?: string
 }) {
   const s = SIZES[size]
   const meta = mood ? MOODS[mood.level] : null
@@ -26,7 +29,7 @@ export function Avatar({
   return (
     <div className="relative inline-block shrink-0">
       <div
-        className={`flex items-center justify-center rounded-full bg-gradient-to-br from-indigo-400/60 to-violet-500/60 font-bold ${s.circle}`}
+        className={`flex items-center justify-center rounded-full bg-gradient-to-br from-indigo-400/60 to-violet-500/60 font-bold ${s.circle} ${className}`}
       >
         {initialsOf(name)}
       </div>

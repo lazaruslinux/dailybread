@@ -101,7 +101,20 @@ export function ItemCard({
 
       <div className="flex shrink-0 flex-col items-end gap-1.5">
         {time && <span className="text-xs font-medium text-white/50">{time}</span>}
-        {item.assignee && <Avatar name={item.assignee.display_name} size="sm" />}
+        {item.assignees.length > 0 && (
+          // Overlapping cluster; the ring separates faces. Cap at three, then
+          // a +N so a card for the whole family never overflows the row.
+          <div className="flex -space-x-2">
+            {item.assignees.slice(0, 3).map((a) => (
+              <Avatar key={a.id} name={a.display_name} size="sm" className="ring-2 ring-black/40" />
+            ))}
+            {item.assignees.length > 3 && (
+              <span className="z-10 flex h-7 w-7 items-center justify-center rounded-full bg-white/15 text-[10px] font-bold ring-2 ring-black/40">
+                +{item.assignees.length - 3}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {onEdit && (

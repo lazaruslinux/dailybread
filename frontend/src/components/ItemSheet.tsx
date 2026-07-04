@@ -59,7 +59,9 @@ export function ItemSheet({
   const [kind, setKind] = useState<api.ItemKind>(item?.kind ?? 'routine')
   const [title, setTitle] = useState(item?.title ?? '')
   const [notes, setNotes] = useState(item?.notes ?? '')
-  const [assignee, setAssignee] = useState<number | ''>(item?.assignee?.id ?? '')
+  // Which members this card is for. Empty means the whole family, so there's
+  // no separate "Everyone" chip: clearing everyone IS everyone.
+  const [assignees, setAssignees] = useState<number[]>(item?.assignees?.map((a) => a.id) ?? [])
   const [time, setTime] = useState(item?.time_of_day?.slice(0, 5) ?? '')
   const [date, setDate] = useState(item?.date_for ?? '')
   const [error, setError] = useState<string | null>(null)
@@ -73,7 +75,7 @@ export function ItemSheet({
       kind,
       title,
       notes,
-      assignee_id: assignee === '' ? null : assignee,
+      assignee_ids: assignees,
       time_of_day: time || null,
       date_for: kind === 'routine' ? null : date || null,
     }
@@ -161,22 +163,26 @@ export function ItemSheet({
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-white/50">
               For
             </span>
-            {/* One pick for now: tap a member to assign, tap them again to go
-                back to Everyone. Multi-assign lands with the Board v2 backend. */}
+            {/* Tap members to add them; tap again to remove. Pick as many as you
+                like. Selecting no one means the card is for the whole family. */}
             <div className="flex flex-wrap gap-2">
-              <AssigneeChip selected={assignee === ''} onClick={() => setAssignee('')}>
-                Everyone
-              </AssigneeChip>
               {family.map((m) => (
                 <AssigneeChip
                   key={m.id}
-                  selected={assignee === m.id}
-                  onClick={() => setAssignee(assignee === m.id ? '' : m.id)}
+                  selected={assignees.includes(m.id)}
+                  onClick={() =>
+                    setAssignees((prev) =>
+                      prev.includes(m.id) ? prev.filter((id) => id !== m.id) : [...prev, m.id],
+                    )
+                  }
                 >
                   <Avatar name={m.display_name} size="sm" /> {m.display_name}
                 </AssigneeChip>
               ))}
             </div>
+            <p className="mt-1.5 text-xs text-white/40">
+              {assignees.length === 0 ? 'For the whole family' : 'Tap a name again to remove them'}
+            </p>
           </div>
 
           <div className={`grid gap-3 ${kind === 'routine' ? '' : 'grid-cols-2'}`}>

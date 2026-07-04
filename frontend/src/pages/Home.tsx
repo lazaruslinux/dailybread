@@ -29,6 +29,32 @@ function SectionLabel({ children }: { children: string }) {
   )
 }
 
+// One toggle in the parent's "show cards for" filter row.
+function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+        active
+          ? 'border-indigo-400/60 bg-indigo-400/20 text-white'
+          : 'border-white/10 bg-white/5 text-white/55 hover:bg-white/10'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
 function upcomingLabel(dateStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number)
   return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })
@@ -49,6 +75,9 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
   const toastTimer = useRef<number | undefined>(undefined)
   // Re-rendering once a minute keeps the Now line honest without any polling.
   const [clock, setClock] = useState(() => new Date())
+  // Parent-only board lens: which members' cards to show. Empty means show
+  // everyone's. Whole-family cards always show, since they're everyone's.
+  const [filter, setFilter] = useState<number[]>([])
 
   const refresh = useCallback(async () => {
     try {
@@ -132,7 +161,7 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
   function canCheck(item: api.FeedItem): boolean {
     if (!user) return false
     if (user.role === 'parent') return true
-    return item.assignee === null || item.assignee.id === user.id
+    return item.assignees.length === 0 || item.assignees.some((a) => a.id === user.id)
   }
 
   const openEditor = (item: api.FeedItem | null) => {
@@ -148,22 +177,54 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
     onEdit: isParent ? () => openEditor(item) : undefined,
   })
 
-  const divider = feed ? nowIndex(feed.today, clock) : -1
+  const toggleFilter = (id: number) =>
+    setFilter((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+
+  // A whole-family card belongs to everyone, so it shows under any member
+  // filter; otherwise the card must be for at least one selected member.
+  const matchesFilter = (item: api.FeedItem) =>
+    filter.length === 0 ||
+    item.assignees.length === 0 ||
+    item.assignees.some((a) => filter.includes(a.id))
+
+  const today = feed ? feed.today.filter(matchesFilter) : []
+  const anytime = feed ? feed.anytime.filter(matchesFilter) : []
+  const upcoming = feed ? feed.upcoming.filter(matchesFilter) : []
+  const divider = nowIndex(today, clock)
 
   return (
     <div>
       <FamilyStrip members={family} onOpen={onOpenProfile} />
+
+      {isParent && family.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-1.5">
+          <span className="mr-0.5 text-[11px] font-semibold uppercase tracking-wide text-white/35">
+            Show
+          </span>
+          <FilterChip active={filter.length === 0} onClick={() => setFilter([])}>
+            All
+          </FilterChip>
+          {family.map((m) => (
+            <FilterChip key={m.id} active={filter.includes(m.id)} onClick={() => toggleFilter(m.id)}>
+              {m.id === user?.id ? 'Me' : m.display_name.split(/\s+/)[0]}
+            </FilterChip>
+          ))}
+        </div>
+      )}
+
       <FormError message={error} />
 
-      {feed && feed.today.length === 0 && feed.anytime.length === 0 && (
+      {feed && today.length === 0 && anytime.length === 0 && (
         <p className="glass p-6 text-center text-sm text-white/50">
-          Nothing on the board today. Enjoy it.
+          {filter.length > 0
+            ? 'No cards for the people you picked.'
+            : 'Nothing on the board today. Enjoy it.'}
         </p>
       )}
 
       <div className="flex flex-col gap-3">
         <AnimatePresence>
-          {feed?.today.map((item, i) => (
+          {today.map((item, i) => (
             <Fragment key={item.id}>
               <ItemCard index={i} {...cardProps(item, canCheck(item))} />
               {i === divider && <NowDivider />}
@@ -172,12 +233,12 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
         </AnimatePresence>
       </div>
 
-      {feed && feed.anytime.length > 0 && (
+      {anytime.length > 0 && (
         <>
           <SectionLabel>Anytime</SectionLabel>
           <div className="flex flex-col gap-3">
             <AnimatePresence>
-              {feed.anytime.map((item, i) => (
+              {anytime.map((item, i) => (
                 <ItemCard key={item.id} index={i} {...cardProps(item, canCheck(item))} />
               ))}
             </AnimatePresence>
@@ -185,11 +246,11 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
         </>
       )}
 
-      {feed && feed.upcoming.length > 0 && (
+      {upcoming.length > 0 && (
         <>
           <SectionLabel>Coming up</SectionLabel>
           <div className="flex flex-col gap-3">
-            {feed.upcoming.map((item, i) => (
+            {upcoming.map((item, i) => (
               <div key={item.id}>
                 <p className="mb-1 pl-1 text-[11px] font-medium text-white/35">
                   {item.date_for ? upcomingLabel(item.date_for) : ''}

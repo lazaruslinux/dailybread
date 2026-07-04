@@ -35,7 +35,8 @@ def bootstrap(data: BootstrapIn, response: Response, db: Session = Depends(get_d
         display_name=data.display_name,
         password_hash=hash_password(data.password),
         role=Role.parent,
-        is_admin=True,  # the first account is always the master admin
+        is_admin=True,  # admin of the first family
+        is_owner=True,  # ...and the server admin for the whole install
     )
     db.add(user)
     db.commit()
@@ -77,10 +78,18 @@ def create_user(
     if db.scalar(select(User).where(User.username == data.username)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Username already taken")
 
-    if data.new_household and data.role != Role.parent:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "A new household's first account must be a parent"
-        )
+    if data.new_household:
+        # Inviting a whole new household onto the install is a server-admin
+        # power, not something every family's admin can do.
+        if not admin.is_owner:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Only the server admin can invite another household",
+            )
+        if data.role != Role.parent:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "A new household's first account must be a parent"
+            )
 
     # Default admin from role unless explicitly set. A child can never be admin.
     is_admin = data.is_admin if data.is_admin is not None else (data.role == Role.parent)

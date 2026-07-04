@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { Check, Circle, EyeOff, Pencil, ShieldCheck } from 'lucide-react'
+import { Check, Circle, Pencil, ShieldCheck } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
@@ -28,7 +28,7 @@ export function Profile({ userId }: { userId: number }) {
       const [p, feed] = await Promise.all([api.getProfile(userId), api.getFeed()])
       setProfile(p)
       const mine = (items: api.FeedItem[]) =>
-        items.filter((i) => i.assignee === null || i.assignee.id === userId)
+        items.filter((i) => i.assignees.length === 0 || i.assignees.some((a) => a.id === userId))
       setDay({ today: mine(feed.today), anytime: mine(feed.anytime) })
       setError(null)
     } catch (err) {
@@ -46,18 +46,7 @@ export function Profile({ userId }: { userId: number }) {
     try {
       // Tapping the current mood again clears it.
       if (profile.mood?.level === level) await api.clearMyMood()
-      else await api.setMyMood(level, profile.mood?.hidden ?? false)
-      await refresh()
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function toggleHidden() {
-    if (!profile?.mood) return
-    setBusy(true)
-    try {
-      await api.setMyMood(profile.mood.level, !profile.mood.hidden)
+      else await api.setMyMood(level, false)
       await refresh()
     } finally {
       setBusy(false)
@@ -101,11 +90,15 @@ export function Profile({ userId }: { userId: number }) {
           <span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white/70">
             {profile.role === 'parent' ? 'Parent' : 'Child'}
           </span>
-          {profile.is_admin && (
+          {profile.is_owner ? (
+            <span className="flex items-center gap-1 rounded-full bg-amber-400/20 px-2.5 py-1 text-[11px] font-semibold text-amber-200">
+              <ShieldCheck className="h-3 w-3" /> Server admin
+            </span>
+          ) : profile.is_admin ? (
             <span className="flex items-center gap-1 rounded-full bg-indigo-400/20 px-2.5 py-1 text-[11px] font-semibold text-indigo-200">
               <ShieldCheck className="h-3 w-3" /> Admin
             </span>
-          )}
+          ) : null}
         </div>
         <p className="text-xs text-white/35">Here since {joined}</p>
       </motion.div>
@@ -193,23 +186,8 @@ export function Profile({ userId }: { userId: number }) {
                 )
               })}
             </div>
-            {profile.mood && (
-              <label className="mt-4 flex cursor-pointer items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3">
-                <span className="flex items-center gap-2 text-sm font-semibold text-white/80">
-                  <EyeOff className="h-4 w-4 text-white/50" /> Keep it to myself
-                </span>
-                <input
-                  type="checkbox"
-                  checked={profile.mood.hidden}
-                  onChange={toggleHidden}
-                  disabled={busy}
-                  className="h-5 w-5 accent-indigo-400"
-                />
-              </label>
-            )}
             <p className="mt-3 text-xs leading-relaxed text-white/35">
-              The family sees your mood on your avatar unless you keep it to yourself. Tap the
-              current one to clear it.
+              The family sees your mood on your avatar. Tap the current one to clear it.
             </p>
           </>
         ) : moodMeta ? (

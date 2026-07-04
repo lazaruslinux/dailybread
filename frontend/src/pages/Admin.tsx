@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { KeyRound, Pencil, Plus, ShieldCheck, Trash2, X } from 'lucide-react'
+import { Home, KeyRound, Pencil, Plus, ShieldCheck, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
@@ -59,11 +59,15 @@ function MemberRow({
         <span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white/70">
           {ROLE_LABEL[member.role]}
         </span>
-        {member.is_admin && (
+        {member.is_owner ? (
+          <span className="flex items-center gap-1 rounded-full bg-amber-400/20 px-2.5 py-1 text-[11px] font-semibold text-amber-200">
+            <ShieldCheck className="h-3 w-3" /> Server admin
+          </span>
+        ) : member.is_admin ? (
           <span className="flex items-center gap-1 rounded-full bg-indigo-400/20 px-2.5 py-1 text-[11px] font-semibold text-indigo-200">
             <ShieldCheck className="h-3 w-3" /> Admin
           </span>
-        )}
+        ) : null}
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
@@ -224,7 +228,7 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
             }`}
           >
             <span className="flex items-center gap-2 text-sm font-semibold text-white/80">
-              <ShieldCheck className="h-4 w-4 text-indigo-300" /> Admin dashboard access
+              <ShieldCheck className="h-4 w-4 text-indigo-300" /> Can manage the family
             </span>
             <input
               type="checkbox"
@@ -327,6 +331,125 @@ function DeleteConfirm({
   )
 }
 
+// ---- invite another household -------------------------------------------------
+
+// Deliberately separate from "Add family member". This creates a family-LESS
+// parent account: whoever signs in with it founds their own, fully separate
+// household (their board never mixes with yours). You hand them the username
+// and password; they name their family on first sign-in.
+function InviteHouseholdSheet({ onClose }: { onClose: () => void }) {
+  const [displayName, setDisplayName] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [created, setCreated] = useState<string | null>(null) // username, once done
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault()
+    setError(null)
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.')
+      return
+    }
+    setBusy(true)
+    try {
+      await api.createUser({
+        username,
+        display_name: displayName,
+        password,
+        role: 'parent',
+        new_household: true,
+      })
+      setCreated(username)
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Something went wrong. Try again.')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 40 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 40 }}
+        transition={{ type: 'spring', stiffness: 320, damping: 30 }}
+        className="glass w-full max-w-sm p-6"
+        role="dialog"
+        aria-modal="true"
+      >
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-lg font-bold">
+            <Home className="h-5 w-5 text-indigo-300" /> Invite another household
+          </h2>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-lg p-1.5 text-white/50 hover:bg-white/10 hover:text-white"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {created ? (
+          <div className="flex flex-col gap-4">
+            <p className="text-sm leading-relaxed text-white/70">
+              Created a new parent account,{' '}
+              <span className="font-semibold text-white">@{created}</span>. Give them that username
+              and the password you set. When they sign in they'll name their own family and add
+              their members. Their board is completely separate from yours, so they won't appear in
+              your list here.
+            </p>
+            <Button onClick={onClose}>Done</Button>
+          </div>
+        ) : (
+          <form onSubmit={onSubmit} className="flex flex-col gap-4">
+            <p className="text-xs leading-relaxed text-white/50">
+              This starts a brand-new family on this dailybread, headed by the person you invite. Use
+              "Add family member" instead if you're adding someone to your own family.
+            </p>
+            <Field
+              label="Their name"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              autoFocus
+              required
+            />
+            <Field
+              label="Username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoCapitalize="none"
+              minLength={3}
+              required
+            />
+            <Field
+              label="Temporary password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="At least 8 characters"
+              autoComplete="new-password"
+              required
+            />
+            <FormError message={error} />
+            <Button type="submit" disabled={busy} className="mt-1">
+              {busy ? 'Creating' : 'Create household account'}
+            </Button>
+          </form>
+        )}
+      </motion.div>
+    </motion.div>
+  )
+}
+
 // ---- the dashboard ------------------------------------------------------------
 
 export function Admin() {
@@ -338,6 +461,7 @@ export function Admin() {
     member: null,
   })
   const [deleting, setDeleting] = useState<api.User | null>(null)
+  const [inviting, setInviting] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
@@ -384,6 +508,27 @@ export function Admin() {
         )}
       </div>
 
+      {/* Server-admin only. A separate concept from the member list above: this
+          founds a whole new family on the install, not a member of yours. Only
+          the instance owner can do it, so a family B admin never sees this. */}
+      {user?.is_owner && (
+        <div className="mt-8 border-t border-white/10 pt-5">
+          <p className="text-xs font-semibold uppercase tracking-widest text-white/40">
+            Server admin
+          </p>
+          <p className="mt-1 mb-3 text-sm text-white/50">
+            Set up a separate family on this dailybread. They run their own board; you won't see
+            their members here.
+          </p>
+          <button
+            onClick={() => setInviting(true)}
+            className="glass flex w-full items-center gap-3 p-4 text-left font-semibold text-white/80 transition-colors hover:text-white"
+          >
+            <Home className="h-4 w-4 text-indigo-300" /> Invite another household
+          </button>
+        </div>
+      )}
+
       <AnimatePresence>
         {sheet.open && (
           <MemberSheet
@@ -406,6 +551,7 @@ export function Admin() {
             }}
           />
         )}
+        {inviting && <InviteHouseholdSheet onClose={() => setInviting(false)} />}
       </AnimatePresence>
     </div>
   )

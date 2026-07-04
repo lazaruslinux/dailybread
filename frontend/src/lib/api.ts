@@ -1,6 +1,7 @@
 // Tiny API client. All requests go through the /api prefix, which the Vite dev
-// server proxies to the FastAPI backend (see vite.config.ts). On the home server
-// the same /api path is routed to the backend by the LAN-only Caddy proxy.
+// server proxies to the FastAPI backend (see vite.config.ts). In production the
+// same /api path is routed to the backend by whatever reverse proxy fronts the
+// app.
 //
 // Security notes:
 // - The session lives in an httpOnly cookie the browser attaches by itself.
@@ -59,6 +60,12 @@ export interface User {
   display_name: string
   role: Role
   is_admin: boolean
+  // The instance "server admin": the only account that can invite new
+  // households. Distinct from is_admin, which is family board management.
+  is_owner: boolean
+  // null only for a fresh "new household" account that hasn't run its
+  // create-your-family wizard yet. The app uses this to route them there.
+  family_id: number | null
 }
 
 export interface SetupState {
@@ -88,6 +95,10 @@ export interface CreateUserPayload {
   password: string
   role: Role
   is_admin?: boolean
+  // True creates a family-less parent account: whoever signs in with it
+  // founds their own separate household via the create-family wizard. Used
+  // only by "Invite another household", never by "Add family member".
+  new_household?: boolean
 }
 
 export interface UpdateUserPayload {
@@ -108,6 +119,18 @@ export const updateUser = (id: number, payload: UpdateUserPayload) =>
 export const deleteUser = (id: number) =>
   request<void>(`/auth/users/${id}`, { method: 'DELETE' })
 
+// ---- families ----------------------------------------------------------------
+
+export interface Family {
+  id: number
+  name: string
+}
+
+// The create-your-family wizard: a family-less account names its household and
+// becomes its head (parent + admin). One family per account, ever.
+export const createFamily = (name: string) =>
+  request<Family>('/families', { method: 'POST', body: JSON.stringify({ name }) })
+
 // ---- items and the home feed --------------------------------------------------
 
 // The phone's local calendar date, YYYY-MM-DD. Sent with every "today"
@@ -124,7 +147,7 @@ export interface FeedItem {
   kind: ItemKind
   title: string
   notes: string
-  assignee: User | null
+  assignees: User[] // empty = the whole family
   time_of_day: string | null // "HH:MM:SS"
   date_for: string | null // "YYYY-MM-DD"
   completed: boolean
@@ -142,7 +165,7 @@ export interface ItemPayload {
   kind: ItemKind
   title: string
   notes?: string
-  assignee_id?: number | null
+  assignee_ids?: number[] // empty = the whole family
   time_of_day?: string | null
   date_for?: string | null
 }

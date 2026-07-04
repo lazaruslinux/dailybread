@@ -1,7 +1,17 @@
 import datetime as dt
 import enum
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String, Time, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    String,
+    Table,
+    Time,
+    UniqueConstraint,
+)
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -45,9 +55,14 @@ class User(Base):
     # Argon2 hash, never the raw password.
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[Role] = mapped_column(SAEnum(Role, name="user_role"), default=Role.child)
-    # Can this user see the admin dashboard? Defaults follow role at creation
-    # (parent -> True, child -> False) but are overridable per account.
+    # Can this user manage their own family (add/edit/remove members)? Defaults
+    # follow role at creation (parent -> True, child -> False), overridable.
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    # The single "server admin" for the whole install: the only account allowed
+    # to invite new households onto the instance. Set once, on the bootstrap
+    # account; everyone else is False. Distinct from is_admin, which is
+    # family-scoped board management.
+    is_owner: Mapped[bool] = mapped_column(Boolean, default=False)
     # Short "about me" for the profile page. Owner-editable only.
     bio: Mapped[str] = mapped_column(String(500), default="")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
@@ -61,6 +76,18 @@ class ItemKind(str, enum.Enum):
     event = "event"  # scheduled block on a specific day (team standup)
 
 
+# A card can be for several members at once. An EMPTY assignee list means the
+# whole family. If a member is deleted their rows here cascade away, so a card
+# assigned only to them gracefully falls back to a whole-family card instead of
+# disappearing.
+item_assignees = Table(
+    "item_assignees",
+    Base.metadata,
+    Column("item_id", ForeignKey("items.id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id", ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
 class Item(Base):
     __tablename__ = "items"
 
@@ -70,12 +97,11 @@ class Item(Base):
     title: Mapped[str] = mapped_column(String(120))
     notes: Mapped[str] = mapped_column(String(300), default="")
 
-    # Who this is for. NULL means the whole family. If the member is deleted,
-    # their items fall back to "everyone" instead of disappearing.
-    assignee_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    # Who this card is for; empty means the whole family. Ordered by id so the
+    # avatars render in a stable order on the card.
+    assignees: Mapped[list[User]] = relationship(
+        secondary=item_assignees, order_by=User.id
     )
-    assignee: Mapped[User | None] = relationship(User, foreign_keys=[assignee_id])
 
     # When during the day (routines and events; todos usually have none).
     time_of_day: Mapped[dt.time | None] = mapped_column(Time, nullable=True)

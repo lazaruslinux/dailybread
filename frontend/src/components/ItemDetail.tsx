@@ -91,15 +91,19 @@ export function ItemDetail({
         {item.notes && <p className="mt-2 text-sm leading-relaxed text-white/70">{item.notes}</p>}
 
         <div className="mt-4 flex flex-col gap-2 text-sm text-white/70">
-          <div className="flex items-center gap-2">
-            <span className="w-12 text-xs font-semibold uppercase tracking-wide text-white/40">For</span>
-            {item.assignee ? (
-              <span className="flex items-center gap-1.5">
-                <Avatar name={item.assignee.display_name} size="sm" />
-                {item.assignee.display_name}
-              </span>
+          <div className="flex items-start gap-2">
+            <span className="w-12 shrink-0 pt-1 text-xs font-semibold uppercase tracking-wide text-white/40">For</span>
+            {item.assignees.length === 0 ? (
+              <span className="pt-0.5">Everyone</span>
             ) : (
-              'Everyone'
+              <span className="flex flex-wrap gap-x-3 gap-y-1.5">
+                {item.assignees.map((a) => (
+                  <span key={a.id} className="flex items-center gap-1.5">
+                    <Avatar name={a.display_name} size="sm" />
+                    {a.display_name}
+                  </span>
+                ))}
+              </span>
             )}
           </div>
           {time && (

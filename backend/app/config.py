@@ -16,8 +16,8 @@ class Settings(BaseSettings):
     session_days: int = 60  # how long an *idle* login stays valid
     session_refresh_after_hours: int = 24  # re-issue tokens older than this
     cookie_name: str = "db_session"
-    # Whether the session cookie is HTTPS-only. False for local http dev;
-    # set COOKIE_SECURE=true on the home server where Caddy serves HTTPS.
+    # Whether the session cookie is HTTPS-only. False for local http dev; set
+    # COOKIE_SECURE=true in production, behind a reverse proxy serving HTTPS.
     cookie_secure: bool = False
 
 

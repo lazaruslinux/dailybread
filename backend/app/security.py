@@ -49,7 +49,7 @@ def set_session_cookie(response: Response, subject: str) -> None:
         value=token,
         httponly=True,  # JavaScript can't read it -> XSS can't steal it
         samesite="lax",  # not sent on cross-site requests -> CSRF mitigation
-        secure=settings.cookie_secure,  # HTTPS-only on the home server
+        secure=settings.cookie_secure,  # HTTPS-only in production
         max_age=settings.session_days * 24 * 3600,
         path="/",
     )

@@ -16,6 +16,9 @@ class UserOut(BaseModel):
     display_name: str
     role: Role
     is_admin: bool
+    # The instance owner / "server admin". Only this account may invite new
+    # households; the frontend uses it to show that action to the owner alone.
+    is_owner: bool = False
     # None only while a new-household account hasn't created its family yet;
     # the frontend uses this to show the create-your-family wizard.
     family_id: int | None = None
@@ -93,7 +96,7 @@ class ItemIn(BaseModel):
     kind: ItemKind
     title: str = Field(min_length=1, max_length=120)
     notes: str = Field(default="", max_length=300)
-    assignee_id: int | None = None  # None means the whole family
+    assignee_ids: list[int] = Field(default_factory=list)  # empty = whole family
     time_of_day: dt.time | None = None
     date_for: dt.date | None = None  # todos/events; routines leave it unset
 
@@ -107,7 +110,8 @@ class ItemUpdate(BaseModel):
 
     title: str | None = Field(default=None, min_length=1, max_length=120)
     notes: str | None = Field(default=None, max_length=300)
-    assignee_id: int | None = None
+    # Sending the list replaces the assignees wholesale; [] means whole family.
+    assignee_ids: list[int] | None = None
     time_of_day: dt.time | None = None
     date_for: dt.date | None = None
 
@@ -117,7 +121,7 @@ class FeedItemOut(BaseModel):
     kind: ItemKind
     title: str
     notes: str
-    assignee: UserOut | None
+    assignees: list[UserOut]  # empty = whole family
     time_of_day: dt.time | None
     date_for: dt.date | None
     completed: bool

@@ -5,6 +5,7 @@ import { useAuth } from './auth/AuthContext'
 import { HealthBadge } from './components/HealthBadge'
 import { TabBar, type Tab } from './components/TabBar'
 import { Admin } from './pages/Admin'
+import { CreateFamily } from './pages/CreateFamily'
 import { Food } from './pages/Food'
 import { Home } from './pages/Home'
 import { Kitchen } from './pages/Kitchen'
@@ -124,6 +125,7 @@ function App() {
   }
   if (screen === 'setup') return <Setup />
   if (screen === 'login') return <Login />
+  if (screen === 'create-family') return <CreateFamily />
   return <AppShell />
 }
 
