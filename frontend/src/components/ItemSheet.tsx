@@ -1,8 +1,34 @@
 import { motion } from 'framer-motion'
 import { Trash2, X } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import * as api from '../lib/api'
+import { Avatar } from './Avatar'
 import { Button, Field, FormError } from './ui'
+
+function AssigneeChip({
+  selected,
+  onClick,
+  children,
+}: {
+  selected: boolean
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-sm font-semibold transition-colors ${
+        selected
+          ? 'border-indigo-400/60 bg-indigo-400/20 text-white'
+          : 'border-white/10 bg-white/5 text-white/55 hover:bg-white/10'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
 
 const KIND_LABEL: Record<api.ItemKind, string> = {
   routine: 'Routine',
@@ -126,26 +152,32 @@ export function ItemSheet({
             <p className="mt-1.5 text-xs text-white/40">{KIND_HINT[kind]}</p>
           </div>
 
-          <Field label="Title" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} autoFocus={creating} required />
+          {/* No autoFocus on Title: on phones it would summon the keyboard
+              over the sheet before the person has even seen the form. */}
+          <Field label="Title" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} required />
           <Field label="Notes (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={300} />
 
-          <label className="block">
+          <div>
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-white/50">
               For
             </span>
-            <select
-              value={assignee}
-              onChange={(e) => setAssignee(e.target.value === '' ? '' : Number(e.target.value))}
-              className="field appearance-none"
-            >
-              <option value="">Everyone</option>
+            {/* One pick for now: tap a member to assign, tap them again to go
+                back to Everyone. Multi-assign lands with the Board v2 backend. */}
+            <div className="flex flex-wrap gap-2">
+              <AssigneeChip selected={assignee === ''} onClick={() => setAssignee('')}>
+                Everyone
+              </AssigneeChip>
               {family.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.display_name}
-                </option>
+                <AssigneeChip
+                  key={m.id}
+                  selected={assignee === m.id}
+                  onClick={() => setAssignee(assignee === m.id ? '' : m.id)}
+                >
+                  <Avatar name={m.display_name} size="sm" /> {m.display_name}
+                </AssigneeChip>
               ))}
-            </select>
-          </label>
+            </div>
+          </div>
 
           <div className={`grid gap-3 ${kind === 'routine' ? '' : 'grid-cols-2'}`}>
             <Field label="Time (optional)" type="time" value={time} onChange={(e) => setTime(e.target.value)} onClear={() => setTime('')} />
