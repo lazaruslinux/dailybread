@@ -2,36 +2,36 @@ import { motion } from 'framer-motion'
 import { Calendar, Check, Circle, Flame, Pencil, Repeat, type LucideIcon } from 'lucide-react'
 import type { FeedItem, ItemKind } from '../lib/api'
 import { formatTime } from '../lib/moods'
-import { useLongPress } from '../lib/useLongPress'
 import { Avatar } from './Avatar'
 
-const KIND_STYLE: Record<ItemKind, { Icon: LucideIcon; tint: string; label: string }> = {
+export const KIND_STYLE: Record<ItemKind, { Icon: LucideIcon; tint: string; label: string }> = {
   routine: { Icon: Repeat, tint: 'text-sky-300', label: 'Routine' },
   todo: { Icon: Circle, tint: 'text-amber-300', label: 'Task' },
   event: { Icon: Calendar, tint: 'text-violet-300', label: 'Schedule' },
 }
 
-// One card on the board. Tap toggles done; parents hold to edit. Completed
-// cards stay in place but visibly settle: dimmed, icon swapped for a check.
+// One card on the board. The circle on the left is the only thing that
+// completes a card; tapping anywhere else opens the detail sheet, so a
+// stray tap can never silently change state. Completed cards stay in place
+// but visibly settle: dimmed, circle filled with a check.
 export function ItemCard({
   item,
   index,
   canCheck,
   onToggle,
+  onOpen,
   onEdit,
 }: {
   item: FeedItem
   index: number
   canCheck: boolean
   onToggle?: () => void
+  onOpen?: () => void
   onEdit?: () => void
 }) {
   const { Icon, tint, label } = KIND_STYLE[item.kind]
   const time = formatTime(item.time_of_day)
-  const press = useLongPress(
-    () => onEdit?.(),
-    () => canCheck && onToggle?.(),
-  )
+  const showCheckbox = canCheck && onToggle
 
   return (
     <motion.div
@@ -41,24 +41,52 @@ export function ItemCard({
       exit={{ opacity: 0, scale: 0.96 }}
       transition={{ delay: index * 0.05, type: 'spring', stiffness: 300, damping: 26 }}
       whileTap={{ scale: 0.97 }}
-      className="glass flex touch-pan-y select-none items-center gap-4 p-4"
-      {...press}
+      onClick={onOpen}
+      className="glass flex cursor-pointer touch-pan-y select-none items-center gap-3 p-4"
     >
-      <div
-        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-colors ${
-          item.completed ? 'bg-emerald-400/25' : 'bg-white/15'
-        }`}
-      >
-        {item.completed ? (
-          <Check className="h-5 w-5 text-emerald-300" strokeWidth={2.5} />
-        ) : (
-          <Icon className={`h-5 w-5 ${tint}`} strokeWidth={2} />
-        )}
-      </div>
+      {showCheckbox ? (
+        // Generous tap target around a modest circle; stops propagation so
+        // checking off never also opens the detail sheet underneath.
+        <button
+          type="button"
+          aria-label={item.completed ? `Mark ${item.title} not done` : `Mark ${item.title} done`}
+          onClick={(e) => {
+            e.stopPropagation()
+            onToggle()
+          }}
+          className="-m-2 shrink-0 p-2"
+          data-check
+        >
+          <span
+            className={`flex h-7 w-7 items-center justify-center rounded-full border-2 transition-colors ${
+              item.completed
+                ? 'border-emerald-300/70 bg-emerald-400/25'
+                : 'border-white/30 bg-white/5'
+            }`}
+          >
+            {item.completed && <Check className="h-4 w-4 text-emerald-300" strokeWidth={3} />}
+          </span>
+        </button>
+      ) : (
+        <div
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
+            item.completed ? 'bg-emerald-400/25' : 'bg-white/15'
+          }`}
+        >
+          {item.completed ? (
+            <Check className="h-5 w-5 text-emerald-300" strokeWidth={2.5} />
+          ) : (
+            <Icon className={`h-5 w-5 ${tint}`} strokeWidth={2} />
+          )}
+        </div>
+      )}
 
       <div className="min-w-0 flex-1">
         <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-white/50">
-          {label}
+          <span className={`flex items-center gap-1 ${showCheckbox ? tint : ''}`}>
+            {showCheckbox && <Icon className="h-3 w-3" strokeWidth={2.5} />}
+            {label}
+          </span>
           {(item.streak ?? 0) >= 3 && (
             <span className="flex items-center gap-0.5 rounded-full bg-orange-400/20 px-1.5 py-px text-[10px] font-bold normal-case text-orange-300">
               <Flame className="h-3 w-3" /> {item.streak}
@@ -77,14 +105,15 @@ export function ItemCard({
       </div>
 
       {onEdit && (
-        // Visible way into the editor for parents; long-press still works as a
-        // shortcut. Pointer events stop here so a tap never toggles the card.
+        // Shortcut straight into the editor for parents; the detail sheet
+        // has Edit too. Propagation stops so it never opens the sheet.
         <button
           type="button"
           aria-label={`Edit ${item.title}`}
-          onPointerDown={(e) => e.stopPropagation()}
-          onPointerUp={(e) => e.stopPropagation()}
-          onClick={onEdit}
+          onClick={(e) => {
+            e.stopPropagation()
+            onEdit()
+          }}
           className="-my-2 -mr-2 shrink-0 rounded-xl p-2.5 text-white/35 transition-colors hover:bg-white/10 hover:text-white/70 active:bg-white/15"
         >
           <Pencil className="h-4 w-4" strokeWidth={2} />

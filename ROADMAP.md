@@ -8,8 +8,14 @@ Where dailybread is headed, in order. Done items stay for history.
   admin-created accounts only, no public signup; Argon2 + httpOnly JWT cookie.
 - **Admin dashboard** — family member management (roles, admin flag, password
   resets) with lockout guards so an install always keeps a working admin.
-- **Live board** — routines, to-dos, and scheduled cards; streaks; a "Now"
-  divider; assignees; tap to check off, visible edit affordance for parents.
+- **Live board** — routines, tasks, and scheduled cards; streaks; a "Now"
+  divider; assignees; a checkbox completes a card (optimistic, with an undo
+  toast) and tapping the card body opens a detail sheet with the full info
+  plus edit/delete for parents.
+- **Daily verse** — a verse of the day at the top of the board, rotating
+  through a bundled public-domain (KJV) set keyed to the calendar day, so it
+  needs no network and phones home to no one; tapping it opens the passage
+  on Bible.com.
 - **Moods** — five-level daily mood rendered as weather, per-day, with a
   "keep it to myself" option that is indistinguishable from no mood at all.
 - **Profiles** — bio, mood picker, and each member's slice of the board.
@@ -22,16 +28,22 @@ Where dailybread is headed, in order. Done items stay for history.
   `docker compose up` serves the whole app on one port; sliding sessions
   (60-day idle expiry instead of a fixed weekly logout); real PWA icon set.
 
+- **First real deployment** — a family living in the app day to day, behind
+  an HTTPS reverse proxy. Real usage feedback drives everything after this.
+- **Multi-household tenancy (backend)** — every account belongs to exactly
+  one family; all data is family-scoped; zero cross-family visibility,
+  enforced by isolation tests on every endpoint, written before the feature.
+  Landed before any feature that adds new tables, so everything after it is
+  born scoped.
+
 ## Next
 
-1. **First real deployment** — a family living in the app day to day, behind
-   an HTTPS reverse proxy. Real usage feedback drives everything after this.
-2. **Multi-household tenancy.** Every account belongs to exactly one family;
-   all data is family-scoped; zero cross-family visibility. New "household"
-   accounts get a create-your-family wizard on first login and become that
-   family's head. Isolation is enforced by tests on every endpoint, written
-   before the feature. Lands before any feature that adds new tables, so
-   everything after it is born scoped.
+1. **Board v2, remaining slices** — four card kinds (Routine / Task /
+   Activity / Appointment), "Up next" / "Later" sections, member colors with
+   a mine/family filter, multi-assignee cards with per-person routine
+   check-off, and a do-not-disturb dot.
+2. **Family-creation wizard (frontend)** — the UI for "new household"
+   accounts to create their family on first login (the backend is done).
 3. **Themes** — selectable color schemes built on CSS variables.
 4. **Nutrition (Food tab)** — manual food log, then daily macro summary,
    then a barcode scanner (BarcodeDetector API with a WASM fallback) backed by
@@ -45,5 +57,4 @@ Where dailybread is headed, in order. Done items stay for history.
 
 ## Ongoing polish
 
-- Optimistic updates (no full refetch per tap), undo toast for deletes,
-  loading skeletons, pull-to-refresh.
+- Undo toast for deletes, loading skeletons, pull-to-refresh.
