@@ -15,7 +15,8 @@ export function Profile({ userId }: { userId: number }) {
   const isSelf = viewer?.id === userId
 
   const [profile, setProfile] = useState<api.Profile | null>(null)
-  // This member's slice of the board: cards assigned to them, today + anytime.
+  // This member's slice of the board: cards assigned to them plus whole-family
+  // cards (those are everyone's, so they belong on everyone's day).
   const [day, setDay] = useState<{ today: api.FeedItem[]; anytime: api.FeedItem[] } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [editingBio, setEditingBio] = useState(false)
@@ -26,7 +27,8 @@ export function Profile({ userId }: { userId: number }) {
     try {
       const [p, feed] = await Promise.all([api.getProfile(userId), api.getFeed()])
       setProfile(p)
-      const mine = (items: api.FeedItem[]) => items.filter((i) => i.assignee?.id === userId)
+      const mine = (items: api.FeedItem[]) =>
+        items.filter((i) => i.assignee === null || i.assignee.id === userId)
       setDay({ today: mine(feed.today), anytime: mine(feed.anytime) })
       setError(null)
     } catch (err) {
@@ -115,14 +117,14 @@ export function Profile({ userId }: { userId: number }) {
         className="glass mb-4 p-5"
       >
         <div className="mb-2 flex items-center justify-between">
-          <p className="text-xs font-semibold uppercase tracking-widest text-white/40">About</p>
+          <p className="text-xs font-semibold uppercase tracking-widest text-white/40">Status</p>
           {isSelf && !editingBio && (
             <button
               onClick={() => {
                 setBioDraft(profile.bio)
                 setEditingBio(true)
               }}
-              aria-label="Edit bio"
+              aria-label="Edit status"
               className="rounded-lg p-1.5 text-white/50 hover:bg-white/10 hover:text-white"
             >
               <Pencil className="h-4 w-4" />
@@ -137,7 +139,7 @@ export function Profile({ userId }: { userId: number }) {
               maxLength={500}
               rows={3}
               className="field resize-none"
-              placeholder="A line about you"
+              placeholder="How are you doing?"
               autoFocus
             />
             <div className="grid grid-cols-2 gap-2">
@@ -151,7 +153,7 @@ export function Profile({ userId }: { userId: number }) {
           </div>
         ) : (
           <p className="text-sm leading-relaxed text-white/70">
-            {profile.bio || <span className="text-white/35">Nothing here yet.</span>}
+            {profile.bio || <span className="text-white/35">No status yet.</span>}
           </p>
         )}
       </motion.div>
