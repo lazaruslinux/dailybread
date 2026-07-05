@@ -228,10 +228,24 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
     setSheet({ open: true, item })
   }
 
+  // A timed appointment/activity past its end (and not done) is overdue; a task
+  // past its due time gets a softer nudge. Only today's dated cards, never
+  // routines or all-day. Recomputes on the minute via the clock re-render.
+  function pastFlag(item: api.FeedItem): 'overdue' | 'due' | null {
+    if (item.completed || item.all_day || !feed || item.date_for !== feed.date) return null
+    const endHm = item.end_time || item.time_of_day
+    if (!endHm) return null
+    const nowHm = `${String(clock.getHours()).padStart(2, '0')}:${String(clock.getMinutes()).padStart(2, '0')}:00`
+    if (endHm >= nowHm) return null
+    if (item.kind === 'appointment' || item.kind === 'activity') return 'overdue'
+    return item.kind === 'task' ? 'due' : null
+  }
+
   const cardProps = (item: api.FeedItem, checkable: boolean) => ({
     item,
     canCheck: checkable,
     family,
+    flag: pastFlag(item),
     onToggle: checkable ? () => toggle(item) : undefined,
     onOpen: () => setDetail({ item, checkable }),
     onEdit: isParent ? () => openEditor(item) : undefined,

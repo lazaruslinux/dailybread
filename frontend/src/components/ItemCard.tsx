@@ -35,6 +35,7 @@ export function ItemCard({
   index,
   canCheck,
   family,
+  flag,
   onToggle,
   onOpen,
   onEdit,
@@ -43,12 +44,13 @@ export function ItemCard({
   index: number
   canCheck: boolean
   family?: FamilyMember[]
+  flag?: 'overdue' | 'due' | null
   onToggle?: () => void
   onOpen?: () => void
   onEdit?: () => void
 }) {
   const { Icon, tint, label } = KIND_STYLE[item.kind]
-  const time = formatTime(item.time_of_day)
+  const timeLabel = item.all_day ? 'All day' : formatTime(item.time_of_day)
   const showCheckbox = canCheck && onToggle
 
   // Routines are per-person: show each participant's own check. Suppressed
@@ -118,6 +120,16 @@ export function ItemCard({
             {showCheckbox && <Icon className="h-3 w-3" strokeWidth={2.5} />}
             {label}
           </span>
+          {flag === 'overdue' && (
+            <span className="rounded-full bg-rose-500/20 px-1.5 py-px text-[10px] font-bold normal-case text-rose-300">
+              Overdue
+            </span>
+          )}
+          {flag === 'due' && (
+            <span className="rounded-full bg-amber-400/20 px-1.5 py-px text-[10px] font-bold normal-case text-amber-300">
+              Due
+            </span>
+          )}
           {perPerson && perPerson.length > 1 && (
             <span className="rounded-full bg-white/10 px-1.5 py-px text-[10px] font-bold normal-case text-white/60">
               {doneCount}/{perPerson.length} done
@@ -136,7 +148,11 @@ export function ItemCard({
       </div>
 
       <div className="flex shrink-0 flex-col items-end gap-1.5">
-        {time && <span className="text-xs font-medium text-white/50">{time}</span>}
+        {timeLabel && (
+          <span className={`text-xs font-medium ${flag === 'overdue' ? 'text-rose-300' : 'text-white/50'}`}>
+            {timeLabel}
+          </span>
+        )}
         {showPerPerson && perPerson ? (
           // Per-person routine: each face carries its own check state.
           <div className="flex -space-x-2">

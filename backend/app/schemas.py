@@ -121,7 +121,9 @@ class ItemIn(BaseModel):
     # Household visibility. None lets the server pick: family if visibility is
     # explicitly Everyone, else assigned when members are named, else personal.
     visibility: Visibility | None = None
-    time_of_day: dt.time | None = None
+    time_of_day: dt.time | None = None  # start / "From"
+    end_time: dt.time | None = None  # end / "To" (activities & timed appointments)
+    all_day: bool = False  # all-day appointment: a date with no times
     date_for: dt.date | None = None  # tasks/events; routines use repeat instead
     repeat: RepeatIn | None = None  # required for routines, forbidden otherwise
     # Future cross-household feed (Phase E). None follows the kind default.
@@ -141,6 +143,8 @@ class ItemUpdate(BaseModel):
     assignee_ids: list[int] | None = None
     visibility: Visibility | None = None
     time_of_day: dt.time | None = None
+    end_time: dt.time | None = None
+    all_day: bool | None = None
     date_for: dt.date | None = None
     repeat: RepeatIn | None = None
     shared_to_feed: bool | None = None
@@ -164,7 +168,9 @@ class FeedItemOut(BaseModel):
     visibility: Visibility
     assignees: list[UserOut]
     shared_to_feed: bool
-    time_of_day: dt.time | None
+    time_of_day: dt.time | None  # start / "From"
+    end_time: dt.time | None  # end / "To"
+    all_day: bool
     date_for: dt.date | None
     repeat: RepeatOut | None  # routines only
     # The requesting member's own view: for a routine, their own check/streak

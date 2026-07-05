@@ -83,6 +83,8 @@ export function ItemSheet({
   const [monthDay, setMonthDay] = useState(item?.repeat?.month_day ?? 1)
 
   const [time, setTime] = useState(item?.time_of_day?.slice(0, 5) ?? '')
+  const [endTime, setEndTime] = useState(item?.end_time?.slice(0, 5) ?? '')
+  const [allDay, setAllDay] = useState(item?.all_day ?? false)
   const [date, setDate] = useState(item?.date_for ?? '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -100,10 +102,16 @@ export function ItemSheet({
   }
 
   const isRoutine = kind === 'routine'
-  const needsSchedule = kind === 'activity' || kind === 'appointment'
-  const showDate = !isRoutine
+  const isEvent = kind === 'activity' || kind === 'appointment'
+  const allDayAppt = kind === 'appointment' && allDay
   const weeklyReady = !isRoutine || repeatType !== 'weekly' || days.length > 0
-  const scheduleReady = (!needsSchedule || (Boolean(date) && Boolean(time))) && weeklyReady
+  // "HH:MM" strings compare correctly, so end > start is a plain comparison.
+  const timesOk = allDayAppt || (Boolean(time) && Boolean(endTime) && endTime > time)
+  const scheduleReady = isRoutine
+    ? weeklyReady
+    : kind === 'task'
+      ? true
+      : Boolean(date) && timesOk
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -120,7 +128,9 @@ export function ItemSheet({
       notes,
       assignee_ids: assignees,
       visibility: familyBoard ? 'family' : 'private',
-      time_of_day: time || null,
+      time_of_day: allDayAppt ? null : time || null,
+      end_time: isEvent && !allDayAppt ? endTime || null : null,
+      all_day: kind === 'appointment' ? allDay : false,
       date_for: isRoutine ? null : date || null,
       repeat,
     }
@@ -345,26 +355,47 @@ export function ItemSheet({
             </p>
           </div>
 
-          <div className={`grid gap-3 ${showDate ? 'grid-cols-2' : ''}`}>
+          {isRoutine ? (
             <Field
-              label={needsSchedule ? 'Time' : 'Time (optional)'}
+              label="Time (optional)"
               type="time"
               value={time}
               onChange={(e) => setTime(e.target.value)}
               onClear={() => setTime('')}
-              required={needsSchedule}
             />
-            {showDate && (
-              <Field
-                label={needsSchedule ? 'Date' : 'Due by (optional)'}
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                onClear={() => setDate('')}
-                required={needsSchedule}
-              />
-            )}
-          </div>
+          ) : kind === 'task' ? (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Due date (optional)" type="date" value={date} onChange={(e) => setDate(e.target.value)} onClear={() => setDate('')} />
+              <Field label="Due time (optional)" type="time" value={time} onChange={(e) => setTime(e.target.value)} onClear={() => setTime('')} />
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <Field label="Date" type="date" value={date} onChange={(e) => setDate(e.target.value)} onClear={() => setDate('')} required />
+              {kind === 'appointment' && (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={allDay}
+                  onClick={() => setAllDay((v) => !v)}
+                  className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-left"
+                >
+                  <span className="text-sm font-semibold text-white/85">All day</span>
+                  <span className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${allDay ? 'bg-indigo-500' : 'bg-white/15'}`}>
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${allDay ? 'left-[1.125rem]' : 'left-0.5'}`} />
+                  </span>
+                </button>
+              )}
+              {!allDayAppt && (
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="From" type="time" value={time} onChange={(e) => setTime(e.target.value)} onClear={() => setTime('')} required />
+                  <Field label="To" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} onClear={() => setEndTime('')} required />
+                </div>
+              )}
+              {!allDayAppt && Boolean(time) && Boolean(endTime) && endTime <= time && (
+                <p className="text-xs text-rose-300">End time must be after the start.</p>
+              )}
+            </div>
+          )}
 
           <FormError message={error} />
           <Button type="submit" disabled={busy || !title.trim() || !scheduleReady} className="mt-1">

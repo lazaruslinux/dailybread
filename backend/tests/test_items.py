@@ -117,7 +117,10 @@ def test_undated_todo_completed_yesterday_is_archived(owner):
 
 def test_upcoming_has_no_horizon(owner):
     far = (dt.date.today() + dt.timedelta(days=45)).isoformat()
-    item = make_item(owner, kind="appointment", title="Vacation", date_for=far, time_of_day="09:00")
+    item = make_item(
+        owner, kind="appointment", title="Vacation", date_for=far,
+        time_of_day="09:00", end_time="10:00",
+    )
 
     feed = owner.get(f"/items/feed?date={TODAY}").json()
     assert any(i["id"] == item["id"] for i in feed["upcoming"])
@@ -132,16 +135,28 @@ def test_activity_and_appointment_need_a_date_and_time(owner):
         ).status_code
         == 400
     )
+    # A start alone isn't enough for an activity; it needs an end too.
+    assert (
+        owner.post(
+            "/items",
+            json={"kind": "activity", "title": "Gym", "date_for": TODAY, "time_of_day": "17:00"},
+        ).status_code
+        == 400
+    )
     ok = owner.post(
         "/items",
-        json={"kind": "activity", "title": "Gym", "date_for": TODAY, "time_of_day": "17:00"},
+        json={
+            "kind": "activity", "title": "Gym", "date_for": TODAY,
+            "time_of_day": "17:00", "end_time": "18:00",
+        },
     )
     assert ok.status_code == 201, ok.text
 
 
 def test_editing_cannot_strand_an_appointment(owner):
     card = make_item(
-        owner, kind="appointment", title="Dentist", date_for=TODAY, time_of_day="09:00"
+        owner, kind="appointment", title="Dentist", date_for=TODAY,
+        time_of_day="09:00", end_time="09:30",
     )
     # Clearing the date on an appointment leaves it invalid, so it's refused.
     assert owner.patch(f"/items/{card['id']}", json={"date_for": None}).status_code == 400
@@ -202,7 +217,7 @@ def test_either_parent_can_check_a_family_board_card(owner, parent):
     # even though they're neither its owner nor an assignee.
     appt = make_item(
         owner, kind="appointment", title="School pickup", visibility="family",
-        date_for=TODAY, time_of_day="15:00",
+        date_for=TODAY, time_of_day="15:00", end_time="15:30",
     )
     assert parent.post(f"/items/{appt['id']}/complete?date={TODAY}").status_code == 200
 
@@ -239,6 +254,51 @@ def test_child_cannot_check_on_behalf_of_another(owner, child):
     # A child can check their own, but not someone else's, occurrence.
     assert child.post(f"/items/{routine['id']}/complete?date={TODAY}&for={dad}").status_code == 403
     assert child.post(f"/items/{routine['id']}/complete?date={TODAY}").status_code == 200
+
+
+# ---- event times: from/to + all-day -------------------------------------------
+
+
+def test_appointment_can_be_all_day(owner):
+    card = make_item(owner, kind="appointment", title="Birthday", date_for=TODAY, all_day=True)
+    assert card["all_day"] is True
+    assert card["time_of_day"] is None and card["end_time"] is None
+
+
+def test_all_day_appointment_rejects_times(owner):
+    res = owner.post(
+        "/items",
+        json={"kind": "appointment", "title": "Trip", "date_for": TODAY, "all_day": True, "time_of_day": "09:00"},
+    )
+    assert res.status_code == 400
+
+
+def test_event_end_must_be_after_start(owner):
+    res = owner.post(
+        "/items",
+        json={"kind": "activity", "title": "Run", "date_for": TODAY, "time_of_day": "18:00", "end_time": "17:00"},
+    )
+    assert res.status_code == 400
+
+
+def test_routine_rejects_an_end_time(owner):
+    res = owner.post(
+        "/items",
+        json={
+            "kind": "routine", "title": "Stretch", "time_of_day": "07:00", "end_time": "07:30",
+            "repeat": {"type": "weekly", "days": [0, 1, 2, 3, 4, 5, 6]},
+        },
+    )
+    assert res.status_code == 400
+
+
+def test_appointment_keeps_start_and_end(owner):
+    card = make_item(
+        owner, kind="appointment", title="Dentist", date_for=TODAY,
+        time_of_day="09:00", end_time="09:45",
+    )
+    assert card["time_of_day"] == "09:00:00" and card["end_time"] == "09:45:00"
+    assert card["all_day"] is False
 
 
 # ---- recurrence --------------------------------------------------------------

@@ -132,32 +132,60 @@ def _resolve_visibility(explicit: Visibility | None) -> Visibility:
     return explicit if explicit is not None else Visibility.private
 
 
+def _bad(msg: str) -> None:
+    raise HTTPException(status.HTTP_400_BAD_REQUEST, msg)
+
+
 def _validate_item(item: Item) -> None:
-    """Enforce each kind's final shape. Routines carry a repeat schedule and no
-    single date; activities and appointments need a date and time; only
-    routines repeat at all."""
+    """Enforce each kind's final shape.
+
+    Routines carry a repeat schedule, no date, and at most a single start time.
+    Tasks are free-form. Activities are time blocks (start and end required).
+    Appointments are calendar events: a start and end, or all-day (no times).
+    """
     if item.kind == ItemKind.routine:
         if item.date_for is not None:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Routines recur; they take no date")
+            _bad("Routines recur; they take no date")
         if item.repeat_type is None:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Routines need a repeat schedule")
+            _bad("Routines need a repeat schedule")
         if item.repeat_type == RepeatType.weekly and not item.repeat_days:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Weekly routine needs at least one day")
+            _bad("Weekly routine needs at least one day")
         if item.repeat_type == RepeatType.monthly and not item.repeat_month_day:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "Monthly routine needs a day of the month"
-            )
+            _bad("Monthly routine needs a day of the month")
         if (item.repeat_interval or 1) < 1:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Repeat interval must be at least 1")
+            _bad("Repeat interval must be at least 1")
+        if item.end_time is not None or item.all_day:
+            _bad("Routines don't take an end time or all-day")
+        return
+
+    if item.repeat_type is not None:
+        _bad("Only routines repeat")
+
+    if item.kind == ItemKind.task:
+        if item.end_time is not None or item.all_day:
+            _bad("Tasks don't take an end time or all-day")
+        return
+
+    if item.kind == ItemKind.activity:
+        if item.all_day:
+            _bad("Activities can't be all-day")
+        if item.date_for is None or item.time_of_day is None or item.end_time is None:
+            _bad("Activities need a date and a start and end time")
+        if item.end_time <= item.time_of_day:
+            _bad("End time must be after the start time")
+        return
+
+    # appointment
+    if item.date_for is None:
+        _bad("Appointments need a date")
+    if item.all_day:
+        if item.time_of_day is not None or item.end_time is not None:
+            _bad("An all-day appointment has no times")
     else:
-        if item.repeat_type is not None:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Only routines repeat")
-        if item.kind in (ItemKind.activity, ItemKind.appointment) and (
-            item.date_for is None or item.time_of_day is None
-        ):
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "Activities and appointments need a date and time"
-            )
+        if item.time_of_day is None or item.end_time is None:
+            _bad("Appointments need a start and end time, or mark them all-day")
+        if item.end_time <= item.time_of_day:
+            _bad("End time must be after the start time")
 
 
 def _resolve_assignees(db: Session, ids: list[int], family_id: int) -> list[User]:
@@ -228,6 +256,8 @@ def _feed_item(
         assignees=item.assignees,
         shared_to_feed=item.shared_to_feed,
         time_of_day=item.time_of_day,
+        end_time=item.end_time,
+        all_day=item.all_day,
         date_for=item.date_for,
         repeat=_repeat_out(item),
         completed=completed,
@@ -333,11 +363,11 @@ def feed(
         elif item.date_for > date_for:
             upcoming.append(_build_feed_item(db, item, user, date_for))
 
-    # Timed cards in day order; untimed ones sink to the end of the day.
+    # All-day events first, then timed cards in day order; untimed sink to the end.
     late = dt.time(23, 59)
-    today.sort(key=lambda i: (i.time_of_day or late, i.title.lower()))
+    today.sort(key=lambda i: (not i.all_day, i.time_of_day or late, i.title.lower()))
     anytime.sort(key=lambda i: (i.completed, i.title.lower()))  # done sink to the bottom
-    upcoming.sort(key=lambda i: (i.date_for, i.time_of_day or late, i.title.lower()))
+    upcoming.sort(key=lambda i: (i.date_for, not i.all_day, i.time_of_day or late, i.title.lower()))
 
     return FeedOut(date=date_for, today=today, anytime=anytime, upcoming=upcoming)
 
@@ -366,6 +396,8 @@ def create_item(
         assignees=assignees,
         shared_to_feed=shared,
         time_of_day=data.time_of_day,
+        end_time=data.end_time,
+        all_day=data.all_day,
         date_for=data.date_for,
         repeat_type=rtype,
         repeat_days=rdays,
@@ -401,6 +433,10 @@ def update_item(
         item.notes = data.notes
     if "time_of_day" in fields:
         item.time_of_day = data.time_of_day
+    if "end_time" in fields:
+        item.end_time = data.end_time
+    if "all_day" in fields and data.all_day is not None:
+        item.all_day = data.all_day
     if "date_for" in fields:
         item.date_for = data.date_for
     if "repeat" in fields:

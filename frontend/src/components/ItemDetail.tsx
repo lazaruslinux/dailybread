@@ -65,8 +65,14 @@ export function ItemDetail({
   onClose: () => void
 }) {
   const { Icon, tint, label } = KIND_STYLE[item.kind]
-  const time = formatTime(item.time_of_day)
   const isRoutine = item.kind === 'routine'
+  const whenLabel = item.all_day
+    ? 'All day'
+    : item.time_of_day
+      ? item.end_time
+        ? `${formatTime(item.time_of_day)} – ${formatTime(item.end_time)}`
+        : formatTime(item.time_of_day)
+      : null
   const [armed, setArmed] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -153,10 +159,10 @@ export function ItemDetail({
               {describeRepeat(item.repeat)}
             </div>
           )}
-          {time && (
+          {whenLabel && (
             <div className="flex items-center gap-2">
-              <span className="w-12 text-xs font-semibold uppercase tracking-wide text-white/40">Time</span>
-              {time}
+              <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-white/40">Time</span>
+              {whenLabel}
             </div>
           )}
           {item.date_for && (

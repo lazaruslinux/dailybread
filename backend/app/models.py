@@ -161,8 +161,14 @@ class Item(Base):
     # Monthly: the day of the month (1-31), clamped to the month's last day.
     repeat_month_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    # When during the day (routines and events; tasks usually have none).
+    # Start time (the "From"). Activities and appointments need one (unless the
+    # appointment is all-day); routines and tasks may leave it NULL.
     time_of_day: Mapped[dt.time | None] = mapped_column(Time, nullable=True)
+    # End time (the "To"), for the event kinds that span a block. NULL on
+    # routines, tasks, and all-day appointments.
+    end_time: Mapped[dt.time | None] = mapped_column(Time, nullable=True)
+    # An all-day appointment: a date with no times (Outlook's "all day").
+    all_day: Mapped[bool] = mapped_column(Boolean, default=False)
     # Which day (tasks and events). Routines leave this NULL and use recurrence.
     date_for: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
 

@@ -174,7 +174,9 @@ export interface FeedItem {
   visibility: Visibility
   assignees: User[]
   shared_to_feed: boolean
-  time_of_day: string | null // "HH:MM:SS"
+  time_of_day: string | null // start / "From", "HH:MM:SS"
+  end_time: string | null // end / "To", "HH:MM:SS"
+  all_day: boolean // all-day appointment
   date_for: string | null // "YYYY-MM-DD"
   repeat: Repeat | null // routines only
   // The requesting member's own view: for a routine, their own check and
@@ -210,7 +212,9 @@ export interface ItemPayload {
   // alone; set visibility to 'family' for Everyone.
   assignee_ids?: number[]
   visibility?: Visibility
-  time_of_day?: string | null
+  time_of_day?: string | null // start / "From"
+  end_time?: string | null // end / "To"
+  all_day?: boolean
   date_for?: string | null
   repeat?: RepeatInput | null // required for routines, ignored otherwise
   shared_to_feed?: boolean
