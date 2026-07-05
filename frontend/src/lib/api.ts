@@ -142,16 +142,48 @@ export function localDate(): string {
 
 export type ItemKind = 'routine' | 'task' | 'activity' | 'appointment'
 
+// Who can SEE a card, separate from who is assigned to DO it. private = the
+// owner plus anyone assigned; family = shown on the whole household's board.
+export type Visibility = 'private' | 'family'
+
+export type RepeatType = 'weekly' | 'monthly'
+
+// A routine's recurrence. days are weekday numbers, 0 = Monday .. 6 = Sunday
+// (weekly); month_day is a day of the month, 1-31 (monthly). interval is
+// "every N weeks/months".
+export interface Repeat {
+  type: RepeatType
+  days: number[]
+  interval: number
+  month_day: number | null
+}
+
+// One participant's own state on a routine, since routines are per-person.
+export interface AssigneeCompletion {
+  user_id: number
+  completed: boolean
+  streak: number
+}
+
 export interface FeedItem {
   id: number
+  owner_id: number | null
   kind: ItemKind
   title: string
   notes: string
-  assignees: User[] // empty = the whole family
+  visibility: Visibility
+  assignees: User[]
+  shared_to_feed: boolean
   time_of_day: string | null // "HH:MM:SS"
   date_for: string | null // "YYYY-MM-DD"
+  repeat: Repeat | null // routines only
+  // The requesting member's own view: for a routine, their own check and
+  // streak (or, for a non-participant, whether everyone is done). For other
+  // kinds, the single shared check.
   completed: boolean
   streak: number | null
+  // Per-participant state for routines; null for every other kind.
+  assignee_completions: AssigneeCompletion[] | null
 }
 
 export interface Feed {
@@ -161,13 +193,27 @@ export interface Feed {
   upcoming: FeedItem[]
 }
 
+// The repeat object sent when creating/editing a routine. days/month_day are
+// filled per type; the server ignores the ones the type doesn't use.
+export interface RepeatInput {
+  type: RepeatType
+  days?: number[]
+  interval?: number
+  month_day?: number | null
+}
+
 export interface ItemPayload {
   kind: ItemKind
   title: string
   notes?: string
-  assignee_ids?: number[] // empty = the whole family
+  // Who the card is shared with. Empty on a personal card means the owner
+  // alone; set visibility to 'family' for Everyone.
+  assignee_ids?: number[]
+  visibility?: Visibility
   time_of_day?: string | null
   date_for?: string | null
+  repeat?: RepeatInput | null // required for routines, ignored otherwise
+  shared_to_feed?: boolean
 }
 
 export const getFeed = () => request<Feed>(`/items/feed?date=${localDate()}`)
@@ -180,11 +226,15 @@ export const updateItem = (id: number, payload: Partial<ItemPayload>) =>
 
 export const deleteItem = (id: number) => request<void>(`/items/${id}`, { method: 'DELETE' })
 
-export const completeItem = (id: number) =>
-  request<FeedItem>(`/items/${id}/complete?date=${localDate()}`, { method: 'POST' })
+// forUserId lets a parent check a routine off on another member's behalf.
+const completePath = (id: number, forUserId?: number) =>
+  `/items/${id}/complete?date=${localDate()}${forUserId != null ? `&for=${forUserId}` : ''}`
 
-export const uncompleteItem = (id: number) =>
-  request<FeedItem>(`/items/${id}/complete?date=${localDate()}`, { method: 'DELETE' })
+export const completeItem = (id: number, forUserId?: number) =>
+  request<FeedItem>(completePath(id, forUserId), { method: 'POST' })
+
+export const uncompleteItem = (id: number, forUserId?: number) =>
+  request<FeedItem>(completePath(id, forUserId), { method: 'DELETE' })
 
 // ---- grocery list -----------------------------------------------------------
 

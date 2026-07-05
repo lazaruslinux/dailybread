@@ -1,13 +1,22 @@
 import datetime as dt
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from app import recurrence
 from app.db import get_db
 from app.deps import require_family, require_parent
-from app.models import Completion, Item, ItemKind, Role, User
-from app.schemas import FeedItemOut, FeedOut, ItemIn, ItemUpdate
+from app.models import Completion, Item, ItemKind, RepeatType, Role, User, Visibility
+from app.schemas import (
+    AssigneeCompletion,
+    FeedItemOut,
+    FeedOut,
+    ItemIn,
+    ItemUpdate,
+    RepeatIn,
+    RepeatOut,
+)
 
 router = APIRouter(prefix="/items", tags=["items"])
 
@@ -32,21 +41,128 @@ def _get_item(db: Session, item_id: int, family_id: int) -> Item:
     return item
 
 
-def _check_schedule(kind: ItemKind, date_for: dt.date | None, time_of_day: dt.time | None) -> None:
-    """Enforce each kind's date/time rules: routines never carry a date, while
-    activities and appointments always need both a date and a time. Tasks are
-    free-form (an optional 'due by' date), so they get no constraint."""
-    if kind == ItemKind.routine and date_for is not None:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Routines repeat daily; no date")
-    if kind in (ItemKind.activity, ItemKind.appointment) and (date_for is None or time_of_day is None):
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "Activities and appointments need a date and time"
-        )
+def _visible_to(item: Item, user: User) -> bool:
+    """Can this member see the card? family = the whole household; private =
+    the owner plus anyone assigned (they must see it to do it). A card whose
+    owner was deleted (owner_id NULL) is treated as family so it doesn't vanish."""
+    if item.visibility == Visibility.family or item.owner_id is None:
+        return True
+    if item.owner_id == user.id:
+        return True
+    return any(a.id == user.id for a in item.assignees)
+
+
+def _require_visible(item: Item, user: User) -> None:
+    # 404, not 403: a card the member can't see should look like it doesn't
+    # exist, the same way cross-family ids do.
+    if not _visible_to(item, user):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such item")
+
+
+def _routine_participants(db: Session, item: Item) -> list[User]:
+    """Who checks off a routine, each on their own: the people assigned to it,
+    or the owner alone when nobody is assigned. Independent of visibility, so a
+    routine can be shown to the whole family while only its assignees do it."""
+    if item.assignees:
+        return list(item.assignees)
+    owner = db.get(User, item.owner_id) if item.owner_id else None
+    return [owner] if owner is not None else []
+
+
+def _resolve_completion_target(
+    db: Session, item: Item, user: User, for_user: int | None
+) -> User:
+    """Return the member a completion is for, enforcing who may set it.
+
+    Routines are per-person: you check your own, and a parent may check one off
+    on any assignee's behalf via ?for=<id>. Other kinds are a single shared
+    check (?for is ignored) that anyone involved, or any parent, may tap.
+    """
+    if item.kind == ItemKind.routine:
+        if for_user is not None and for_user != user.id:
+            # Acting on someone else's behalf is a parent-only power.
+            if user.role != Role.parent:
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN, "Only a parent can check this off for someone else"
+                )
+            target = db.get(User, for_user)
+            if target is None or target.family_id != user.family_id:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "No such member")
+            if not any(p.id == target.id for p in _routine_participants(db, item)):
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "That routine isn't theirs to do")
+            return target
+        # Checking your own occurrence.
+        if not any(p.id == user.id for p in _routine_participants(db, item)):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "This routine isn't yours to check")
+        return user
+
+    # Non-routine: one shared check. Anyone involved, or any parent (co-parents
+    # share the household's chores and appointments), may complete it.
+    involved = (item.owner_id is not None and item.owner_id == user.id) or any(
+        a.id == user.id for a in item.assignees
+    )
+    if not (involved or user.role == Role.parent):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "This card isn't yours to check")
+    return user
+
+
+def _mask_from_days(days: list[int]) -> int:
+    """Pack weekday numbers (0=Mon .. 6=Sun) into a 7-bit mask."""
+    mask = 0
+    for d in days:
+        if d < 0 or d > 6:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Weekday must be 0 (Mon) to 6 (Sun)")
+        mask |= 1 << d
+    return mask
+
+
+def _resolve_repeat(repeat: RepeatIn | None):
+    """Turn the API's repeat object into the item's stored recurrence columns:
+    (repeat_type, repeat_days, repeat_interval, repeat_anchor, repeat_month_day)."""
+    if repeat is None:
+        return None, None, 1, None, None
+    if repeat.type == RepeatType.weekly:
+        return RepeatType.weekly, _mask_from_days(repeat.days), repeat.interval, repeat.anchor, None
+    return RepeatType.monthly, None, repeat.interval, repeat.anchor, repeat.month_day
+
+
+def _resolve_visibility(explicit: Visibility | None) -> Visibility:
+    """Cards are private by default (the owner plus anyone assigned); the
+    client opts into family visibility to put it on the whole family's board."""
+    return explicit if explicit is not None else Visibility.private
+
+
+def _validate_item(item: Item) -> None:
+    """Enforce each kind's final shape. Routines carry a repeat schedule and no
+    single date; activities and appointments need a date and time; only
+    routines repeat at all."""
+    if item.kind == ItemKind.routine:
+        if item.date_for is not None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Routines recur; they take no date")
+        if item.repeat_type is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Routines need a repeat schedule")
+        if item.repeat_type == RepeatType.weekly and not item.repeat_days:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Weekly routine needs at least one day")
+        if item.repeat_type == RepeatType.monthly and not item.repeat_month_day:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "Monthly routine needs a day of the month"
+            )
+        if (item.repeat_interval or 1) < 1:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Repeat interval must be at least 1")
+    else:
+        if item.repeat_type is not None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Only routines repeat")
+        if item.kind in (ItemKind.activity, ItemKind.appointment) and (
+            item.date_for is None or item.time_of_day is None
+        ):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "Activities and appointments need a date and time"
+            )
 
 
 def _resolve_assignees(db: Session, ids: list[int], family_id: int) -> list[User]:
     """Validate that every id is a member of this family and return the User
-    rows. Duplicates are collapsed; an empty list means the whole family."""
+    rows. Duplicates are collapsed."""
     users: list[User] = []
     seen: set[int] = set()
     for uid in ids:
@@ -60,40 +176,108 @@ def _resolve_assignees(db: Session, ids: list[int], family_id: int) -> list[User
     return users
 
 
-def _streak(db: Session, item: Item, date_for: dt.date) -> int:
-    """Consecutive days a routine was completed, counting back from date_for.
-
-    An unfinished today doesn't break the chain: if the routine was done
-    yesterday but not yet today, the streak from yesterday still shows.
-    """
-    dates = set(
-        db.scalars(
-            select(Completion.date_for)
-            .where(Completion.item_id == item.id)
-            .order_by(Completion.date_for.desc())
-            .limit(400)
-        )
+def _occurs(item: Item, date: dt.date) -> bool:
+    return recurrence.occurs_on(
+        item.repeat_type,
+        item.repeat_days,
+        item.repeat_interval,
+        item.repeat_anchor,
+        item.repeat_month_day,
+        date,
     )
-    day = date_for if date_for in dates else date_for - dt.timedelta(days=1)
-    streak = 0
-    while day in dates:
-        streak += 1
-        day -= dt.timedelta(days=1)
-    return streak
 
 
-def _feed_item(item: Item, completed: bool, streak: int | None) -> FeedItemOut:
+def _streak(item: Item, completed_dates: set[dt.date], upto: dt.date) -> int:
+    return recurrence.streak(
+        item.repeat_type,
+        item.repeat_days,
+        item.repeat_interval,
+        item.repeat_anchor,
+        item.repeat_month_day,
+        completed_dates,
+        upto,
+    )
+
+
+def _repeat_out(item: Item) -> RepeatOut | None:
+    if item.repeat_type is None:
+        return None
+    mask = item.repeat_days or 0
+    days = [d for d in range(7) if mask & (1 << d)]
+    return RepeatOut(
+        type=item.repeat_type,
+        days=days,
+        interval=item.repeat_interval,
+        month_day=item.repeat_month_day,
+    )
+
+
+def _feed_item(
+    item: Item,
+    completed: bool,
+    streak: int | None,
+    assignee_completions: list[AssigneeCompletion] | None,
+) -> FeedItemOut:
     return FeedItemOut(
         id=item.id,
+        owner_id=item.owner_id,
         kind=item.kind,
         title=item.title,
         notes=item.notes,
+        visibility=item.visibility,
         assignees=item.assignees,
+        shared_to_feed=item.shared_to_feed,
         time_of_day=item.time_of_day,
         date_for=item.date_for,
+        repeat=_repeat_out(item),
         completed=completed,
         streak=streak,
+        assignee_completions=assignee_completions,
     )
+
+
+def _build_feed_item(db: Session, item: Item, user: User, date: dt.date) -> FeedItemOut:
+    """Assemble one card's completion state for the requesting member.
+
+    Routines are per-person: each participant gets their own completed/streak,
+    and the requesting member's own state (or, if they're not a participant,
+    whether every participant is done) becomes the card's headline state.
+    Other kinds carry a single shared check.
+    """
+    if item.kind != ItemKind.routine:
+        done = (
+            db.scalar(
+                select(Completion.id).where(
+                    Completion.item_id == item.id, Completion.date_for == date
+                )
+            )
+            is not None
+        )
+        return _feed_item(item, completed=done, streak=None, assignee_completions=None)
+
+    participants = _routine_participants(db, item)
+    dates_by_user: dict[int, set[dt.date]] = {}
+    for uid, day in db.execute(
+        select(Completion.user_id, Completion.date_for).where(Completion.item_id == item.id)
+    ):
+        if uid is not None:
+            dates_by_user.setdefault(uid, set()).add(day)
+
+    completions = [
+        AssigneeCompletion(
+            user_id=p.id,
+            completed=date in dates_by_user.get(p.id, set()),
+            streak=_streak(item, dates_by_user.get(p.id, set()), date),
+        )
+        for p in participants
+    ]
+    mine = next((c for c in completions if c.user_id == user.id), None)
+    if mine is not None:
+        completed, streak = mine.completed, mine.streak
+    else:
+        completed = bool(completions) and all(c.completed for c in completions)
+        streak = None
+    return _feed_item(item, completed=completed, streak=streak, assignee_completions=completions)
 
 
 @router.get("/feed", response_model=FeedOut)
@@ -104,8 +288,8 @@ def feed(
 ):
     """The whole home screen in one request: today, anytime, upcoming.
 
-    Upcoming has no horizon: a card scheduled weeks out stays visible on the
-    board rather than silently waiting inside a seven-day window.
+    Only cards the member can see are returned; routines appear on a day only
+    when their schedule lands on it.
     """
     _check_date(date_for)
 
@@ -121,37 +305,33 @@ def feed(
         .unique()
         .all()
     )
-
-    # One query for every completion that could matter today, keyed by item.
-    done_today = set(
-        db.scalars(select(Completion.item_id).where(Completion.date_for == date_for))
-    )
-    # An undated todo finished on some EARLIER day is archived off the board;
-    # finished today it stays put, crossed out, until the day rolls over.
-    done_before = set(
-        db.scalars(
-            select(Completion.item_id).where(
-                Completion.item_id.in_([i.id for i in items if i.date_for is None]),
-                Completion.date_for != date_for,
-            )
-        )
-    )
+    visible = [item for item in items if _visible_to(item, user)]
 
     today: list[FeedItemOut] = []
     anytime: list[FeedItemOut] = []
     upcoming: list[FeedItemOut] = []
 
-    for item in items:
+    for item in visible:
         if item.kind == ItemKind.routine:
-            streak = _streak(db, item, date_for)
-            today.append(_feed_item(item, item.id in done_today, streak))
+            if _occurs(item, date_for):
+                today.append(_build_feed_item(db, item, user, date_for))
         elif item.date_for == date_for:
-            today.append(_feed_item(item, item.id in done_today, None))
+            today.append(_build_feed_item(db, item, user, date_for))
         elif item.date_for is None:
-            if item.id not in done_before:
-                anytime.append(_feed_item(item, item.id in done_today, None))
+            fi = _build_feed_item(db, item, user, date_for)
+            # An undated task finished on an earlier day is archived off the
+            # board; finished today it stays put, crossed out, until midnight.
+            if not fi.completed:
+                earlier = db.scalar(
+                    select(Completion.id).where(
+                        Completion.item_id == item.id, Completion.date_for != date_for
+                    )
+                )
+                if earlier is not None:
+                    continue
+            anytime.append(fi)
         elif item.date_for > date_for:
-            upcoming.append(_feed_item(item, False, None))
+            upcoming.append(_build_feed_item(db, item, user, date_for))
 
     # Timed cards in day order; untimed ones sink to the end of the day.
     late = dt.time(23, 59)
@@ -168,23 +348,36 @@ def create_item(
     db: Session = Depends(get_db),
     parent: User = Depends(require_parent),
 ):
-    """Parents put cards on their family's board."""
+    """Parents put cards on their family's board. A card is the creator's own
+    (personal) until it names members or is shared with the whole family."""
     assignees = _resolve_assignees(db, data.assignee_ids, parent.family_id)
-    _check_schedule(data.kind, data.date_for, data.time_of_day)
+    rtype, rdays, rinterval, ranchor, rmonthday = _resolve_repeat(data.repeat)
+    shared = data.shared_to_feed if data.shared_to_feed is not None else (
+        data.kind == ItemKind.activity
+    )
 
     item = Item(
         family_id=parent.family_id,
+        owner_id=parent.id,
         kind=data.kind,
         title=data.title,
         notes=data.notes,
+        visibility=_resolve_visibility(data.visibility),
         assignees=assignees,
+        shared_to_feed=shared,
         time_of_day=data.time_of_day,
         date_for=data.date_for,
+        repeat_type=rtype,
+        repeat_days=rdays,
+        repeat_interval=rinterval,
+        repeat_anchor=ranchor,
+        repeat_month_day=rmonthday,
     )
+    _validate_item(item)
     db.add(item)
     db.commit()
     db.refresh(item)
-    return _feed_item(item, completed=False, streak=0 if item.kind == ItemKind.routine else None)
+    return _build_feed_item(db, item, parent, dt.date.today())
 
 
 @router.patch("/{item_id}", response_model=FeedItemOut)
@@ -195,10 +388,13 @@ def update_item(
     parent: User = Depends(require_parent),
 ):
     item = _get_item(db, item_id, parent.family_id)
+    _require_visible(item, parent)
     fields = data.model_fields_set  # only touch keys the client actually sent
 
     if "assignee_ids" in fields:
         item.assignees = _resolve_assignees(db, data.assignee_ids or [], parent.family_id)
+    if "visibility" in fields and data.visibility is not None:
+        item.visibility = data.visibility
     if "title" in fields and data.title is not None:
         item.title = data.title
     if "notes" in fields and data.notes is not None:
@@ -207,20 +403,21 @@ def update_item(
         item.time_of_day = data.time_of_day
     if "date_for" in fields:
         item.date_for = data.date_for
+    if "repeat" in fields:
+        (
+            item.repeat_type,
+            item.repeat_days,
+            item.repeat_interval,
+            item.repeat_anchor,
+            item.repeat_month_day,
+        ) = _resolve_repeat(data.repeat)
+    if "shared_to_feed" in fields and data.shared_to_feed is not None:
+        item.shared_to_feed = data.shared_to_feed
 
-    # Validate the card's final shape, so an edit can't strand an activity or
-    # appointment without its date/time or hang a date on a routine.
-    _check_schedule(item.kind, item.date_for, item.time_of_day)
-
+    _validate_item(item)
     db.commit()
     db.refresh(item)
-    done_today = db.scalar(
-        select(Completion.id).where(
-            Completion.item_id == item.id, Completion.date_for == dt.date.today()
-        )
-    )
-    streak = _streak(db, item, dt.date.today()) if item.kind == ItemKind.routine else None
-    return _feed_item(item, completed=done_today is not None, streak=streak)
+    return _build_feed_item(db, item, parent, dt.date.today())
 
 
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -230,63 +427,78 @@ def delete_item(
     parent: User = Depends(require_parent),
 ):
     item = _get_item(db, item_id, parent.family_id)
+    _require_visible(item, parent)
     db.delete(item)  # completions cascade away with it
     db.commit()
-
-
-def _can_check(item: Item, user: User) -> bool:
-    """Parents can check anything. Children only their own or family cards."""
-    if user.role == Role.parent:
-        return True
-    return not item.assignees or any(a.id == user.id for a in item.assignees)
 
 
 @router.post("/{item_id}/complete", response_model=FeedItemOut)
 def complete_item(
     item_id: int,
     date_for: dt.date = Query(alias="date"),
+    for_user: int | None = Query(default=None, alias="for"),
     db: Session = Depends(get_db),
     user: User = Depends(require_family),
 ):
     _check_date(date_for)
     item = _get_item(db, item_id, user.family_id)
-    if not _can_check(item, user):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "This card is someone else's")
+    _require_visible(item, user)
+    target = _resolve_completion_target(db, item, user, for_user)
 
-    exists = db.scalar(
-        select(Completion.id).where(
-            Completion.item_id == item.id, Completion.date_for == date_for
+    if item.kind == ItemKind.routine:
+        # Per-person: the target member's own occurrence.
+        exists = db.scalar(
+            select(Completion.id).where(
+                Completion.item_id == item.id,
+                Completion.user_id == target.id,
+                Completion.date_for == date_for,
+            )
         )
-    )
+    else:
+        # Shared: one check for the whole card, whoever taps it.
+        exists = db.scalar(
+            select(Completion.id).where(
+                Completion.item_id == item.id, Completion.date_for == date_for
+            )
+        )
+
     if exists is None:
-        db.add(Completion(item_id=item.id, user_id=user.id, date_for=date_for))
+        db.add(Completion(item_id=item.id, user_id=target.id, date_for=date_for))
         db.commit()
 
-    streak = _streak(db, item, date_for) if item.kind == ItemKind.routine else None
-    return _feed_item(item, completed=True, streak=streak)
+    return _build_feed_item(db, item, user, date_for)
 
 
 @router.delete("/{item_id}/complete", response_model=FeedItemOut)
 def uncomplete_item(
     item_id: int,
     date_for: dt.date = Query(alias="date"),
+    for_user: int | None = Query(default=None, alias="for"),
     db: Session = Depends(get_db),
     user: User = Depends(require_family),
 ):
     """Undo an accidental check-off for that day."""
     _check_date(date_for)
     item = _get_item(db, item_id, user.family_id)
-    if not _can_check(item, user):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "This card is someone else's")
+    _require_visible(item, user)
+    target = _resolve_completion_target(db, item, user, for_user)
 
-    completion = db.scalar(
-        select(Completion).where(
-            Completion.item_id == item.id, Completion.date_for == date_for
+    if item.kind == ItemKind.routine:
+        completion = db.scalar(
+            select(Completion).where(
+                Completion.item_id == item.id,
+                Completion.user_id == target.id,
+                Completion.date_for == date_for,
+            )
         )
-    )
+    else:
+        completion = db.scalar(
+            select(Completion).where(
+                Completion.item_id == item.id, Completion.date_for == date_for
+            )
+        )
     if completion is not None:
         db.delete(completion)
         db.commit()
 
-    streak = _streak(db, item, date_for) if item.kind == ItemKind.routine else None
-    return _feed_item(item, completed=False, streak=streak)
+    return _build_feed_item(db, item, user, date_for)

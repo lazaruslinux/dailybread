@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion'
-import { Check, Pencil, Trash2, Undo2, X } from 'lucide-react'
+import { Check, Flame, Pencil, Trash2, Undo2, X } from 'lucide-react'
 import { useState } from 'react'
-import type { FeedItem } from '../lib/api'
+import type { FamilyMember, FeedItem, Repeat, User } from '../lib/api'
 import { formatTime } from '../lib/moods'
 import { Avatar } from './Avatar'
 import { KIND_STYLE } from './ItemCard'
@@ -16,26 +16,57 @@ function formatDate(dateStr: string): string {
   })
 }
 
+const DAY_FULL = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd']
+  const v = n % 100
+  return n + (s[(v - 20) % 10] ?? s[v] ?? s[0])
+}
+
+// A routine's recurrence in plain words for the detail view.
+function describeRepeat(r: Repeat): string {
+  if (r.type === 'weekly') {
+    const isEveryDay = r.days.length === 7
+    const isWeekdays = r.days.length === 5 && [0, 1, 2, 3, 4].every((d) => r.days.includes(d))
+    const base = isEveryDay
+      ? 'Every day'
+      : isWeekdays
+        ? 'Weekdays'
+        : r.days.map((d) => DAY_FULL[d]).join(', ')
+    return r.interval > 1 ? `${base}, every ${r.interval} weeks` : base
+  }
+  const base = `The ${ordinal(r.month_day ?? 1)} of the month`
+  return r.interval > 1 ? `${base}, every ${r.interval} months` : base
+}
+
 // Full view of one card: everything the board truncates, plus the actions.
 // Tapping the card body opens this; state only changes from explicit buttons
 // in here. Delete is two-tap (arm, then confirm) so a slip can't nuke a card.
 export function ItemDetail({
   item,
   canCheck,
+  family,
+  me,
   onToggle,
+  onToggleFor,
   onEdit,
   onDelete,
   onClose,
 }: {
   item: FeedItem
   canCheck: boolean
+  family?: FamilyMember[]
+  me?: User | null
   onToggle?: () => void
+  onToggleFor?: (userId: number, done: boolean) => void
   onEdit?: () => void
   onDelete?: () => Promise<void>
   onClose: () => void
 }) {
   const { Icon, tint, label } = KIND_STYLE[item.kind]
   const time = formatTime(item.time_of_day)
+  const isRoutine = item.kind === 'routine'
   const [armed, setArmed] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -94,7 +125,7 @@ export function ItemDetail({
           <div className="flex items-start gap-2">
             <span className="w-12 shrink-0 pt-1 text-xs font-semibold uppercase tracking-wide text-white/40">For</span>
             {item.assignees.length === 0 ? (
-              <span className="pt-0.5">Everyone</span>
+              <span className="pt-0.5">You</span>
             ) : (
               <span className="flex flex-wrap gap-x-3 gap-y-1.5">
                 {item.assignees.map((a) => (
@@ -106,6 +137,22 @@ export function ItemDetail({
               </span>
             )}
           </div>
+          {item.visibility === 'family' && (
+            <div className="flex items-center gap-2">
+              <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-white/40">
+                Shown
+              </span>
+              On the family board
+            </div>
+          )}
+          {item.repeat && (
+            <div className="flex items-center gap-2">
+              <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-white/40">
+                Repeats
+              </span>
+              {describeRepeat(item.repeat)}
+            </div>
+          )}
           {time && (
             <div className="flex items-center gap-2">
               <span className="w-12 text-xs font-semibold uppercase tracking-wide text-white/40">Time</span>
@@ -122,8 +169,51 @@ export function ItemDetail({
           )}
         </div>
 
+        {isRoutine && item.assignee_completions && (
+          <div className="mt-6">
+            <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-white/40">
+              Who's done
+            </span>
+            <div className="flex flex-col gap-2">
+              {item.assignee_completions.map((ac) => {
+                const member = family?.find((m) => m.id === ac.user_id)
+                // You can toggle your own; a parent can toggle anyone's.
+                const canToggle = Boolean(me) && (me!.id === ac.user_id || me!.role === 'parent')
+                return (
+                  <button
+                    key={ac.user_id}
+                    type="button"
+                    disabled={!canToggle}
+                    onClick={() => onToggleFor?.(ac.user_id, !ac.completed)}
+                    className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-left transition-colors enabled:hover:bg-white/10 disabled:opacity-70"
+                  >
+                    <span
+                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${
+                        ac.completed
+                          ? 'border-emerald-300/70 bg-emerald-400/25'
+                          : 'border-white/30 bg-white/5'
+                      }`}
+                    >
+                      {ac.completed && <Check className="h-3.5 w-3.5 text-emerald-300" strokeWidth={3} />}
+                    </span>
+                    <Avatar name={member?.display_name ?? '?'} size="sm" />
+                    <span className="flex-1 truncate font-semibold text-white/90">
+                      {member?.display_name ?? 'Member'}
+                    </span>
+                    {ac.streak >= 3 && (
+                      <span className="flex items-center gap-0.5 rounded-full bg-orange-400/20 px-1.5 py-px text-[10px] font-bold text-orange-300">
+                        <Flame className="h-3 w-3" /> {ac.streak}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="mt-6 flex flex-col gap-2.5">
-          {canCheck && onToggle && (
+          {!isRoutine && canCheck && onToggle && (
             <Button
               type="button"
               variant={item.completed ? 'ghost' : 'primary'}

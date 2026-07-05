@@ -106,11 +106,51 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
   // Flip one card's completed flag in local state. This is the optimistic
   // half of a toggle: the UI answers the tap instantly and the server call
   // catches up (or the flag flips back if it fails).
-  const setItemCompleted = useCallback((id: number, completed: boolean) => {
-    const patch = (items: api.FeedItem[]) => items.map((it) => (it.id === id ? { ...it, completed } : it))
-    setFeed((f) => (f ? { ...f, today: patch(f.today), anytime: patch(f.anytime) } : f))
-    setDetail((d) => (d && d.item.id === id ? { ...d, item: { ...d.item, completed } } : d))
-  }, [])
+  const setItemCompleted = useCallback(
+    (id: number, completed: boolean) => {
+      // Also flip the current member's own row on a routine, so their avatar
+      // badge answers the tap instantly alongside the left circle.
+      const patch = (items: api.FeedItem[]) =>
+        items.map((it) =>
+          it.id === id
+            ? {
+                ...it,
+                completed,
+                assignee_completions:
+                  it.assignee_completions?.map((c) =>
+                    c.user_id === user?.id ? { ...c, completed } : c,
+                  ) ?? null,
+              }
+            : it,
+        )
+      setFeed((f) => (f ? { ...f, today: patch(f.today), anytime: patch(f.anytime) } : f))
+      setDetail((d) => (d && d.item.id === id ? { ...d, item: { ...d.item, completed } } : d))
+    },
+    [user],
+  )
+
+  // Flip one member's own row on a per-person (routine) card. Used by the
+  // detail sheet so a parent can check a routine off on a child's behalf.
+  const setAssigneeCompleted = useCallback(
+    (id: number, userId: number, completed: boolean) => {
+      const patch = (items: api.FeedItem[]) =>
+        items.map((it) =>
+          it.id === id
+            ? {
+                ...it,
+                completed: userId === user?.id ? completed : it.completed,
+                assignee_completions:
+                  it.assignee_completions?.map((c) =>
+                    c.user_id === userId ? { ...c, completed } : c,
+                  ) ?? null,
+              }
+            : it,
+        )
+      setFeed((f) => (f ? { ...f, today: patch(f.today), anytime: patch(f.anytime) } : f))
+      setDetail((d) => (d && d.item.id === id ? { ...d, item: patch([d.item])[0] } : d))
+    },
+    [user],
+  )
 
   function showUndoToast(item: api.FeedItem) {
     window.clearTimeout(toastTimer.current)
@@ -129,6 +169,20 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
     } catch (err) {
       setItemCompleted(item.id, !next)
       // Most likely a 403 on someone else's card; surface it briefly.
+      setError(err instanceof api.ApiError ? err.message : 'Could not update the card.')
+    }
+  }
+
+  // Check a routine off for a specific member (from the detail sheet's
+  // per-person list). Parents can do this for anyone; a member for themselves.
+  async function toggleFor(item: api.FeedItem, userId: number, done: boolean) {
+    setAssigneeCompleted(item.id, userId, done)
+    try {
+      if (done) await api.completeItem(item.id, userId)
+      else await api.uncompleteItem(item.id, userId)
+      refresh()
+    } catch (err) {
+      setAssigneeCompleted(item.id, userId, !done)
       setError(err instanceof api.ApiError ? err.message : 'Could not update the card.')
     }
   }
@@ -160,8 +214,13 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
 
   function canCheck(item: api.FeedItem): boolean {
     if (!user) return false
-    if (user.role === 'parent') return true
-    return item.assignees.length === 0 || item.assignees.some((a) => a.id === user.id)
+    // Routines are per-person: only a participant checks their own. Other kinds
+    // can be checked by anyone involved (owner or assignee), plus either parent
+    // on a family-board card, so co-parents share the household's chores.
+    if (item.kind === 'routine')
+      return item.assignee_completions?.some((c) => c.user_id === user.id) ?? false
+    if (item.owner_id === user.id || item.assignees.some((a) => a.id === user.id)) return true
+    return user.role === 'parent' && item.visibility === 'family'
   }
 
   const openEditor = (item: api.FeedItem | null) => {
@@ -172,6 +231,7 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
   const cardProps = (item: api.FeedItem, checkable: boolean) => ({
     item,
     canCheck: checkable,
+    family,
     onToggle: checkable ? () => toggle(item) : undefined,
     onOpen: () => setDetail({ item, checkable }),
     onEdit: isParent ? () => openEditor(item) : undefined,
@@ -180,12 +240,15 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
   const toggleFilter = (id: number) =>
     setFilter((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
 
-  // A whole-family card belongs to everyone, so it shows under any member
-  // filter; otherwise the card must be for at least one selected member.
+  // The filter is about who a card is FOR, not who can see it: a member matches
+  // if they're an assignee, or (when nobody is assigned) the owner. Being on the
+  // family board no longer forces a card to show under every member's filter.
+  const isForMember = (item: api.FeedItem, id: number) =>
+    item.assignees.length > 0
+      ? item.assignees.some((a) => a.id === id)
+      : item.owner_id === id
   const matchesFilter = (item: api.FeedItem) =>
-    filter.length === 0 ||
-    item.assignees.length === 0 ||
-    item.assignees.some((a) => filter.includes(a.id))
+    filter.length === 0 || filter.some((id) => isForMember(item, id))
 
   const today = feed ? feed.today.filter(matchesFilter) : []
   const anytime = feed ? feed.anytime.filter(matchesFilter) : []
@@ -305,7 +368,10 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
           <ItemDetail
             item={detail.item}
             canCheck={detail.checkable}
+            family={family}
+            me={user}
             onToggle={() => toggle(detail.item)}
+            onToggleFor={(userId, done) => toggleFor(detail.item, userId, done)}
             onEdit={isParent ? () => openEditor(detail.item) : undefined}
             onDelete={isParent ? () => deleteFromDetail(detail.item) : undefined}
             onClose={() => setDetail(null)}

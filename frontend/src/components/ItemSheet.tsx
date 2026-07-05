@@ -1,11 +1,11 @@
 import { motion } from 'framer-motion'
-import { Trash2, X } from 'lucide-react'
+import { Trash2, Users, X } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import * as api from '../lib/api'
 import { Avatar } from './Avatar'
 import { Button, Field, FormError } from './ui'
 
-function AssigneeChip({
+function Chip({
   selected,
   onClick,
   children,
@@ -30,6 +30,9 @@ function AssigneeChip({
   )
 }
 
+// Compact box for a 1-2 digit number; deliberately not the full-width .field.
+const NUM = 'w-12 rounded-lg border border-white/15 bg-white/10 px-1 py-1 text-center text-sm text-white outline-none focus:border-indigo-400/60'
+
 const KIND_LABEL: Record<api.ItemKind, string> = {
   routine: 'Routine',
   task: 'Task',
@@ -38,11 +41,16 @@ const KIND_LABEL: Record<api.ItemKind, string> = {
 }
 
 const KIND_HINT: Record<api.ItemKind, string> = {
-  routine: 'Repeats every day',
+  routine: 'Repeats on a schedule you choose',
   task: 'One-off, with an optional due date',
   activity: 'A time block on a set day',
   appointment: 'A fixed date and time',
 }
+
+// Weekday labels, 0 = Monday .. 6 = Sunday (matching the backend mask).
+const DAY_LABELS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
+const EVERY_DAY = [0, 1, 2, 3, 4, 5, 6]
+const WEEKDAYS = [0, 1, 2, 3, 4]
 
 // Bottom sheet for parents to add or edit a card. Same pattern as the admin
 // member sheet: tap outside or the X to close, primary action at the bottom.
@@ -61,25 +69,60 @@ export function ItemSheet({
   const [kind, setKind] = useState<api.ItemKind>(item?.kind ?? 'routine')
   const [title, setTitle] = useState(item?.title ?? '')
   const [notes, setNotes] = useState(item?.notes ?? '')
-  // Which members this card is for. Empty means the whole family, so there's
-  // no separate "Everyone" chip: clearing everyone IS everyone.
+
+  // Two separate axes: who is assigned to DO it (checks it off), and whether
+  // it's shown on the whole family's board (visibility). A card is private to
+  // the owner + assignees until the family-board switch is on.
   const [assignees, setAssignees] = useState<number[]>(item?.assignees?.map((a) => a.id) ?? [])
+  const [familyBoard, setFamilyBoard] = useState(item?.visibility === 'family')
+
+  // Recurrence (routines only). A new routine starts as a plain daily one.
+  const [repeatType, setRepeatType] = useState<api.RepeatType>(item?.repeat?.type ?? 'weekly')
+  const [days, setDays] = useState<number[]>(item?.repeat?.days ?? EVERY_DAY)
+  const [interval, setInterval] = useState(item?.repeat?.interval ?? 1)
+  const [monthDay, setMonthDay] = useState(item?.repeat?.month_day ?? 1)
+
   const [time, setTime] = useState(item?.time_of_day?.slice(0, 5) ?? '')
   const [date, setDate] = useState(item?.date_for ?? '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
+  const allAssigned = family.length > 0 && family.every((m) => assignees.includes(m.id))
+
+  function toggleMember(id: number) {
+    setAssignees((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+  function toggleEveryone() {
+    setAssignees(allAssigned ? [] : family.map((m) => m.id))
+  }
+  function toggleDay(d: number) {
+    setDays((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort((a, b) => a - b)))
+  }
+
+  const isRoutine = kind === 'routine'
+  const needsSchedule = kind === 'activity' || kind === 'appointment'
+  const showDate = !isRoutine
+  const weeklyReady = !isRoutine || repeatType !== 'weekly' || days.length > 0
+  const scheduleReady = (!needsSchedule || (Boolean(date) && Boolean(time))) && weeklyReady
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
     setBusy(true)
+    const repeat: api.RepeatInput | null = isRoutine
+      ? repeatType === 'weekly'
+        ? { type: 'weekly', days, interval }
+        : { type: 'monthly', month_day: monthDay, interval }
+      : null
     const payload: api.ItemPayload = {
       kind,
       title,
       notes,
       assignee_ids: assignees,
+      visibility: familyBoard ? 'family' : 'private',
       time_of_day: time || null,
-      date_for: kind === 'routine' ? null : date || null,
+      date_for: isRoutine ? null : date || null,
+      repeat,
     }
     try {
       if (creating) await api.createItem(payload)
@@ -103,11 +146,13 @@ export function ItemSheet({
     }
   }
 
-  // Activities and appointments are anchored in time: both fields required.
-  // Routines never take a date; tasks take an optional "due by" date.
-  const needsSchedule = kind === 'activity' || kind === 'appointment'
-  const showDate = kind !== 'routine'
-  const scheduleReady = !needsSchedule || (Boolean(date) && Boolean(time))
+  const assignHint = allAssigned
+    ? 'Everyone checks off their own'
+    : assignees.length === 0
+      ? 'Just you'
+      : assignees.length === 1
+        ? 'The person you picked checks it off'
+        : 'Each person checks off their own'
 
   return (
     <motion.div
@@ -167,29 +212,136 @@ export function ItemSheet({
           <Field label="Title" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} required />
           <Field label="Notes (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={300} />
 
+          {isRoutine && (
+            <div>
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-white/50">
+                Repeats
+              </span>
+              <div className="mb-2 grid grid-cols-2 gap-2">
+                <Chip selected={repeatType === 'weekly'} onClick={() => setRepeatType('weekly')}>
+                  <span className="mx-auto">Weekly</span>
+                </Chip>
+                <Chip selected={repeatType === 'monthly'} onClick={() => setRepeatType('monthly')}>
+                  <span className="mx-auto">Monthly</span>
+                </Chip>
+              </div>
+
+              {repeatType === 'weekly' ? (
+                <>
+                  <div className="flex gap-1">
+                    {DAY_LABELS.map((label, d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => toggleDay(d)}
+                        aria-pressed={days.includes(d)}
+                        className={`flex-1 rounded-lg border py-1.5 text-xs font-semibold transition-colors ${
+                          days.includes(d)
+                            ? 'border-indigo-400/60 bg-indigo-400/20 text-white'
+                            : 'border-white/10 bg-white/5 text-white/55 hover:bg-white/10'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDays(EVERY_DAY)}
+                      className="text-xs font-semibold text-indigo-300 hover:text-indigo-200"
+                    >
+                      Daily
+                    </button>
+                    <span className="text-white/20">·</span>
+                    <button
+                      type="button"
+                      onClick={() => setDays(WEEKDAYS)}
+                      className="text-xs font-semibold text-indigo-300 hover:text-indigo-200"
+                    >
+                      Weekdays
+                    </button>
+                    <label className="ml-auto flex items-center gap-1.5 text-xs text-white/50">
+                      every
+                      <input
+                        type="number"
+                        min={1}
+                        max={52}
+                        value={interval}
+                        onChange={(e) => setInterval(Math.max(1, Number(e.target.value) || 1))}
+                        className={NUM}
+                      />
+                      wk
+                    </label>
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1.5 text-xs text-white/50">
+                    Day
+                    <input
+                      type="number"
+                      min={1}
+                      max={31}
+                      value={monthDay}
+                      onChange={(e) => setMonthDay(Math.min(31, Math.max(1, Number(e.target.value) || 1)))}
+                      className={NUM}
+                    />
+                  </label>
+                  <label className="ml-auto flex items-center gap-1.5 text-xs text-white/50">
+                    every
+                    <input
+                      type="number"
+                      min={1}
+                      max={12}
+                      value={interval}
+                      onChange={(e) => setInterval(Math.max(1, Number(e.target.value) || 1))}
+                      className={NUM}
+                    />
+                    mo
+                  </label>
+                </div>
+              )}
+              {!weeklyReady && <p className="mt-1.5 text-xs text-rose-300">Pick at least one day.</p>}
+            </div>
+          )}
+
           <div>
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-white/50">
-              For
+              Assign to
             </span>
-            {/* Tap members to add them; tap again to remove. Pick as many as you
-                like. Selecting no one means the card is for the whole family. */}
+            {/* Who is responsible and checks it off. Empty means just you. This
+                is separate from who can see it (the family-board switch below). */}
             <div className="flex flex-wrap gap-2">
+              <Chip selected={allAssigned} onClick={toggleEveryone}>
+                <Users className="h-4 w-4" /> Everyone
+              </Chip>
               {family.map((m) => (
-                <AssigneeChip
-                  key={m.id}
-                  selected={assignees.includes(m.id)}
-                  onClick={() =>
-                    setAssignees((prev) =>
-                      prev.includes(m.id) ? prev.filter((id) => id !== m.id) : [...prev, m.id],
-                    )
-                  }
-                >
+                <Chip key={m.id} selected={!allAssigned && assignees.includes(m.id)} onClick={() => toggleMember(m.id)}>
                   <Avatar name={m.display_name} size="sm" /> {m.display_name}
-                </AssigneeChip>
+                </Chip>
               ))}
             </div>
+            <p className="mt-1.5 text-xs text-white/40">{assignHint}</p>
+          </div>
+
+          <div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={familyBoard}
+              onClick={() => setFamilyBoard((v) => !v)}
+              className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-left"
+            >
+              <span className="text-sm font-semibold text-white/85">Show on the family board</span>
+              <span className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${familyBoard ? 'bg-indigo-500' : 'bg-white/15'}`}>
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${familyBoard ? 'left-[1.125rem]' : 'left-0.5'}`} />
+              </span>
+            </button>
             <p className="mt-1.5 text-xs text-white/40">
-              {assignees.length === 0 ? 'For the whole family' : 'Tap a name again to remove them'}
+              {familyBoard
+                ? 'Everyone can see it and hide it if they like; only assigned people check it off'
+                : 'Only you and anyone you assign can see it'}
             </p>
           </div>
 

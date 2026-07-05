@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 import { Activity, CalendarClock, Check, Circle, Flame, Pencil, Repeat, type LucideIcon } from 'lucide-react'
-import type { FeedItem, ItemKind } from '../lib/api'
+import type { FamilyMember, FeedItem, ItemKind } from '../lib/api'
 import { formatTime } from '../lib/moods'
 import { Avatar } from './Avatar'
 
@@ -11,6 +11,21 @@ export const KIND_STYLE: Record<ItemKind, { Icon: LucideIcon; tint: string; labe
   appointment: { Icon: CalendarClock, tint: 'text-violet-300', label: 'Appointment' },
 }
 
+// A face with a small check badge when that person has done their own bit.
+// Used for routines, which are completed per person.
+function ParticipantAvatar({ name, done }: { name: string; done: boolean }) {
+  return (
+    <span className="relative">
+      <Avatar name={name} size="sm" className={`ring-2 ring-black/40 ${done ? '' : 'opacity-45'}`} />
+      {done && (
+        <span className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-emerald-400 ring-2 ring-black/40">
+          <Check className="h-2.5 w-2.5 text-black" strokeWidth={4} />
+        </span>
+      )}
+    </span>
+  )
+}
+
 // One card on the board. The circle on the left is the only thing that
 // completes a card; tapping anywhere else opens the detail sheet, so a
 // stray tap can never silently change state. Completed cards stay in place
@@ -19,6 +34,7 @@ export function ItemCard({
   item,
   index,
   canCheck,
+  family,
   onToggle,
   onOpen,
   onEdit,
@@ -26,6 +42,7 @@ export function ItemCard({
   item: FeedItem
   index: number
   canCheck: boolean
+  family?: FamilyMember[]
   onToggle?: () => void
   onOpen?: () => void
   onEdit?: () => void
@@ -33,6 +50,19 @@ export function ItemCard({
   const { Icon, tint, label } = KIND_STYLE[item.kind]
   const time = formatTime(item.time_of_day)
   const showCheckbox = canCheck && onToggle
+
+  // Routines are per-person: show each participant's own check. Suppressed
+  // when it's the viewer's own solo routine (their left circle already says
+  // it), but shown for a solo routine the viewer only watches (awareness).
+  const perPerson =
+    item.kind === 'routine' && item.assignee_completions && item.assignee_completions.length >= 1
+      ? item.assignee_completions.map((c) => ({
+          user: family?.find((m) => m.id === c.user_id),
+          completed: c.completed,
+        }))
+      : null
+  const showPerPerson = perPerson !== null && (perPerson.length > 1 || !showCheckbox)
+  const doneCount = perPerson?.filter((p) => p.completed).length ?? 0
 
   return (
     <motion.div
@@ -88,6 +118,11 @@ export function ItemCard({
             {showCheckbox && <Icon className="h-3 w-3" strokeWidth={2.5} />}
             {label}
           </span>
+          {perPerson && perPerson.length > 1 && (
+            <span className="rounded-full bg-white/10 px-1.5 py-px text-[10px] font-bold normal-case text-white/60">
+              {doneCount}/{perPerson.length} done
+            </span>
+          )}
           {(item.streak ?? 0) >= 3 && (
             <span className="flex items-center gap-0.5 rounded-full bg-orange-400/20 px-1.5 py-px text-[10px] font-bold normal-case text-orange-300">
               <Flame className="h-3 w-3" /> {item.streak}
@@ -102,19 +137,33 @@ export function ItemCard({
 
       <div className="flex shrink-0 flex-col items-end gap-1.5">
         {time && <span className="text-xs font-medium text-white/50">{time}</span>}
-        {item.assignees.length > 0 && (
-          // Overlapping cluster; the ring separates faces. Cap at three, then
-          // a +N so a card for the whole family never overflows the row.
+        {showPerPerson && perPerson ? (
+          // Per-person routine: each face carries its own check state.
           <div className="flex -space-x-2">
-            {item.assignees.slice(0, 3).map((a) => (
-              <Avatar key={a.id} name={a.display_name} size="sm" className="ring-2 ring-black/40" />
+            {perPerson.slice(0, 3).map((p, i) => (
+              <ParticipantAvatar key={i} name={p.user?.display_name ?? '?'} done={p.completed} />
             ))}
-            {item.assignees.length > 3 && (
+            {perPerson.length > 3 && (
               <span className="z-10 flex h-7 w-7 items-center justify-center rounded-full bg-white/15 text-[10px] font-bold ring-2 ring-black/40">
-                +{item.assignees.length - 3}
+                +{perPerson.length - 3}
               </span>
             )}
           </div>
+        ) : (
+          item.assignees.length > 0 && (
+            // Overlapping cluster; the ring separates faces. Cap at three, then
+            // a +N so a card for several people never overflows the row.
+            <div className="flex -space-x-2">
+              {item.assignees.slice(0, 3).map((a) => (
+                <Avatar key={a.id} name={a.display_name} size="sm" className="ring-2 ring-black/40" />
+              ))}
+              {item.assignees.length > 3 && (
+                <span className="z-10 flex h-7 w-7 items-center justify-center rounded-full bg-white/15 text-[10px] font-bold ring-2 ring-black/40">
+                  +{item.assignees.length - 3}
+                </span>
+              )}
+            </div>
+          )
         )}
       </div>
 

@@ -2,7 +2,7 @@ import datetime as dt
 
 from pydantic import BaseModel, Field
 
-from app.models import ItemKind, MoodLevel, Role
+from app.models import ItemKind, MoodLevel, RepeatType, Role, Visibility
 
 
 # Pydantic models define the JSON shapes for requests/responses and validate
@@ -90,15 +90,42 @@ class SetupOut(BaseModel):
 # ---- items and the home feed -------------------------------------------------
 
 
+class RepeatIn(BaseModel):
+    """How a routine recurs. Weekly uses days (0=Mon .. 6=Sun); monthly uses
+    month_day. interval is "every N weeks/months"; anchor phases it (defaults
+    to the routine's creation date)."""
+
+    type: RepeatType
+    days: list[int] = Field(default_factory=list)
+    interval: int = Field(default=1, ge=1, le=52)
+    month_day: int | None = Field(default=None, ge=1, le=31)
+    anchor: dt.date | None = None
+
+
+class RepeatOut(BaseModel):
+    type: RepeatType
+    days: list[int]  # 0=Mon .. 6=Sun
+    interval: int
+    month_day: int | None
+
+
 class ItemIn(BaseModel):
     """A parent creating a card for the board."""
 
     kind: ItemKind
     title: str = Field(min_length=1, max_length=120)
     notes: str = Field(default="", max_length=300)
-    assignee_ids: list[int] = Field(default_factory=list)  # empty = whole family
+    # Who the card is shared with. Empty on a personal card means the owner
+    # alone; use visibility=family for "Everyone".
+    assignee_ids: list[int] = Field(default_factory=list)
+    # Household visibility. None lets the server pick: family if visibility is
+    # explicitly Everyone, else assigned when members are named, else personal.
+    visibility: Visibility | None = None
     time_of_day: dt.time | None = None
-    date_for: dt.date | None = None  # todos/events; routines leave it unset
+    date_for: dt.date | None = None  # tasks/events; routines use repeat instead
+    repeat: RepeatIn | None = None  # required for routines, forbidden otherwise
+    # Future cross-household feed (Phase E). None follows the kind default.
+    shared_to_feed: bool | None = None
 
 
 class ItemUpdate(BaseModel):
@@ -110,23 +137,44 @@ class ItemUpdate(BaseModel):
 
     title: str | None = Field(default=None, min_length=1, max_length=120)
     notes: str | None = Field(default=None, max_length=300)
-    # Sending the list replaces the assignees wholesale; [] means whole family.
+    # Sending the list replaces the assignees wholesale.
     assignee_ids: list[int] | None = None
+    visibility: Visibility | None = None
     time_of_day: dt.time | None = None
     date_for: dt.date | None = None
+    repeat: RepeatIn | None = None
+    shared_to_feed: bool | None = None
+
+
+class AssigneeCompletion(BaseModel):
+    """One participant's own state on a routine: whether they've done today's
+    occurrence, and their personal streak. Routines only."""
+
+    user_id: int
+    completed: bool
+    streak: int
 
 
 class FeedItemOut(BaseModel):
     id: int
+    owner_id: int | None
     kind: ItemKind
     title: str
     notes: str
-    assignees: list[UserOut]  # empty = whole family
+    visibility: Visibility
+    assignees: list[UserOut]
+    shared_to_feed: bool
     time_of_day: dt.time | None
     date_for: dt.date | None
+    repeat: RepeatOut | None  # routines only
+    # The requesting member's own view: for a routine, their own check/streak
+    # (or, for a non-participant, whether every participant is done). For other
+    # kinds, the single shared check.
     completed: bool
-    # Consecutive days done, routines only. None for todos/events.
     streak: int | None
+    # Per-participant state for routines, so the parents' board can show each
+    # member's check independently. None for non-routine kinds.
+    assignee_completions: list[AssigneeCompletion] | None
 
     model_config = {"from_attributes": True}
 

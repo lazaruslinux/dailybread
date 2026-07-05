@@ -7,6 +7,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Integer,
     String,
     Table,
     Time,
@@ -71,16 +72,41 @@ class User(Base):
 class ItemKind(str, enum.Enum):
     """The four kinds of cards on the board."""
 
-    routine = "routine"  # repeats every day, no date (brush teeth, morning walk)
+    routine = "routine"  # repeats on a schedule, no single date (brush teeth, soccer)
     task = "task"  # one-off; an optional "due by" date/time (call the dentist)
     activity = "activity"  # a time block you spend on a day (gym, study) — date+time
     appointment = "appointment"  # a fixed commitment (dentist, meeting) — date+time
 
 
-# A card can be for several members at once. An EMPTY assignee list means the
-# whole family. If a member is deleted their rows here cascade away, so a card
-# assigned only to them gracefully falls back to a whole-family card instead of
-# disappearing.
+class RepeatType(str, enum.Enum):
+    """How a routine recurs. Only routines carry one; every other kind is NULL.
+
+    weekly: on chosen weekdays (repeat_days), optionally every N weeks.
+    monthly: on a day-of-month (repeat_month_day), optionally every N months.
+    A plain daily routine is weekly with all seven weekdays selected.
+    """
+
+    weekly = "weekly"
+    monthly = "monthly"
+
+
+class Visibility(str, enum.Enum):
+    """Who can SEE a card, which is separate from who is assigned to DO it.
+
+    private: the owner and anyone assigned (a card with no assignees is then
+    the owner's alone). family: the whole household can see it for awareness,
+    but only assignees check it off; non-assignees see it read-only and can
+    filter it off their own board. Distinct from shared_to_feed, the future
+    cross-household feed axis."""
+
+    private = "private"
+    family = "family"
+
+
+# Who is assigned to DO a card: the people responsible for it, who check it
+# off (per-person for routines). This is separate from Visibility, which is who
+# can SEE it. An empty list means the owner is the one responsible. If a member
+# is deleted their rows here cascade away.
 item_assignees = Table(
     "item_assignees",
     Base.metadata,
@@ -94,34 +120,70 @@ class Item(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
+    # The member who created the card; the anchor for "my own board". SET NULL
+    # on delete so a card survives its owner's removal (it falls back to a
+    # family-owned card in the visibility check rather than disappearing).
+    owner_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     kind: Mapped[ItemKind] = mapped_column(SAEnum(ItemKind, name="item_kind"))
     title: Mapped[str] = mapped_column(String(120))
     notes: Mapped[str] = mapped_column(String(300), default="")
 
-    # Who this card is for; empty means the whole family. Ordered by id so the
-    # avatars render in a stable order on the card.
+    # Who can SEE this card. New cards are private (the owner plus anyone
+    # assigned); family puts it on the whole household's board for awareness.
+    visibility: Mapped[Visibility] = mapped_column(
+        SAEnum(Visibility, name="item_visibility"), default=Visibility.private
+    )
+    # Future in-instance cross-household feed (Phase E). Not surfaced yet;
+    # defaults follow kind at creation (activities shareable, others private).
+    shared_to_feed: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Who is assigned to do this card (responsible, checks it off). Empty means
+    # the owner. Ordered by id so the avatars render in a stable order.
     assignees: Mapped[list[User]] = relationship(
         secondary=item_assignees, order_by=User.id
     )
 
-    # When during the day (routines and events; todos usually have none).
+    # --- recurrence (routines only; NULL on every other kind) -----------------
+    # A routine has no single date_for; these say when it recurs instead.
+    repeat_type: Mapped[RepeatType | None] = mapped_column(
+        SAEnum(RepeatType, name="repeat_type"), nullable=True
+    )
+    # Weekly: a 7-bit weekday mask, Monday = bit 0 ... Sunday = bit 6. All seven
+    # bits (127) is a plain daily routine.
+    repeat_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Repeat every N weeks (weekly) or N months (monthly). 1 = every one.
+    repeat_interval: Mapped[int] = mapped_column(Integer, default=1)
+    # Reference date that phases "every N" so it knows which week/month is "on".
+    # Falls back to created_at's date when NULL.
+    repeat_anchor: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    # Monthly: the day of the month (1-31), clamped to the month's last day.
+    repeat_month_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # When during the day (routines and events; tasks usually have none).
     time_of_day: Mapped[dt.time | None] = mapped_column(Time, nullable=True)
-    # Which day (todos and events). Routines leave this NULL: they are daily.
+    # Which day (tasks and events). Routines leave this NULL and use recurrence.
     date_for: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
 
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class Completion(Base):
-    """One check-off of an item on a given day.
+    """One check-off of an item on a given day, by a given member.
 
-    Routines get one row per day they were done, which is what streaks are
-    computed from. Todos and events get a single row on the day they were
-    checked. One completion per item per day, enforced by the constraint.
+    Routines are per-person: each assignee gets their own row per occurrence
+    they complete, so one kid checking "brush teeth" does not mark it done for
+    the others, and streaks are computed per member. Tasks and events keep a
+    single shared check (any member's tap completes it for everyone). The
+    constraint is one row per (item, member, day), which allows the several
+    per-member rows a shared routine needs on a single day.
     """
 
     __tablename__ = "completions"
-    __table_args__ = (UniqueConstraint("item_id", "date_for", name="uq_completion_item_day"),)
+    __table_args__ = (
+        UniqueConstraint("item_id", "user_id", "date_for", name="uq_completion_item_user_day"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"), index=True)
