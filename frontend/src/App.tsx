@@ -7,13 +7,13 @@ import { HealthBadge } from './components/HealthBadge'
 import { TabBar, type Tab } from './components/TabBar'
 import { Admin } from './pages/Admin'
 import { CreateFamily } from './pages/CreateFamily'
-import { Food } from './pages/Food'
 import { Home } from './pages/Home'
 import { Kitchen } from './pages/Kitchen'
 import { Login } from './pages/Login'
-import { Me } from './pages/Me'
+import { Nutrition } from './pages/Nutrition'
 import { Profile } from './pages/Profile'
 import { Setup } from './pages/Setup'
+import { You } from './pages/You'
 
 function greeting(): string {
   const h = new Date().getHours()
@@ -31,20 +31,20 @@ function todayLabel(): string {
 }
 
 // An overlay sits on top of the current tab (a member's profile opened from
-// the family strip, or the admin dashboard opened from Me). Back returns to
+// the family strip, or the admin dashboard opened from You). Back returns to
 // the tab underneath; switching tabs dismisses it.
 type Overlay = { name: 'profile'; id: number } | { name: 'admin' } | null
 
 const TAB_TITLE: Record<Tab, string> = {
-  today: '', // Today shows the date + greeting instead of a title
-  food: 'Food',
+  home: '', // Home shows the date + greeting instead of a title
+  nutrition: 'Nutrition',
   kitchen: 'Kitchen',
-  me: 'Me',
+  you: 'You',
 }
 
 function AppShell() {
   const { user } = useAuth()
-  const [tab, setTab] = useState<Tab>('today')
+  const [tab, setTab] = useState<Tab>('home')
   const [overlay, setOverlay] = useState<Overlay>(null)
   const firstName = user?.display_name.split(/\s+/)[0] ?? ''
 
@@ -70,7 +70,7 @@ function AppShell() {
             >
               <ChevronLeft className="h-4 w-4" /> Back
             </button>
-          ) : tab === 'today' ? (
+          ) : tab === 'home' ? (
             <p className="text-sm text-fg/50">{todayLabel()}</p>
           ) : (
             <p className="text-sm font-semibold text-fg/70">{TAB_TITLE[tab]}</p>
@@ -78,7 +78,7 @@ function AppShell() {
           <HealthBadge />
         </div>
 
-        {tab === 'today' && !overlay && (
+        {tab === 'home' && !overlay && (
           <h1 className="font-display text-[2.05rem] font-semibold leading-[1.1] tracking-[-0.02em]">
             {greeting()}, {firstName}
           </h1>
@@ -95,12 +95,12 @@ function AppShell() {
         >
           {overlay?.name === 'profile' && <Profile userId={overlay.id} />}
           {overlay?.name === 'admin' && <Admin />}
-          {!overlay && tab === 'today' && (
+          {!overlay && tab === 'home' && (
             <Home onOpenProfile={(id) => setOverlay({ name: 'profile', id })} />
           )}
-          {!overlay && tab === 'food' && <Food />}
+          {!overlay && tab === 'nutrition' && <Nutrition />}
           {!overlay && tab === 'kitchen' && <Kitchen />}
-          {!overlay && tab === 'me' && <Me onOpenAdmin={() => setOverlay({ name: 'admin' })} />}
+          {!overlay && tab === 'you' && <You onOpenAdmin={() => setOverlay({ name: 'admin' })} />}
         </motion.div>
       </AnimatePresence>
 

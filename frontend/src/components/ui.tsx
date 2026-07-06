@@ -45,8 +45,10 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const VARIANT_CLASS: Record<NonNullable<ButtonProps['variant']>, string> = {
+  // White text on the saturated accent fill reads crisply in every theme
+  // (light ink on a deep-amber button would be muddy), so it stays fixed.
   primary:
-    'bg-gradient-to-r from-accent to-accent-strong text-fg shadow-lg shadow-accent/25 hover:from-accent-bright hover:to-accent-strong',
+    'bg-gradient-to-r from-accent to-accent-strong text-white shadow-lg shadow-accent/25 hover:from-accent-bright hover:to-accent-strong',
   ghost: 'bg-fg/10 text-fg/85 hover:bg-fg/15 border border-fg/10',
   danger: 'bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border border-rose-400/20',
 }

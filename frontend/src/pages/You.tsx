@@ -6,10 +6,8 @@ import { Profile } from './Profile'
 
 // Little preview swatch per theme so the choice reads at a glance.
 const SWATCH: Record<Theme, string> = {
-  default: 'bg-[linear-gradient(135deg,#6366f1,#8b5cf6)]',
-  crimson: 'bg-[linear-gradient(135deg,#e11d48,#0a0a0c)]',
-  forest: 'bg-[linear-gradient(135deg,#4ade80,#08090a)]',
-  light: 'bg-[linear-gradient(135deg,#eceff5,#4f46e5)]',
+  light: 'bg-[linear-gradient(135deg,#f7f4ee,#b45309)]',
+  dark: 'bg-[linear-gradient(135deg,#4ade80,#08090a)]',
 }
 
 function ThemePicker({ userId }: { userId: number }) {
@@ -48,9 +46,9 @@ function ThemePicker({ userId }: { userId: number }) {
   )
 }
 
-// The Me tab: your own profile (bio + mood) plus account-level actions that
+// The You tab: your own profile (bio + mood) plus account-level actions that
 // used to crowd the header. Admin entry lives here now.
-export function Me({ onOpenAdmin }: { onOpenAdmin: () => void }) {
+export function You({ onOpenAdmin }: { onOpenAdmin: () => void }) {
   const { user, logout } = useAuth()
   if (!user) return null
 

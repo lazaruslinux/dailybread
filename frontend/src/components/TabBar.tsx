@@ -1,13 +1,13 @@
 import { motion } from 'framer-motion'
 import { CircleUser, House, ShoppingBasket, Utensils, type LucideIcon } from 'lucide-react'
 
-export type Tab = 'today' | 'food' | 'kitchen' | 'me'
+export type Tab = 'home' | 'nutrition' | 'kitchen' | 'you'
 
 const TABS: { id: Tab; label: string; Icon: LucideIcon }[] = [
-  { id: 'today', label: 'Today', Icon: House },
-  { id: 'food', label: 'Food', Icon: Utensils },
+  { id: 'home', label: 'Home', Icon: House },
+  { id: 'nutrition', label: 'Nutrition', Icon: Utensils },
   { id: 'kitchen', label: 'Kitchen', Icon: ShoppingBasket },
-  { id: 'me', label: 'Me', Icon: CircleUser },
+  { id: 'you', label: 'You', Icon: CircleUser },
 ]
 
 // Floating bottom navigation. Thumb-reachable, always visible, one tap to
