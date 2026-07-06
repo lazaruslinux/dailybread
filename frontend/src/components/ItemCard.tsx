@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 import { Activity, CalendarClock, Check, Circle, Flame, Pencil, Repeat, type LucideIcon } from 'lucide-react'
-import type { FamilyMember, FeedItem, ItemKind } from '../lib/api'
+import { avatarUrl, type FamilyMember, type FeedItem, type ItemKind } from '../lib/api'
 import { formatTime } from '../lib/moods'
 import { Avatar } from './Avatar'
 
@@ -13,10 +13,23 @@ export const KIND_STYLE: Record<ItemKind, { Icon: LucideIcon; tint: string; labe
 
 // A face with a small check badge when that person has done their own bit.
 // Used for routines, which are completed per person.
-function ParticipantAvatar({ name, done }: { name: string; done: boolean }) {
+function ParticipantAvatar({
+  name,
+  src = null,
+  done,
+}: {
+  name: string
+  src?: string | null
+  done: boolean
+}) {
   return (
     <span className="relative">
-      <Avatar name={name} size="sm" className={`ring-2 ring-black/40 ${done ? '' : 'opacity-45'}`} />
+      <Avatar
+        name={name}
+        src={src}
+        size="sm"
+        className={`ring-2 ring-black/40 ${done ? '' : 'opacity-45'}`}
+      />
       {done && (
         <span className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-emerald-400 ring-2 ring-black/40">
           <Check className="h-2.5 w-2.5 text-black" strokeWidth={4} />
@@ -152,7 +165,12 @@ export function ItemCard({
           // Per-person routine: each face carries its own check state.
           <div className="flex -space-x-2">
             {perPerson.slice(0, 3).map((p, i) => (
-              <ParticipantAvatar key={i} name={p.user?.display_name ?? '?'} done={p.completed} />
+              <ParticipantAvatar
+                key={i}
+                name={p.user?.display_name ?? '?'}
+                src={p.user ? avatarUrl(p.user) : null}
+                done={p.completed}
+              />
             ))}
             {perPerson.length > 3 && (
               <span className="z-10 flex h-7 w-7 items-center justify-center rounded-full bg-fg/15 text-[10px] font-bold ring-2 ring-black/40">
@@ -166,7 +184,13 @@ export function ItemCard({
             // a +N so a card for several people never overflows the row.
             <div className="flex -space-x-2">
               {item.assignees.slice(0, 3).map((a) => (
-                <Avatar key={a.id} name={a.display_name} size="sm" className="ring-2 ring-black/40" />
+                <Avatar
+                  key={a.id}
+                  name={a.display_name}
+                  src={avatarUrl(a)}
+                  size="sm"
+                  className="ring-2 ring-black/40"
+                />
               ))}
               {item.assignees.length > 3 && (
                 <span className="z-10 flex h-7 w-7 items-center justify-center rounded-full bg-fg/15 text-[10px] font-bold ring-2 ring-black/40">

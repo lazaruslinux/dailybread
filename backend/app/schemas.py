@@ -22,6 +22,10 @@ class UserOut(BaseModel):
     # None only while a new-household account hasn't created its family yet;
     # the frontend uses this to show the create-your-family wizard.
     family_id: int | None = None
+    # When the member last set an avatar photo, or None if they have none. The
+    # frontend shows a photo when this is set and appends it as a cache-busting
+    # version to the avatar image URL.
+    avatar_updated_at: dt.datetime | None = None
 
     # Let Pydantic read attributes off a SQLAlchemy User object directly.
     model_config = {"from_attributes": True}

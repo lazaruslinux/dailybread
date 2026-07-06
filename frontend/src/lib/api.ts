@@ -66,6 +66,10 @@ export interface User {
   // null only for a fresh "new household" account that hasn't run its
   // create-your-family wizard yet. The app uses this to route them there.
   family_id: number | null
+  // ISO timestamp of the member's last avatar upload, or null if they have no
+  // photo (the UI then draws generated initials). Doubles as a cache-busting
+  // version for the avatar image URL.
+  avatar_updated_at: string | null
 }
 
 export interface SetupState {
@@ -311,6 +315,40 @@ export const getProfile = (id: number) =>
 
 export const updateMyProfile = (payload: { display_name?: string; bio?: string }) =>
   request<Profile>('/me/profile', { method: 'PATCH', body: JSON.stringify(payload) })
+
+// The image URL for a member's avatar, or null when they have no photo. The
+// avatar_updated_at value is appended so the browser refetches after a change
+// but caches hard otherwise (the server sends an immutable cache header).
+export const avatarUrl = (u: { id: number; avatar_updated_at: string | null }): string | null =>
+  u.avatar_updated_at
+    ? `/api/users/${u.id}/avatar?v=${encodeURIComponent(u.avatar_updated_at)}`
+    : null
+
+// Multipart upload can't go through request(): the browser must set its own
+// multipart Content-Type with the boundary, so we call fetch directly here.
+export async function uploadAvatar(userId: number, file: File): Promise<Profile> {
+  const body = new FormData()
+  body.append('file', file)
+  const res = await fetch(`/api/users/${userId}/avatar`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    body,
+  })
+  if (!res.ok) {
+    let detail = `Upload failed (${res.status})`
+    try {
+      const b = await res.json()
+      if (typeof b?.detail === 'string') detail = b.detail
+    } catch {
+      /* keep the fallback */
+    }
+    throw new ApiError(res.status, detail)
+  }
+  return res.json()
+}
+
+export const removeAvatar = (userId: number) =>
+  request<void>(`/users/${userId}/avatar`, { method: 'DELETE' })
 
 export const setMyMood = (level: MoodLevel, hidden: boolean) =>
   request<Mood>('/me/mood', {

@@ -20,5 +20,10 @@ class Settings(BaseSettings):
     # COOKIE_SECURE=true in production, behind a reverse proxy serving HTTPS.
     cookie_secure: bool = False
 
+    # Where uploaded media (avatar images) are written. Kept on local disk so
+    # photos never leave the box; point MEDIA_ROOT at a persistent volume in
+    # production. Relative paths resolve against the backend working directory.
+    media_root: str = "./media"
+
 
 settings = Settings()

@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
-import { Check, Circle, Pencil, ShieldCheck } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { Camera, Check, Circle, Pencil, ShieldCheck } from 'lucide-react'
+import { type ChangeEvent, useCallback, useEffect, useState } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { Avatar } from '../components/Avatar'
@@ -22,6 +22,9 @@ export function Profile({ userId }: { userId: number }) {
   const [editingBio, setEditingBio] = useState(false)
   const [bioDraft, setBioDraft] = useState('')
   const [busy, setBusy] = useState(false)
+  const [avatarBusy, setAvatarBusy] = useState(false)
+  // You can set your own photo; a family admin (a parent) can set a child's.
+  const canEditAvatar = isSelf || !!viewer?.is_admin
 
   const refresh = useCallback(async () => {
     try {
@@ -53,6 +56,36 @@ export function Profile({ userId }: { userId: number }) {
     }
   }
 
+  async function onPickAvatar(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // let the same file be re-picked after an error
+    if (!file) return
+    setAvatarBusy(true)
+    setError(null)
+    try {
+      // The server returns the fresh profile (new avatar_updated_at), so the
+      // photo swaps in immediately without another round-trip.
+      setProfile(await api.uploadAvatar(userId, file))
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Could not upload that photo.')
+    } finally {
+      setAvatarBusy(false)
+    }
+  }
+
+  async function removeAvatar() {
+    setAvatarBusy(true)
+    setError(null)
+    try {
+      await api.removeAvatar(userId)
+      await refresh()
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Could not remove that photo.')
+    } finally {
+      setAvatarBusy(false)
+    }
+  }
+
   async function saveBio() {
     setBusy(true)
     try {
@@ -81,10 +114,45 @@ export function Profile({ userId }: { userId: number }) {
         animate={{ opacity: 1, y: 0 }}
         className="glass mb-4 flex flex-col items-center gap-3 p-7 text-center"
       >
-        <Avatar name={profile.display_name} mood={profile.mood} size="lg" />
+        <div className="relative">
+          <Avatar
+            name={profile.display_name}
+            mood={profile.mood}
+            size="lg"
+            src={api.avatarUrl(profile)}
+            className={avatarBusy ? 'opacity-50' : ''}
+          />
+          {canEditAvatar && (
+            // A camera pip in the top corner (the mood badge owns the bottom
+            // one). The label wraps a hidden picker; accept="image/*" lets a
+            // phone offer camera or library.
+            <label
+              aria-label="Change photo"
+              className="absolute -right-1 -top-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-accent text-white shadow-lg ring-2 ring-[var(--bg-base)] transition-transform hover:scale-105"
+            >
+              <Camera className="h-4 w-4" strokeWidth={2} />
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={avatarBusy}
+                onChange={onPickAvatar}
+              />
+            </label>
+          )}
+        </div>
         <div>
           <h2 className="text-2xl font-bold tracking-tight">{profile.display_name}</h2>
           <p className="text-sm text-fg/50">@{profile.username}</p>
+          {canEditAvatar && profile.avatar_updated_at && (
+            <button
+              onClick={removeAvatar}
+              disabled={avatarBusy}
+              className="mt-1 text-xs font-medium text-fg/40 underline decoration-fg/20 underline-offset-2 hover:text-fg/70 disabled:opacity-50"
+            >
+              Remove photo
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-1.5">
           <span className="rounded-full bg-fg/10 px-2.5 py-1 text-[11px] font-semibold text-fg/70">

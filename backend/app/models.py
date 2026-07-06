@@ -66,6 +66,12 @@ class User(Base):
     is_owner: Mapped[bool] = mapped_column(Boolean, default=False)
     # Short "about me" for the profile page. Owner-editable only.
     bio: Mapped[str] = mapped_column(String(500), default="")
+    # When the member last set an avatar photo. NULL means no photo (fall back
+    # to generated initials); the value also doubles as a cache-busting version
+    # for the image URL, since the file path itself is fixed per user id.
+    avatar_updated_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 

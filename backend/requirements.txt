@@ -15,3 +15,7 @@ alembic
 # Auth: Argon2 password hashing + JWT (PyJWT) session tokens
 argon2-cffi
 pyjwt
+
+# Avatar uploads: multipart form parsing + image decode/crop/resize/encode
+python-multipart
+pillow

@@ -330,7 +330,7 @@ export function ItemSheet({
               </Chip>
               {family.map((m) => (
                 <Chip key={m.id} selected={!allAssigned && assignees.includes(m.id)} onClick={() => toggleMember(m.id)}>
-                  <Avatar name={m.display_name} size="sm" /> {m.display_name}
+                  <Avatar name={m.display_name} src={api.avatarUrl(m)} size="sm" /> {m.display_name}
                 </Chip>
               ))}
             </div>

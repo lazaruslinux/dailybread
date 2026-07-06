@@ -29,6 +29,10 @@ services:
     # Bind to localhost only so the dev API stays on this machine, not the LAN.
     ports:
       - "127.0.0.1:8000:8000"
+    # Uploaded avatar images live on disk (MEDIA_ROOT defaults to ./media, i.e.
+    # /app/media in the container). Persist them across container recreates.
+    volumes:
+      - avatar-media:/app/media
 
   frontend:
     build: ./frontend
@@ -43,3 +47,4 @@ services:
 
 volumes:
   postgres-data:
+  avatar-media:

@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion'
 import { Check, Flame, Pencil, Trash2, Undo2, X } from 'lucide-react'
 import { useState } from 'react'
-import type { FamilyMember, FeedItem, Repeat, User } from '../lib/api'
+import { avatarUrl, type FamilyMember, type FeedItem, type Repeat, type User } from '../lib/api'
 import { formatTime } from '../lib/moods'
 import { Avatar } from './Avatar'
 import { KIND_STYLE } from './ItemCard'
@@ -136,7 +136,7 @@ export function ItemDetail({
               <span className="flex flex-wrap gap-x-3 gap-y-1.5">
                 {item.assignees.map((a) => (
                   <span key={a.id} className="flex items-center gap-1.5">
-                    <Avatar name={a.display_name} size="sm" />
+                    <Avatar name={a.display_name} src={avatarUrl(a)} size="sm" />
                     {a.display_name}
                   </span>
                 ))}
@@ -202,7 +202,7 @@ export function ItemDetail({
                     >
                       {ac.completed && <Check className="h-3.5 w-3.5 text-emerald-300" strokeWidth={3} />}
                     </span>
-                    <Avatar name={member?.display_name ?? '?'} size="sm" />
+                    <Avatar name={member?.display_name ?? '?'} src={member ? avatarUrl(member) : null} size="sm" />
                     <span className="flex-1 truncate font-semibold text-fg/90">
                       {member?.display_name ?? 'Member'}
                     </span>
