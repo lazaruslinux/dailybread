@@ -50,7 +50,9 @@ const VARIANT_CLASS: Record<NonNullable<ButtonProps['variant']>, string> = {
   primary:
     'bg-gradient-to-r from-accent to-accent-strong text-white shadow-lg shadow-accent/25 hover:from-accent-bright hover:to-accent-strong',
   ghost: 'bg-fg/10 text-fg/85 hover:bg-fg/15 border border-fg/10',
-  danger: 'bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border border-rose-400/20',
+  // Theme-aware (see .btn-danger in index.css): deep rose ink on paper, light
+  // rose on the dark theme. The old fixed rose-300 was invisible on light.
+  danger: 'btn-danger',
 }
 
 export function Button({ variant = 'primary', children, className = '', ...rest }: ButtonProps) {
@@ -71,7 +73,7 @@ export function FormError({ message }: { message: string | null }) {
     <motion.p
       initial={{ opacity: 0, y: -4 }}
       animate={{ opacity: 1, y: 0 }}
-      className="text-sm font-medium text-rose-300"
+      className="text-danger text-sm font-medium"
       role="alert"
     >
       {message}

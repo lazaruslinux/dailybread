@@ -50,13 +50,19 @@ def test_me_reports_avatar_after_upload(owner):
     assert owner.get("/auth/me").json()["avatar_updated_at"] is not None
 
 
-def test_admin_can_set_childs_avatar(owner, child):
+def test_parent_can_set_childs_avatar(owner, child):
     res = upload(owner, user_id(child))
     assert res.status_code == 200, res.text
 
 
-def test_non_admin_parent_cannot_set_anothers_avatar(parent, child):
+def test_non_admin_parent_can_set_childs_avatar(parent, child):
+    # Managing a child's photo is a parent power, not an admin one.
     res = upload(parent, user_id(child))
+    assert res.status_code == 200, res.text
+
+
+def test_parent_cannot_set_another_parents_avatar(parent, owner):
+    res = upload(parent, user_id(owner))
     assert res.status_code == 403
 
 
@@ -65,9 +71,10 @@ def test_child_cannot_set_owners_avatar(owner, child):
     assert res.status_code == 403
 
 
-def test_child_can_set_own_avatar(child):
+def test_child_cannot_set_own_avatar(child):
+    # Children don't manage photos at all, not even their own.
     res = upload(child, user_id(child))
-    assert res.status_code == 200, res.text
+    assert res.status_code == 403
 
 
 def test_rejects_non_image_bytes(owner):

@@ -314,7 +314,7 @@ export function ItemSheet({
                   </label>
                 </div>
               )}
-              {!weeklyReady && <p className="mt-1.5 text-xs text-rose-300">Pick at least one day.</p>}
+              {!weeklyReady && <p className="text-danger mt-1.5 text-xs">Pick at least one day.</p>}
             </div>
           )}
 
@@ -329,7 +329,11 @@ export function ItemSheet({
                 <Users className="h-4 w-4" /> Everyone
               </Chip>
               {family.map((m) => (
-                <Chip key={m.id} selected={!allAssigned && assignees.includes(m.id)} onClick={() => toggleMember(m.id)}>
+                // Reflect real membership even when Everyone is on, so tapping a
+                // person visibly toggles that one person. (The old !allAssigned
+                // guard showed them all unselected, so a tap looked like it
+                // selected everyone-but-them.)
+                <Chip key={m.id} selected={assignees.includes(m.id)} onClick={() => toggleMember(m.id)}>
                   <Avatar name={m.display_name} src={api.avatarUrl(m)} size="sm" /> {m.display_name}
                 </Chip>
               ))}
@@ -394,7 +398,7 @@ export function ItemSheet({
                 </div>
               )}
               {!allDayAppt && Boolean(time) && Boolean(endTime) && endTime <= time && (
-                <p className="text-xs text-rose-300">End time must be after the start.</p>
+                <p className="text-danger text-xs">End time must be after the start.</p>
               )}
             </div>
           )}

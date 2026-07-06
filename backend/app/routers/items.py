@@ -275,14 +275,26 @@ def _build_feed_item(db: Session, item: Item, user: User, date: dt.date) -> Feed
     Other kinds carry a single shared check.
     """
     if item.kind != ItemKind.routine:
-        done = (
-            db.scalar(
-                select(Completion.id).where(
-                    Completion.item_id == item.id, Completion.date_for == date
-                )
+        # A dated card is a one-shot: done once, regardless of which day the
+        # check landed on. Tasks are reminders that can be ticked off ahead of
+        # their due date, so the completion may sit on an earlier day than
+        # date_for — checking by date would make it reappear as undone when the
+        # due day arrives. An undated "anytime" task stays date-scoped so it
+        # shows crossed out today and archives tomorrow.
+        if item.date_for is not None:
+            done = (
+                db.scalar(select(Completion.id).where(Completion.item_id == item.id))
+                is not None
             )
-            is not None
-        )
+        else:
+            done = (
+                db.scalar(
+                    select(Completion.id).where(
+                        Completion.item_id == item.id, Completion.date_for == date
+                    )
+                )
+                is not None
+            )
         return _feed_item(item, completed=done, streak=None, assignee_completions=None)
 
     participants = _routine_participants(db, item)

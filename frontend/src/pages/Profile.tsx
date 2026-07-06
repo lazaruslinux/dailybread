@@ -23,8 +23,11 @@ export function Profile({ userId }: { userId: number }) {
   const [bioDraft, setBioDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [avatarBusy, setAvatarBusy] = useState(false)
-  // You can set your own photo; a family admin (a parent) can set a child's.
-  const canEditAvatar = isSelf || !!viewer?.is_admin
+  // Only a parent sets photos, and only their own or a child's — never another
+  // parent's. Children set none, so this is false for them even on their own
+  // page. Mirrors the backend rule in users._require_can_set_avatar.
+  const canEditAvatar =
+    viewer?.role === 'parent' && (isSelf || profile?.role === 'child')
 
   const refresh = useCallback(async () => {
     try {

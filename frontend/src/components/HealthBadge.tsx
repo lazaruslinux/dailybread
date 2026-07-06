@@ -1,15 +1,16 @@
 import { useHealth } from '../hooks/useHealth'
 
-// Small pill in the header showing whether the frontend can reach the backend.
-// Green = connected, amber = checking, red = offline.
+// A quiet connectivity warning. When the app can reach the backend (the normal
+// case) this renders nothing — there's no reason to tell someone their app is
+// working. It only appears to explain a problem: still connecting on a cold
+// start, or offline when the server can't be reached.
 export function HealthBadge() {
-  const { status, data } = useHealth()
+  const { status } = useHealth()
 
-  const label =
-    status === 'loading' ? 'Connecting' : status === 'ok' ? `Online (${data?.mode})` : 'Offline'
+  if (status === 'ok') return null
 
-  const dotColor =
-    status === 'loading' ? 'bg-gold' : status === 'ok' ? 'bg-emerald-400' : 'bg-rose-400'
+  const label = status === 'loading' ? 'Connecting' : 'Offline'
+  const dotColor = status === 'loading' ? 'bg-gold' : 'bg-rose-400'
 
   return (
     <div className="glass flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium text-fg/80">

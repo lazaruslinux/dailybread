@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app import avatars
 from app.db import get_db
 from app.deps import require_family
-from app.models import Mood, User
+from app.models import Mood, Role, User
 from app.schemas import FamilyMemberOut, MoodIn, MoodOut, ProfileOut, ProfileUpdateIn
 
 router = APIRouter(tags=["users"])
@@ -172,9 +172,14 @@ def _target_member(user_id: int, viewer: User, db: Session) -> User:
 
 
 def _require_can_set_avatar(target: User, viewer: User) -> None:
-    # Your own photo, or a family admin (a parent) managing a child's.
-    if viewer.id != target.id and not viewer.is_admin:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "You can only change your own photo.")
+    # Only a parent manages photos, and only their own or a child's — never
+    # another parent's. Children don't set avatars at all, not even their own.
+    if viewer.role != Role.parent:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only a parent can change photos.")
+    if target.id != viewer.id and target.role == Role.parent:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "You can't change another parent's photo."
+        )
 
 
 @router.get("/users/{user_id}/avatar")

@@ -68,8 +68,9 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
   const [family, setFamily] = useState<api.FamilyMember[]>([])
   const [error, setError] = useState<string | null>(null)
   const [sheet, setSheet] = useState<{ open: boolean; item: api.FeedItem | null }>({ open: false, item: null })
-  // checkable rides along so an upcoming card's sheet never offers "Mark
-  // done" (completions only apply to today's date).
+  // checkable rides along so the detail sheet knows whether to offer "Mark
+  // done". Tasks are reminders you can tick off any time, even ahead of their
+  // due day; upcoming events (appointments, activities) wait for their date.
   const [detail, setDetail] = useState<{ item: api.FeedItem; checkable: boolean } | null>(null)
   const [toast, setToast] = useState<api.FeedItem | null>(null)
   const toastTimer = useRef<number | undefined>(undefined)
@@ -292,11 +293,25 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
       <FormError message={error} />
 
       {feed && today.length === 0 && anytime.length === 0 && (
-        <p className="glass p-6 text-center text-sm text-fg/50">
-          {filter.length > 0
-            ? 'No cards for the people you picked.'
-            : 'Nothing on the board today. Enjoy it.'}
-        </p>
+        filter.length > 0 ? (
+          <p className="glass p-6 text-center text-sm text-fg/50">
+            No cards for the people you picked.
+          </p>
+        ) : isParent ? (
+          // Empty board is the natural place to start one: tap to open the editor.
+          <button
+            type="button"
+            onClick={() => openEditor(null)}
+            className="glass w-full p-6 text-center text-sm text-fg/60 transition-colors hover:text-fg"
+          >
+            Nothing on the board today.{' '}
+            <span className="font-semibold text-accent-bright">Add something?</span>
+          </button>
+        ) : (
+          <p className="glass p-6 text-center text-sm text-fg/50">
+            Nothing on the board today. Enjoy it.
+          </p>
+        )
       )}
 
       <div className="flex flex-col gap-3">
@@ -332,7 +347,7 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
                 <p className="mb-1 pl-1 text-[11px] font-medium text-fg/35">
                   {item.date_for ? upcomingLabel(item.date_for) : ''}
                 </p>
-                <ItemCard index={i} {...cardProps(item, false)} />
+                <ItemCard index={i} {...cardProps(item, item.kind === 'task' && canCheck(item))} />
               </div>
             ))}
           </div>

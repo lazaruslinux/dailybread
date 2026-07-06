@@ -37,6 +37,13 @@
   --accent-strong: #92400e; /* amber-800, gradient partner */
   --accent-bright: #92400e; /* dark enough to read on paper */
   --gold: #a16207; /* deep amber for the verse label on white */
+
+  /* Danger (delete, errors). On paper the ink must be deep enough to read; a
+     light rose would wash out, which is why the tint alone isn't the text. */
+  --danger-fg: #be123c; /* rose-700 */
+  --danger-bg: rgba(190, 18, 60, 0.1);
+  --danger-bg-hover: rgba(190, 18, 60, 0.16);
+  --danger-border: rgba(190, 18, 60, 0.28);
 }
 
 /* ---- Dark Forest: near-black with forest greens, white ink ----------------- */
@@ -57,6 +64,12 @@
   --accent-strong: #14532d;
   --accent-bright: #4ade80;
   --gold: #fcd34d;
+
+  /* Light rose reads on the near-black surface here. */
+  --danger-fg: #fda4af; /* rose-300 */
+  --danger-bg: rgba(244, 63, 94, 0.15);
+  --danger-bg-hover: rgba(244, 63, 94, 0.25);
+  --danger-border: rgba(251, 113, 133, 0.2);
 }
 
 /* Warm editorial serif for hero moments (greeting, wordmark). */
@@ -144,6 +157,20 @@ body {
   border-color: var(--accent-bright);
   background: var(--field-bg-focus);
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 30%, transparent);
+}
+
+/* Destructive button + inline error text, theme-aware so the light default
+   keeps enough contrast (a fixed light rose vanished on paper). */
+.btn-danger {
+  color: var(--danger-fg);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--danger-bg-hover);
+}
+.text-danger {
+  color: var(--danger-fg);
 }
 
 ::selection {

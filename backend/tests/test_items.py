@@ -126,6 +126,28 @@ def test_upcoming_has_no_horizon(owner):
     assert any(i["id"] == item["id"] for i in feed["upcoming"])
 
 
+def test_future_task_can_be_checked_ahead_and_stays_done_on_its_due_day(owner):
+    # Tasks are reminders: you can tick one off before its due date. The
+    # completion lands on today, but the card must still read done when its due
+    # day arrives (checking by that day's date would make it reappear undone).
+    tomorrow = (dt.date.today() + dt.timedelta(days=1)).isoformat()
+    task = make_item(owner, title="Return library books", date_for=tomorrow)
+
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    assert any(i["id"] == task["id"] for i in feed["upcoming"])
+
+    res = owner.post(f"/items/{task['id']}/complete?date={TODAY}")
+    assert res.status_code == 200 and res.json()["completed"] is True
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    done = [i for i in feed["upcoming"] if i["id"] == task["id"]]
+    assert done and done[0]["completed"] is True
+
+    # The due day rolls around: still done, on the strength of yesterday's check.
+    feed = owner.get(f"/items/feed?date={tomorrow}").json()
+    today_card = [i for i in feed["today"] if i["id"] == task["id"]]
+    assert today_card and today_card[0]["completed"] is True
+
+
 def test_activity_and_appointment_need_a_date_and_time(owner):
     # Missing both, or missing the time, is rejected.
     assert owner.post("/items", json={"kind": "activity", "title": "Gym"}).status_code == 400
