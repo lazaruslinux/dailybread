@@ -358,3 +358,24 @@ export const setMyMood = (level: MoodLevel, hidden: boolean) =>
 
 export const clearMyMood = () =>
   request<void>(`/me/mood?date=${localDate()}`, { method: 'DELETE' })
+
+// ---- journal (private daily entries) ------------------------------------------
+
+export interface JournalEntry {
+  date_for: string
+  body: string
+  updated_at: string
+}
+
+// Today's entry, or null when nothing is written yet.
+export const getJournal = (date = localDate()) =>
+  request<JournalEntry | null>(`/me/journal?date=${date}`)
+
+export const getJournalHistory = () => request<JournalEntry[]>('/me/journal/history')
+
+// Upsert a day's entry. A blank body clears it (returned body is "").
+export const saveJournal = (body: string, date = localDate()) =>
+  request<JournalEntry>('/me/journal', {
+    method: 'PUT',
+    body: JSON.stringify({ date_for: date, body }),
+  })

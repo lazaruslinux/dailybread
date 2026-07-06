@@ -8,8 +8,16 @@ from sqlalchemy.orm import Session
 from app import avatars
 from app.db import get_db
 from app.deps import require_family
-from app.models import Mood, Role, User
-from app.schemas import FamilyMemberOut, MoodIn, MoodOut, ProfileOut, ProfileUpdateIn
+from app.models import JournalEntry, Mood, Role, User
+from app.schemas import (
+    FamilyMemberOut,
+    JournalIn,
+    JournalOut,
+    MoodIn,
+    MoodOut,
+    ProfileOut,
+    ProfileUpdateIn,
+)
 
 router = APIRouter(tags=["users"])
 
@@ -156,6 +164,85 @@ def clear_my_mood(
     )
     if mood is not None:
         db.delete(mood)
+        db.commit()
+
+
+# ---- journal -------------------------------------------------------------------
+# A member's daily written entry. Strictly private: there is no endpoint to read
+# anyone else's, and nothing about a journal appears on the family strip.
+
+
+@router.get("/me/journal", response_model=JournalOut | None)
+def get_my_journal(
+    date_for: dt.date = Query(alias="date"),
+    db: Session = Depends(get_db),
+    me: User = Depends(require_family),
+):
+    """Your entry for a day, or null if you haven't written one."""
+    _check_date(date_for)
+    return db.scalar(
+        select(JournalEntry).where(
+            JournalEntry.user_id == me.id, JournalEntry.date_for == date_for
+        )
+    )
+
+
+@router.get("/me/journal/history", response_model=list[JournalOut])
+def my_journal_history(
+    db: Session = Depends(get_db),
+    me: User = Depends(require_family),
+):
+    """Your past entries, most recent day first, for browsing back through."""
+    return db.scalars(
+        select(JournalEntry)
+        .where(JournalEntry.user_id == me.id)
+        .order_by(JournalEntry.date_for.desc())
+    ).all()
+
+
+@router.put("/me/journal", response_model=JournalOut)
+def set_my_journal(
+    data: JournalIn,
+    db: Session = Depends(get_db),
+    me: User = Depends(require_family),
+):
+    """Write (or rewrite) your entry for a day. Upsert: one row per day. An
+    empty body clears the day so a blanked-out entry doesn't linger in history."""
+    _check_date(data.date_for)
+    entry = db.scalar(
+        select(JournalEntry).where(
+            JournalEntry.user_id == me.id, JournalEntry.date_for == data.date_for
+        )
+    )
+    body = data.body.strip()
+    if not body:
+        if entry is not None:
+            db.delete(entry)
+            db.commit()
+        return JournalOut(date_for=data.date_for, body="", updated_at=dt.datetime.now(dt.timezone.utc))
+    if entry is None:
+        entry = JournalEntry(user_id=me.id, date_for=data.date_for)
+        db.add(entry)
+    entry.body = body
+    db.commit()
+    db.refresh(entry)
+    return entry
+
+
+@router.delete("/me/journal", status_code=status.HTTP_204_NO_CONTENT)
+def clear_my_journal(
+    date_for: dt.date = Query(alias="date"),
+    db: Session = Depends(get_db),
+    me: User = Depends(require_family),
+):
+    _check_date(date_for)
+    entry = db.scalar(
+        select(JournalEntry).where(
+            JournalEntry.user_id == me.id, JournalEntry.date_for == date_for
+        )
+    )
+    if entry is not None:
+        db.delete(entry)
         db.commit()
 
 

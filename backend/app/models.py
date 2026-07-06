@@ -10,6 +10,7 @@ from sqlalchemy import (
     Integer,
     String,
     Table,
+    Text,
     Time,
     UniqueConstraint,
 )
@@ -267,6 +268,22 @@ class Mood(Base):
     level: Mapped[MoodLevel] = mapped_column(SAEnum(MoodLevel, name="mood_level"))
     # Owner's choice: keep today's mood to themselves.
     hidden: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+
+class JournalEntry(Base):
+    """A member's private written entry for one day. One per person per day,
+    strictly personal: unlike moods, a journal is never shown to anyone else."""
+
+    __tablename__ = "journal_entries"
+    __table_args__ = (UniqueConstraint("user_id", "date_for", name="uq_journal_user_day"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    date_for: Mapped[dt.date] = mapped_column(Date, index=True)
+    body: Mapped[str] = mapped_column(Text, default="")
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )

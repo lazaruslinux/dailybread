@@ -1,6 +1,7 @@
 import { LogOut, Users } from 'lucide-react'
 import { useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
+import { JournalCard } from '../components/JournalCard'
 import { getTheme, setTheme, THEMES, type Theme } from '../lib/theme'
 import { Profile } from './Profile'
 
@@ -56,6 +57,8 @@ export function You({ onOpenAdmin }: { onOpenAdmin: () => void }) {
     <div className="flex flex-col gap-4">
       <Profile userId={user.id} />
 
+      <JournalCard />
+
       <ThemePicker userId={user.id} />
 
       <div className="flex flex-col gap-2">
@@ -71,7 +74,7 @@ export function You({ onOpenAdmin }: { onOpenAdmin: () => void }) {
           onClick={logout}
           className="glass flex items-center gap-3 p-4 text-left font-semibold text-fg/80 transition-colors hover:text-fg"
         >
-          <LogOut className="h-4 w-4 text-rose-300" /> Sign out
+          <LogOut className="text-danger h-4 w-4" /> Sign out
         </button>
       </div>
 

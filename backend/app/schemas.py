@@ -265,6 +265,19 @@ class MoodIn(BaseModel):
     hidden: bool = False
 
 
+class JournalOut(BaseModel):
+    date_for: dt.date
+    body: str
+    updated_at: dt.datetime
+
+    model_config = {"from_attributes": True}
+
+
+class JournalIn(BaseModel):
+    date_for: dt.date
+    body: str = Field(max_length=20000)
+
+
 class FamilyMemberOut(UserOut):
     """A member as others see them on the family strip: user + today's mood.
 
