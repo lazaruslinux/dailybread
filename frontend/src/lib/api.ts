@@ -226,6 +226,21 @@ export interface ItemPayload {
 
 export const getFeed = () => request<Feed>(`/items/feed?date=${localDate()}`)
 
+export interface CalendarDay {
+  date: string
+  items: FeedItem[]
+}
+export interface Calendar {
+  start: string
+  end: string
+  days: CalendarDay[]
+}
+
+// Scheduled cards across a date range, grouped by day (routines expanded onto
+// each day they fall on). start/end are YYYY-MM-DD; the span is capped server-side.
+export const getCalendar = (start: string, end: string) =>
+  request<Calendar>(`/items/calendar?start=${start}&end=${end}`)
+
 export const createItem = (payload: ItemPayload) =>
   request<FeedItem>('/items', { method: 'POST', body: JSON.stringify(payload) })
 

@@ -10,6 +10,8 @@ from app.deps import require_family, require_parent
 from app.models import Completion, Item, ItemKind, RepeatType, Role, User, Visibility
 from app.schemas import (
     AssigneeCompletion,
+    CalendarDayOut,
+    CalendarOut,
     FeedItemOut,
     FeedOut,
     ItemIn,
@@ -382,6 +384,61 @@ def feed(
     upcoming.sort(key=lambda i: (i.date_for, not i.all_day, i.time_of_day or late, i.title.lower()))
 
     return FeedOut(date=date_for, today=today, anytime=anytime, upcoming=upcoming)
+
+
+# A calendar request can span weeks, so it can't use the ±1-day "today" clamp;
+# it's bounded by span length instead to keep the day-by-day expansion cheap.
+_MAX_CALENDAR_SPAN = dt.timedelta(days=45)
+
+
+@router.get("/calendar", response_model=CalendarOut)
+def calendar(
+    start: dt.date = Query(),
+    end: dt.date = Query(),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_family),
+):
+    """Scheduled cards across a date range, grouped by day. Routines are
+    expanded onto each day their schedule lands on; other kinds appear on their
+    own date. Undated "anytime" tasks are not scheduled and are left out.
+
+    Every day in the range is returned (empty ones included) so the client can
+    draw the whole week or month, dots and all, from a single response.
+    """
+    if end < start:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "end must be on or after start")
+    if end - start > _MAX_CALENDAR_SPAN:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Calendar range is too wide")
+
+    # Routines (recur, so always in play) plus non-routine cards dated in range.
+    items = (
+        db.scalars(
+            select(Item)
+            .options(selectinload(Item.assignees))
+            .where(
+                Item.family_id == user.family_id,
+                or_(Item.repeat_type.isnot(None), Item.date_for.between(start, end)),
+            )
+        )
+        .unique()
+        .all()
+    )
+    visible = [item for item in items if _visible_to(item, user)]
+
+    late = dt.time(23, 59)
+    days: list[CalendarDayOut] = []
+    day = start
+    while day <= end:
+        on_day = [
+            _build_feed_item(db, item, user, day)
+            for item in visible
+            if (_occurs(item, day) if item.repeat_type is not None else item.date_for == day)
+        ]
+        on_day.sort(key=lambda i: (not i.all_day, i.time_of_day or late, i.title.lower()))
+        days.append(CalendarDayOut(date=day, items=on_day))
+        day += dt.timedelta(days=1)
+
+    return CalendarOut(start=start, end=end, days=days)
 
 
 @router.post("", response_model=FeedItemOut, status_code=status.HTTP_201_CREATED)

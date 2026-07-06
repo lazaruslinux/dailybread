@@ -1,11 +1,12 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { ChevronLeft } from 'lucide-react'
+import { CalendarDays, ChevronLeft } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from './auth/AuthContext'
 import { applyTheme, getTheme } from './lib/theme'
 import { HealthBadge } from './components/HealthBadge'
 import { TabBar, type Tab } from './components/TabBar'
 import { Admin } from './pages/Admin'
+import { Calendar } from './pages/Calendar'
 import { CreateFamily } from './pages/CreateFamily'
 import { Home } from './pages/Home'
 import { Kitchen } from './pages/Kitchen'
@@ -33,7 +34,7 @@ function todayLabel(): string {
 // An overlay sits on top of the current tab (a member's profile opened from
 // the family strip, or the admin dashboard opened from You). Back returns to
 // the tab underneath; switching tabs dismisses it.
-type Overlay = { name: 'profile'; id: number } | { name: 'admin' } | null
+type Overlay = { name: 'profile'; id: number } | { name: 'admin' } | { name: 'calendar' } | null
 
 const TAB_TITLE: Record<Tab, string> = {
   home: '', // Home shows the date + greeting instead of a title
@@ -75,7 +76,18 @@ function AppShell() {
           ) : (
             <p className="text-sm font-semibold text-fg/70">{TAB_TITLE[tab]}</p>
           )}
-          <HealthBadge />
+          <div className="flex items-center gap-2">
+            <HealthBadge />
+            {tab === 'home' && !overlay && (
+              <button
+                onClick={() => setOverlay({ name: 'calendar' })}
+                aria-label="Open calendar"
+                className="glass rounded-full p-2 text-fg/70 transition-colors hover:text-fg"
+              >
+                <CalendarDays className="h-5 w-5" />
+              </button>
+            )}
+          </div>
         </div>
 
         {tab === 'home' && !overlay && (
@@ -95,6 +107,7 @@ function AppShell() {
         >
           {overlay?.name === 'profile' && <Profile userId={overlay.id} />}
           {overlay?.name === 'admin' && <Admin />}
+          {overlay?.name === 'calendar' && <Calendar />}
           {!overlay && tab === 'home' && (
             <Home onOpenProfile={(id) => setOverlay({ name: 'profile', id })} />
           )}

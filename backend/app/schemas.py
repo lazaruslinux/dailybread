@@ -198,6 +198,21 @@ class FeedOut(BaseModel):
     upcoming: list[FeedItemOut]  # dated cards in the next 7 days
 
 
+class CalendarDayOut(BaseModel):
+    """One day on the calendar: its scheduled cards, time-sorted. Routines are
+    expanded onto the days their schedule lands on; undated "anytime" tasks
+    aren't scheduled and never appear here."""
+
+    date: dt.date
+    items: list[FeedItemOut]
+
+
+class CalendarOut(BaseModel):
+    start: dt.date
+    end: dt.date
+    days: list[CalendarDayOut]
+
+
 # ---- grocery list --------------------------------------------------------------
 
 

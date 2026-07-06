@@ -148,6 +148,61 @@ def test_future_task_can_be_checked_ahead_and_stays_done_on_its_due_day(owner):
     assert today_card and today_card[0]["completed"] is True
 
 
+def _monday(d: dt.date) -> dt.date:
+    return d - dt.timedelta(days=d.weekday())  # weekday(): Monday == 0
+
+
+def test_calendar_expands_routines_and_places_dated_cards(owner):
+    mon = _monday(dt.date.today())
+    sun = mon + dt.timedelta(days=6)
+    make_item(owner, kind="routine", title="Brush teeth",
+              repeat={"type": "weekly", "days": [0, 1, 2, 3, 4, 5, 6], "interval": 1})
+    make_item(owner, kind="routine", title="Trash night",
+              repeat={"type": "weekly", "days": [0], "interval": 1})  # Mondays only
+    wed = (mon + dt.timedelta(days=2)).isoformat()
+    make_item(owner, kind="appointment", title="Dentist", date_for=wed,
+              time_of_day="09:00", end_time="10:00")
+    make_item(owner, kind="task", title="Someday")  # undated -> never on the calendar
+
+    cal = owner.get(f"/items/calendar?start={mon}&end={sun}").json()
+    days = {d["date"]: [i["title"] for i in d["items"]] for d in cal["days"]}
+    assert len(cal["days"]) == 7
+    assert all("Brush teeth" in titles for titles in days.values())  # daily
+    assert sum("Trash night" in t for t in days.values()) == 1  # only Monday
+    assert "Trash night" in days[mon.isoformat()]
+    assert sum("Dentist" in t for t in days.values()) == 1  # only its date
+    assert "Dentist" in days[wed]
+    assert all("Someday" not in t for t in days.values())  # undated excluded
+
+
+def test_calendar_reflects_completion(owner):
+    d = dt.date.today().isoformat()
+    task = make_item(owner, title="Pay bills", date_for=d)
+    owner.post(f"/items/{task['id']}/complete?date={d}")
+    cal = owner.get(f"/items/calendar?start={d}&end={d}").json()
+    card = next(i for i in cal["days"][0]["items"] if i["id"] == task["id"])
+    assert card["completed"] is True
+
+
+def test_calendar_rejects_bad_range(owner):
+    today = dt.date.today().isoformat()
+    later = (dt.date.today() + dt.timedelta(days=3)).isoformat()
+    far = (dt.date.today() + dt.timedelta(days=60)).isoformat()
+    assert owner.get(f"/items/calendar?start={later}&end={today}").status_code == 400
+    assert owner.get(f"/items/calendar?start={today}&end={far}").status_code == 400
+
+
+def test_calendar_hides_other_familys_cards(owner, child):
+    # A child is in the owner's family; a card private to the owner still shows
+    # for family visibility only. Cross-family isolation is covered in tenancy
+    # tests; here just confirm a private card doesn't leak to a non-assignee.
+    d = dt.date.today().isoformat()
+    make_item(owner, kind="appointment", title="Owner only", date_for=d,
+              time_of_day="09:00", end_time="10:00", visibility="private")
+    cal = child.get(f"/items/calendar?start={d}&end={d}").json()
+    assert all("Owner only" != i["title"] for i in cal["days"][0]["items"])
+
+
 def test_activity_and_appointment_need_a_date_and_time(owner):
     # Missing both, or missing the time, is rejected.
     assert owner.post("/items", json={"kind": "activity", "title": "Gym"}).status_code == 400
