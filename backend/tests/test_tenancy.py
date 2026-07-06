@@ -71,7 +71,7 @@ def test_create_family_unlocks_and_promotes_to_head(other):
     feed = other.get(f"/items/feed?date={TODAY}")
     assert feed.status_code == 200
     body = feed.json()
-    assert body["today"] == [] and body["anytime"] == [] and body["upcoming"] == []
+    assert body["overdue"] == [] and body["today"] == [] and body["next7"] == []
 
 
 def test_cannot_create_a_second_family(owner, other):
@@ -99,7 +99,7 @@ def test_items_are_invisible_across_families(owner, other):
     item_id = created.json()["id"]
 
     feed = other.get(f"/items/feed?date={TODAY}").json()
-    titles = [i["title"] for sec in ("today", "anytime", "upcoming") for i in feed[sec]]
+    titles = [i["title"] for sec in ("overdue", "today", "next7") for i in feed[sec]]
     assert "A-only secret" not in titles
 
     assert other.patch(f"/items/{item_id}", json={"title": "hijack"}).status_code == 404

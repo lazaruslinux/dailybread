@@ -190,12 +190,22 @@ class FeedItemOut(BaseModel):
 
 
 class FeedOut(BaseModel):
-    """Everything the home screen needs for one day, in three buckets."""
+    """Everything the home screen needs for one day, in three date-based buckets.
+
+    The client slices ``today`` further by the live clock (past due / now /
+    coming up / anytime); the server only groups by date so it never has to
+    know the family's wall-clock time.
+    """
 
     date: dt.date
-    today: list[FeedItemOut]  # timed + dated cards, sorted by time
-    anytime: list[FeedItemOut]  # undated, uncompleted todos
-    upcoming: list[FeedItemOut]  # dated cards in the next 7 days
+    # One-off cards (never routines) whose date has passed and that are still
+    # open, plus any checked off today so they linger crossed out until midnight.
+    overdue: list[FeedItemOut]
+    # Everything happening today: routines that land today, cards dated today,
+    # and undated tasks.
+    today: list[FeedItemOut]
+    # One-off cards dated in the next seven days.
+    next7: list[FeedItemOut]
 
 
 class CalendarDayOut(BaseModel):

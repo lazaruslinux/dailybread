@@ -17,7 +17,7 @@ export function Profile({ userId }: { userId: number }) {
   const [profile, setProfile] = useState<api.Profile | null>(null)
   // This member's slice of the board: cards assigned to them plus whole-family
   // cards (those are everyone's, so they belong on everyone's day).
-  const [day, setDay] = useState<{ today: api.FeedItem[]; anytime: api.FeedItem[] } | null>(null)
+  const [day, setDay] = useState<api.FeedItem[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [editingBio, setEditingBio] = useState(false)
   const [bioDraft, setBioDraft] = useState('')
@@ -35,7 +35,8 @@ export function Profile({ userId }: { userId: number }) {
       setProfile(p)
       const mine = (items: api.FeedItem[]) =>
         items.filter((i) => i.assignees.length === 0 || i.assignees.some((a) => a.id === userId))
-      setDay({ today: mine(feed.today), anytime: mine(feed.anytime) })
+      // Their day: what's due today plus anything of theirs still past due.
+      setDay([...mine(feed.overdue), ...mine(feed.today)])
       setError(null)
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Could not load this profile.')
@@ -282,11 +283,11 @@ export function Profile({ userId }: { userId: number }) {
             {isSelf ? 'On your board' : 'On their board'}
           </p>
 
-          {day.today.length === 0 && day.anytime.length === 0 ? (
+          {day.length === 0 ? (
             <p className="text-sm text-fg/40">Nothing assigned today.</p>
           ) : (
             <ul className="flex flex-col gap-1">
-              {[...day.today, ...day.anytime].map((item) => (
+              {day.map((item) => (
                 <li key={item.id} className="flex items-center gap-3 rounded-xl px-1 py-2">
                   <span
                     className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${

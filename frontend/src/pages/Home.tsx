@@ -1,33 +1,14 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { Plus, Undo2 } from 'lucide-react'
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { FamilyStrip } from '../components/FamilyStrip'
-import { ItemCard, NowDivider } from '../components/ItemCard'
+import { ItemCard, SectionDivider } from '../components/ItemCard'
 import { ItemDetail } from '../components/ItemDetail'
 import { ItemSheet } from '../components/ItemSheet'
 import { VerseCard } from '../components/VerseCard'
 import { FormError } from '../components/ui'
-
-// Where does the "Now" line sit? After the last timed card that's already
-// passed. Returns -1 when it shouldn't render (nothing timed yet to compare).
-function nowIndex(items: api.FeedItem[], clock: Date): number {
-  const nowHm = `${String(clock.getHours()).padStart(2, '0')}:${String(clock.getMinutes()).padStart(2, '0')}:00`
-  let idx = -1
-  items.forEach((item, i) => {
-    if (item.time_of_day && item.time_of_day <= nowHm) idx = i
-  })
-  return idx
-}
-
-function SectionLabel({ children }: { children: string }) {
-  return (
-    <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-widest text-fg/40">
-      {children}
-    </p>
-  )
-}
 
 // One toggle in the parent's "show cards for" filter row.
 function FilterChip({
@@ -55,9 +36,19 @@ function FilterChip({
   )
 }
 
-function upcomingLabel(dateStr: string): string {
-  const [y, m, d] = dateStr.split('-').map(Number)
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })
+const pad = (n: number) => String(n).padStart(2, '0')
+
+// Which slice of "today" a card belongs to, decided by the live clock. Past due
+// is only for one-offs (routines are habits, never overdue); a passed timed
+// routine just stays in Now until it's done.
+type Slot = 'pastdue' | 'now' | 'coming' | 'anytime'
+function todaySlot(item: api.FeedItem, nowHm: string): Slot {
+  if (!item.time_of_day && !item.all_day) return 'anytime'
+  if (item.all_day) return 'now'
+  const end = item.end_time || item.time_of_day! // has a start time here
+  if (item.kind !== 'routine' && end < nowHm) return 'pastdue'
+  if (item.time_of_day! <= nowHm) return 'now'
+  return 'coming'
 }
 
 export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void }) {
@@ -68,16 +59,13 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
   const [family, setFamily] = useState<api.FamilyMember[]>([])
   const [error, setError] = useState<string | null>(null)
   const [sheet, setSheet] = useState<{ open: boolean; item: api.FeedItem | null }>({ open: false, item: null })
-  // checkable rides along so the detail sheet knows whether to offer "Mark
-  // done". Tasks are reminders you can tick off any time, even ahead of their
-  // due day; upcoming events (appointments, activities) wait for their date.
+  // checkable rides along so the detail sheet knows whether to offer "Mark done".
   const [detail, setDetail] = useState<{ item: api.FeedItem; checkable: boolean } | null>(null)
   const [toast, setToast] = useState<api.FeedItem | null>(null)
   const toastTimer = useRef<number | undefined>(undefined)
-  // Re-rendering once a minute keeps the Now line honest without any polling.
+  // Re-rendering once a minute keeps the section buckets honest without polling.
   const [clock, setClock] = useState(() => new Date())
-  // Parent-only board lens: which members' cards to show. Empty means show
-  // everyone's. Whole-family cards always show, since they're everyone's.
+  // Parent-only board lens: which members' cards to show. Empty means everyone's.
   const [filter, setFilter] = useState<number[]>([])
 
   const refresh = useCallback(async () => {
@@ -104,13 +92,11 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
     }
   }, [refresh])
 
-  // Flip one card's completed flag in local state. This is the optimistic
-  // half of a toggle: the UI answers the tap instantly and the server call
-  // catches up (or the flag flips back if it fails).
+  // Flip one card's completed flag in local state across every bucket. This is
+  // the optimistic half of a toggle: the UI answers the tap instantly and the
+  // server call catches up (or the flag flips back if it fails).
   const setItemCompleted = useCallback(
     (id: number, completed: boolean) => {
-      // Also flip the current member's own row on a routine, so their avatar
-      // badge answers the tap instantly alongside the left circle.
       const patch = (items: api.FeedItem[]) =>
         items.map((it) =>
           it.id === id
@@ -124,7 +110,9 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
               }
             : it,
         )
-      setFeed((f) => (f ? { ...f, today: patch(f.today), anytime: patch(f.anytime) } : f))
+      setFeed((f) =>
+        f ? { ...f, overdue: patch(f.overdue), today: patch(f.today), next7: patch(f.next7) } : f,
+      )
       setDetail((d) => (d && d.item.id === id ? { ...d, item: { ...d.item, completed } } : d))
     },
     [user],
@@ -147,7 +135,9 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
               }
             : it,
         )
-      setFeed((f) => (f ? { ...f, today: patch(f.today), anytime: patch(f.anytime) } : f))
+      setFeed((f) =>
+        f ? { ...f, overdue: patch(f.overdue), today: patch(f.today), next7: patch(f.next7) } : f,
+      )
       setDetail((d) => (d && d.item.id === id ? { ...d, item: patch([d.item])[0] } : d))
     },
     [user],
@@ -229,35 +219,26 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
     setSheet({ open: true, item })
   }
 
-  // A timed appointment/activity past its end (and not done) is overdue; a task
-  // past its due time gets a softer nudge. Only today's dated cards, never
-  // routines or all-day. Recomputes on the minute via the clock re-render.
-  function pastFlag(item: api.FeedItem): 'overdue' | 'due' | null {
-    if (item.completed || item.all_day || !feed || item.date_for !== feed.date) return null
-    const endHm = item.end_time || item.time_of_day
-    if (!endHm) return null
-    const nowHm = `${String(clock.getHours()).padStart(2, '0')}:${String(clock.getMinutes()).padStart(2, '0')}:00`
-    if (endHm >= nowHm) return null
-    if (item.kind === 'appointment' || item.kind === 'activity') return 'overdue'
-    return item.kind === 'task' ? 'due' : null
+  const cardProps = (item: api.FeedItem) => {
+    const checkable = canCheck(item)
+    return {
+      item,
+      canCheck: checkable,
+      family,
+      // The date lives inside the card for anything not dated today, so the
+      // past-due and next-7-days lists read without repeated date separators.
+      showDate: item.date_for != null && item.date_for !== feed?.date,
+      onToggle: checkable ? () => toggle(item) : undefined,
+      onOpen: () => setDetail({ item, checkable }),
+      onEdit: isParent ? () => openEditor(item) : undefined,
+    }
   }
-
-  const cardProps = (item: api.FeedItem, checkable: boolean) => ({
-    item,
-    canCheck: checkable,
-    family,
-    flag: pastFlag(item),
-    onToggle: checkable ? () => toggle(item) : undefined,
-    onOpen: () => setDetail({ item, checkable }),
-    onEdit: isParent ? () => openEditor(item) : undefined,
-  })
 
   const toggleFilter = (id: number) =>
     setFilter((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
 
   // The filter is about who a card is FOR, not who can see it: a member matches
-  // if they're an assignee, or (when nobody is assigned) the owner. Being on the
-  // family board no longer forces a card to show under every member's filter.
+  // if they're an assignee, or (when nobody is assigned) the owner.
   const isForMember = (item: api.FeedItem, id: number) =>
     item.assignees.length > 0
       ? item.assignees.some((a) => a.id === id)
@@ -265,10 +246,40 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
   const matchesFilter = (item: api.FeedItem) =>
     filter.length === 0 || filter.some((id) => isForMember(item, id))
 
-  const today = feed ? feed.today.filter(matchesFilter) : []
-  const anytime = feed ? feed.anytime.filter(matchesFilter) : []
-  const upcoming = feed ? feed.upcoming.filter(matchesFilter) : []
-  const divider = nowIndex(today, clock)
+  const nowHm = `${pad(clock.getHours())}:${pad(clock.getMinutes())}:00`
+
+  const overdue = feed ? feed.overdue.filter(matchesFilter) : []
+  const todayCards = feed ? feed.today.filter(matchesFilter) : []
+  const next7 = feed ? feed.next7.filter(matchesFilter) : []
+
+  // Completing any card moves it to the bottom Done section, crossed out but
+  // still visible for the day (the "I did it" payoff).
+  const done = [...overdue, ...todayCards, ...next7].filter((i) => i.completed)
+
+  const openToday = todayCards.filter((i) => !i.completed)
+  const pastDue = [...overdue.filter((i) => !i.completed), ...openToday.filter((i) => todaySlot(i, nowHm) === 'pastdue')]
+  const nowCards = openToday.filter((i) => todaySlot(i, nowHm) === 'now')
+  const comingCards = openToday.filter((i) => todaySlot(i, nowHm) === 'coming')
+  const anytimeCards = openToday.filter((i) => todaySlot(i, nowHm) === 'anytime')
+  const next7Open = next7.filter((i) => !i.completed)
+
+  const todayEmpty =
+    pastDue.length === 0 &&
+    nowCards.length === 0 &&
+    comingCards.length === 0 &&
+    anytimeCards.length === 0 &&
+    done.length === 0
+  const allEmpty = todayEmpty && next7Open.length === 0
+
+  const renderCards = (items: api.FeedItem[]) => (
+    <div className="flex flex-col gap-3">
+      <AnimatePresence>
+        {items.map((item, i) => (
+          <ItemCard key={item.id} index={i} {...cardProps(item)} />
+        ))}
+      </AnimatePresence>
+    </div>
+  )
 
   return (
     <div>
@@ -292,12 +303,14 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
 
       <FormError message={error} />
 
-      {feed && today.length === 0 && anytime.length === 0 && (
-        filter.length > 0 ? (
-          <p className="glass p-6 text-center text-sm text-fg/50">
-            No cards for the people you picked.
-          </p>
-        ) : isParent ? (
+      {feed && filter.length > 0 && allEmpty && (
+        <p className="glass p-6 text-center text-sm text-fg/50">
+          No cards for the people you picked.
+        </p>
+      )}
+
+      {feed && filter.length === 0 && todayEmpty && (
+        isParent ? (
           // Empty board is the natural place to start one: tap to open the editor.
           <button
             type="button"
@@ -314,43 +327,53 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
         )
       )}
 
-      <div className="flex flex-col gap-3">
-        <AnimatePresence>
-          {today.map((item, i) => (
-            <Fragment key={item.id}>
-              <ItemCard index={i} {...cardProps(item, canCheck(item))} />
-              {i === divider && <NowDivider />}
-            </Fragment>
-          ))}
-        </AnimatePresence>
-      </div>
-
-      {anytime.length > 0 && (
+      {feed && !todayEmpty && (
         <>
-          <SectionLabel>Anytime</SectionLabel>
-          <div className="flex flex-col gap-3">
-            <AnimatePresence>
-              {anytime.map((item, i) => (
-                <ItemCard key={item.id} index={i} {...cardProps(item, canCheck(item))} />
-              ))}
-            </AnimatePresence>
-          </div>
+          {pastDue.length > 0 && (
+            <>
+              <SectionDivider label="Past due" />
+              {renderCards(pastDue)}
+            </>
+          )}
+
+          {nowCards.length > 0 && (
+            <>
+              <SectionDivider label="Now" accent />
+              {renderCards(nowCards)}
+            </>
+          )}
+
+          <SectionDivider label="Coming up" />
+          {comingCards.length > 0 ? (
+            renderCards(comingCards)
+          ) : (
+            <p className="px-1 text-sm text-fg/40">The rest of your day is empty.</p>
+          )}
+
+          {anytimeCards.length > 0 && (
+            <>
+              <SectionDivider label="Anytime" />
+              {renderCards(anytimeCards)}
+            </>
+          )}
+
+          {done.length > 0 && (
+            <>
+              <SectionDivider label="Done" />
+              {renderCards(done)}
+            </>
+          )}
         </>
       )}
 
-      {upcoming.length > 0 && (
+      {feed && !(filter.length > 0 && allEmpty) && (
         <>
-          <SectionLabel>Coming up</SectionLabel>
-          <div className="flex flex-col gap-3">
-            {upcoming.map((item, i) => (
-              <div key={item.id}>
-                <p className="mb-1 pl-1 text-[11px] font-medium text-fg/35">
-                  {item.date_for ? upcomingLabel(item.date_for) : ''}
-                </p>
-                <ItemCard index={i} {...cardProps(item, item.kind === 'task' && canCheck(item))} />
-              </div>
-            ))}
-          </div>
+          <SectionDivider label="Next 7 days" />
+          {next7Open.length > 0 ? (
+            renderCards(next7Open)
+          ) : (
+            <p className="px-1 text-sm text-fg/40">Nothing in the next 7 days.</p>
+          )}
         </>
       )}
 

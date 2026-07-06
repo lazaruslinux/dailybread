@@ -58,7 +58,7 @@ def test_card_can_have_several_assignees(owner, child):
 
     # The feed echoes back both assignees.
     feed = owner.get(f"/items/feed?date={TODAY}").json()
-    mine = next(i for i in feed["anytime"] if i["id"] == card["id"])
+    mine = next(i for i in feed["today"] if i["id"] == card["id"])
     assert {a["id"] for a in mine["assignees"]} == {dad_id, kid_id}
 
     # A child listed among several assignees may still check the card off.
@@ -72,13 +72,13 @@ def test_editing_assignees_replaces_the_whole_set(owner, child):
 
     # Now it's the child's, not the owner's: the owner is no longer an assignee.
     feed = owner.get(f"/items/feed?date={TODAY}").json()
-    mine = next(i for i in feed["anytime"] if i["id"] == card["id"])
+    mine = next(i for i in feed["today"] if i["id"] == card["id"])
     assert [a["id"] for a in mine["assignees"]] == [kid_id]
 
     # Clearing to [] leaves the card owned by (and visible to) the owner alone.
     owner.patch(f"/items/{card['id']}", json={"assignee_ids": []})
     feed = owner.get(f"/items/feed?date={TODAY}").json()
-    mine = next(i for i in feed["anytime"] if i["id"] == card["id"])
+    mine = next(i for i in feed["today"] if i["id"] == card["id"])
     assert mine["assignees"] == []
 
 
@@ -94,16 +94,16 @@ def test_feed_rejects_faraway_dates(owner):
 
 
 def test_checked_undated_todo_stays_crossed_out_for_the_day(owner):
-    item = make_item(owner)  # undated todo -> "anytime" bucket
+    item = make_item(owner)  # undated task -> the "today" bucket
     feed = owner.get(f"/items/feed?date={TODAY}").json()
-    assert any(i["id"] == item["id"] for i in feed["anytime"])
+    assert any(i["id"] == item["id"] for i in feed["today"])
 
-    # Checked today: stays on the board, flagged completed, sorted last.
+    # Checked today: stays on the board, flagged completed (the client keeps it
+    # crossed out in its Done section, then archives it tomorrow).
     owner.post(f"/items/{item['id']}/complete?date={TODAY}")
     feed = owner.get(f"/items/feed?date={TODAY}").json()
-    mine = [i for i in feed["anytime"] if i["id"] == item["id"]]
+    mine = [i for i in feed["today"] if i["id"] == item["id"]]
     assert mine and mine[0]["completed"] is True
-    assert feed["anytime"][-1]["id"] == item["id"]
 
 
 def test_undated_todo_completed_yesterday_is_archived(owner):
@@ -112,18 +112,23 @@ def test_undated_todo_completed_yesterday_is_archived(owner):
     owner.post(f"/items/{item['id']}/complete?date={yesterday}")
 
     feed = owner.get(f"/items/feed?date={TODAY}").json()
-    assert not any(i["id"] == item["id"] for i in feed["anytime"])
+    assert not any(i["id"] == item["id"] for i in feed["today"])
 
 
-def test_upcoming_has_no_horizon(owner):
-    far = (dt.date.today() + dt.timedelta(days=45)).isoformat()
-    item = make_item(
-        owner, kind="appointment", title="Vacation", date_for=far,
-        time_of_day="09:00", end_time="10:00",
-    )
+def test_next7_has_a_horizon(owner):
+    # The next-7-days list is bounded: a card one week out shows, one past that
+    # does not (it lives only on the calendar), and nothing far off leaks in.
+    within = (dt.date.today() + dt.timedelta(days=7)).isoformat()
+    beyond = (dt.date.today() + dt.timedelta(days=8)).isoformat()
+    a = make_item(owner, kind="appointment", title="In range", date_for=within,
+                  time_of_day="09:00", end_time="10:00")
+    b = make_item(owner, kind="appointment", title="Too far", date_for=beyond,
+                  time_of_day="09:00", end_time="10:00")
 
     feed = owner.get(f"/items/feed?date={TODAY}").json()
-    assert any(i["id"] == item["id"] for i in feed["upcoming"])
+    ids = lambda bucket: {i["id"] for i in feed[bucket]}
+    assert a["id"] in ids("next7")
+    assert b["id"] not in ids("next7") | ids("today") | ids("overdue")
 
 
 def test_future_task_can_be_checked_ahead_and_stays_done_on_its_due_day(owner):
@@ -134,18 +139,58 @@ def test_future_task_can_be_checked_ahead_and_stays_done_on_its_due_day(owner):
     task = make_item(owner, title="Return library books", date_for=tomorrow)
 
     feed = owner.get(f"/items/feed?date={TODAY}").json()
-    assert any(i["id"] == task["id"] for i in feed["upcoming"])
+    assert any(i["id"] == task["id"] for i in feed["next7"])
 
     res = owner.post(f"/items/{task['id']}/complete?date={TODAY}")
     assert res.status_code == 200 and res.json()["completed"] is True
     feed = owner.get(f"/items/feed?date={TODAY}").json()
-    done = [i for i in feed["upcoming"] if i["id"] == task["id"]]
+    done = [i for i in feed["next7"] if i["id"] == task["id"]]
     assert done and done[0]["completed"] is True
 
     # The due day rolls around: still done, on the strength of yesterday's check.
     feed = owner.get(f"/items/feed?date={tomorrow}").json()
     today_card = [i for i in feed["today"] if i["id"] == task["id"]]
     assert today_card and today_card[0]["completed"] is True
+
+
+def test_overdue_carries_past_due_oneoffs_forward(owner):
+    # A one-off whose date slipped by keeps showing under "overdue" until done.
+    yesterday = (dt.date.today() - dt.timedelta(days=1)).isoformat()
+    appt = make_item(owner, kind="appointment", title="Missed call", date_for=yesterday,
+                     time_of_day="09:00", end_time="09:30")
+    # Routines are habits, not one-offs, so a scheduled-yesterday routine is
+    # never overdue; a card older than the 90-day lookback also drops off.
+    make_item(owner, kind="routine", title="Daily",
+              repeat={"type": "weekly", "days": [0, 1, 2, 3, 4, 5, 6]})
+    ancient = (dt.date.today() - dt.timedelta(days=120)).isoformat()
+    old = make_item(owner, kind="appointment", title="Ancient", date_for=ancient,
+                    time_of_day="09:00", end_time="09:30")
+
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    overdue_ids = {i["id"] for i in feed["overdue"]}
+    assert appt["id"] in overdue_ids
+    assert all(i["kind"] != "routine" for i in feed["overdue"])
+    assert old["id"] not in overdue_ids
+
+
+def test_completing_an_overdue_card_keeps_it_for_today_then_archives(owner):
+    # Checking off a past-due card records the check on today, so it stays in
+    # the feed (crossed out, for the client's Done section) until midnight.
+    yesterday = (dt.date.today() - dt.timedelta(days=1)).isoformat()
+    appt = make_item(owner, kind="appointment", title="Late chore", date_for=yesterday,
+                     time_of_day="09:00", end_time="09:30")
+
+    owner.post(f"/items/{appt['id']}/complete?date={TODAY}")
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    done = [i for i in feed["overdue"] if i["id"] == appt["id"]]
+    assert done and done[0]["completed"] is True
+
+    # A card checked off on an earlier day is archived off the board entirely.
+    other = make_item(owner, kind="appointment", title="Done long ago", date_for=yesterday,
+                      time_of_day="09:00", end_time="09:30")
+    owner.post(f"/items/{other['id']}/complete?date={yesterday}")
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    assert not any(i["id"] == other["id"] for i in feed["overdue"])
 
 
 def _monday(d: dt.date) -> dt.date:
@@ -250,7 +295,7 @@ def test_new_card_is_private_by_default(owner, child):
 
     # The child neither sees it on their board nor can check it off.
     feed = child.get(f"/items/feed?date={TODAY}").json()
-    assert not any(i["id"] == card["id"] for i in feed["anytime"])
+    assert not any(i["id"] == card["id"] for i in feed["today"])
     assert child.post(f"/items/{card['id']}/complete?date={TODAY}").status_code == 404
 
 
@@ -265,7 +310,7 @@ def test_assigning_members_keeps_a_card_private(owner, child):
 def test_family_board_card_is_visible_to_all(owner, child):
     card = make_item(owner, visibility="family")
     feed = child.get(f"/items/feed?date={TODAY}").json()
-    assert any(i["id"] == card["id"] for i in feed["anytime"])
+    assert any(i["id"] == card["id"] for i in feed["today"])
 
 
 def test_family_board_card_is_read_only_for_non_assignees(owner, child):
@@ -285,7 +330,7 @@ def test_family_board_card_is_read_only_for_non_assignees(owner, child):
 def test_family_task_not_assigned_is_read_only_for_child(owner, child):
     task = make_item(owner, visibility="family")  # on the board, assigned to no one
     feed = child.get(f"/items/feed?date={TODAY}").json()
-    assert any(i["id"] == task["id"] for i in feed["anytime"])
+    assert any(i["id"] == task["id"] for i in feed["today"])
     assert child.post(f"/items/{task['id']}/complete?date={TODAY}").status_code == 403
 
 
@@ -435,6 +480,6 @@ def test_shared_task_completion_is_single(owner, child):
 
     # The child sees it done too: one shared check, not a per-person one.
     feed = child.get(f"/items/feed?date={TODAY}").json()
-    card = next(i for i in feed["anytime"] if i["id"] == task["id"])
+    card = next(i for i in feed["today"] if i["id"] == task["id"])
     assert card["completed"] is True
     assert card["assignee_completions"] is None

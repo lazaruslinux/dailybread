@@ -194,9 +194,15 @@ export interface FeedItem {
 
 export interface Feed {
   date: string
+  // One-off cards past their date and still open (or checked off today). Never
+  // routines. The client shows these under "Past due".
+  overdue: FeedItem[]
+  // Everything happening today: routines landing today, cards dated today, and
+  // undated tasks. The client slices this by the clock into now / coming up /
+  // anytime, and moves anything completed into "Done".
   today: FeedItem[]
-  anytime: FeedItem[]
-  upcoming: FeedItem[]
+  // One-off cards dated in the next seven days.
+  next7: FeedItem[]
 }
 
 // The repeat object sent when creating/editing a routine. days/month_day are

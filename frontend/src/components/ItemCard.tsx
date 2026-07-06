@@ -43,12 +43,25 @@ function ParticipantAvatar({
 // completes a card; tapping anywhere else opens the detail sheet, so a
 // stray tap can never silently change state. Completed cards stay in place
 // but visibly settle: dimmed, circle filled with a check.
+// "Mon, Jul 6" — the card's own date, shown only for cards that aren't today's
+// (past due and the next-7-days list), so a member can tell them apart without
+// repeated date separators.
+function shortDate(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
 export function ItemCard({
   item,
   index,
   canCheck,
   family,
   flag,
+  showDate,
   onToggle,
   onOpen,
   onEdit,
@@ -58,12 +71,14 @@ export function ItemCard({
   canCheck: boolean
   family?: FamilyMember[]
   flag?: 'overdue' | 'due' | null
+  showDate?: boolean
   onToggle?: () => void
   onOpen?: () => void
   onEdit?: () => void
 }) {
   const { Icon, tint, label } = KIND_STYLE[item.kind]
   const timeLabel = item.all_day ? 'All day' : formatTime(item.time_of_day)
+  const dateLine = showDate && item.date_for ? shortDate(item.date_for) : null
   const showCheckbox = canCheck && onToggle
 
   // Routines are per-person: show each participant's own check. Suppressed
@@ -156,8 +171,11 @@ export function ItemCard({
       </div>
 
       <div className="flex shrink-0 flex-col items-end gap-1.5">
+        {dateLine && (
+          <span className="text-[11px] font-semibold text-fg/65">{dateLine}</span>
+        )}
         {timeLabel && (
-          <span className={`text-xs font-medium ${flag === 'overdue' ? 'text-rose-300' : 'text-fg/50'}`}>
+          <span className={`text-[13px] font-semibold tabular-nums ${flag === 'overdue' ? 'text-rose-300' : 'text-fg/75'}`}>
             {timeLabel}
           </span>
         )}
@@ -226,17 +244,29 @@ export function ItemCard({
   )
 }
 
-// The thin "you are here" line between what's passed and what's next.
-export function NowDivider() {
+// A thin labelled hairline that heads each board section (Past due, Now,
+// Coming up, ...). The "Now" line is accented so the eye lands on what's
+// current; the rest are quiet.
+export function SectionDivider({ label, accent = false }: { label: string; accent?: boolean }) {
   return (
     <motion.div
       layout
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="flex items-center gap-2 py-0.5"
+      className="mb-2 mt-6 flex items-center gap-2 py-0.5 first:mt-0"
     >
-      <span className="text-[10px] font-bold uppercase tracking-widest text-accent-bright">Now</span>
-      <span className="h-px flex-1 bg-gradient-to-r from-accent-bright/70 to-transparent" />
+      <span
+        className={`text-[10px] font-bold uppercase tracking-widest ${
+          accent ? 'text-accent-bright' : 'text-fg/45'
+        }`}
+      >
+        {label}
+      </span>
+      <span
+        className={`h-px flex-1 bg-gradient-to-r to-transparent ${
+          accent ? 'from-accent-bright/70' : 'from-fg/15'
+        }`}
+      />
     </motion.div>
   )
 }

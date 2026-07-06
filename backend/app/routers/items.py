@@ -324,26 +324,35 @@ def _build_feed_item(db: Session, item: Item, user: User, date: dt.date) -> Feed
     return _feed_item(item, completed=completed, streak=streak, assignee_completions=completions)
 
 
+# One-off cards keep nagging for this long after their date before they fall
+# off the board for good; past that they live only in the calendar's history.
+_MAX_OVERDUE_LOOKBACK = dt.timedelta(days=90)
+# How far ahead the board looks; dated cards beyond this show only on the calendar.
+_NEXT_DAYS = dt.timedelta(days=7)
+
+
 @router.get("/feed", response_model=FeedOut)
 def feed(
     date_for: dt.date = Query(alias="date"),
     db: Session = Depends(get_db),
     user: User = Depends(require_family),
 ):
-    """The whole home screen in one request: today, anytime, upcoming.
+    """The whole home screen in one request: overdue, today, the next 7 days.
 
     Only cards the member can see are returned; routines appear on a day only
-    when their schedule lands on it.
+    when their schedule lands on it. The client buckets ``today`` by the clock.
     """
     _check_date(date_for)
 
+    window_start = date_for - _MAX_OVERDUE_LOOKBACK
+    window_end = date_for + _NEXT_DAYS
     items = (
         db.scalars(
             select(Item)
             .options(selectinload(Item.assignees))
             .where(
                 Item.family_id == user.family_id,
-                (Item.date_for.is_(None)) | (Item.date_for >= date_for),
+                (Item.date_for.is_(None)) | (Item.date_for.between(window_start, window_end)),
             )
         )
         .unique()
@@ -351,15 +360,19 @@ def feed(
     )
     visible = [item for item in items if _visible_to(item, user)]
 
+    overdue: list[FeedItemOut] = []
     today: list[FeedItemOut] = []
-    anytime: list[FeedItemOut] = []
-    upcoming: list[FeedItemOut] = []
+    next7: list[FeedItemOut] = []
 
     for item in visible:
         if item.kind == ItemKind.routine:
+            # Routines are habits, not one-offs: a missed day is never "overdue"
+            # (streaks already record the miss); they only ever land on today.
             if _occurs(item, date_for):
                 today.append(_build_feed_item(db, item, user, date_for))
-        elif item.date_for == date_for:
+            continue
+
+        if item.date_for == date_for:
             today.append(_build_feed_item(db, item, user, date_for))
         elif item.date_for is None:
             fi = _build_feed_item(db, item, user, date_for)
@@ -373,17 +386,32 @@ def feed(
                 )
                 if earlier is not None:
                     continue
-            anytime.append(fi)
-        elif item.date_for > date_for:
-            upcoming.append(_build_feed_item(db, item, user, date_for))
+            today.append(fi)
+        elif item.date_for < date_for:
+            # A one-off whose day has passed. It carries forward until checked
+            # off; completing it lands the check on today, so it stays visible
+            # (crossed out, in the client's Done section) for the rest of the
+            # day and archives tomorrow. A check from an earlier day drops off.
+            fi = _build_feed_item(db, item, user, date_for)
+            if fi.completed:
+                done_today = db.scalar(
+                    select(Completion.id).where(
+                        Completion.item_id == item.id, Completion.date_for == date_for
+                    )
+                )
+                if done_today is None:
+                    continue
+            overdue.append(fi)
+        else:  # date_for in (today, today + 7]
+            next7.append(_build_feed_item(db, item, user, date_for))
 
     # All-day events first, then timed cards in day order; untimed sink to the end.
     late = dt.time(23, 59)
+    overdue.sort(key=lambda i: (i.date_for, not i.all_day, i.time_of_day or late, i.title.lower()))
     today.sort(key=lambda i: (not i.all_day, i.time_of_day or late, i.title.lower()))
-    anytime.sort(key=lambda i: (i.completed, i.title.lower()))  # done sink to the bottom
-    upcoming.sort(key=lambda i: (i.date_for, not i.all_day, i.time_of_day or late, i.title.lower()))
+    next7.sort(key=lambda i: (i.date_for, not i.all_day, i.time_of_day or late, i.title.lower()))
 
-    return FeedOut(date=date_for, today=today, anytime=anytime, upcoming=upcoming)
+    return FeedOut(date=date_for, overdue=overdue, today=today, next7=next7)
 
 
 # A calendar request can span weeks, so it can't use the ±1-day "today" clamp;
