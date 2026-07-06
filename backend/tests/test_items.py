@@ -88,6 +88,52 @@ def test_uncomplete_reverses_a_checkoff(owner):
     assert owner.delete(f"/items/{item['id']}/complete?date={TODAY}").json()["completed"] is False
 
 
+def test_a_missed_day_can_be_marked_on_its_own_day(owner):
+    # The calendar's whole point: check a routine off on the day it actually
+    # was. It then reads done on that day and stays open on the others.
+    routine = make_item(
+        owner, kind="routine", title="Vitamins",
+        repeat={"type": "weekly", "days": [0, 1, 2, 3, 4, 5, 6]},
+    )
+    three_ago = (dt.date.today() - dt.timedelta(days=3)).isoformat()
+    assert owner.post(f"/items/{routine['id']}/complete?date={three_ago}").status_code == 200
+
+    back = owner.get(f"/items/calendar?start={three_ago}&end={three_ago}").json()
+    assert next(i for i in back["days"][0]["items"] if i["id"] == routine["id"])["completed"] is True
+    today_cal = owner.get(f"/items/calendar?start={TODAY}&end={TODAY}").json()
+    assert next(i for i in today_cal["days"][0]["items"] if i["id"] == routine["id"])["completed"] is False
+
+
+def test_cannot_complete_in_the_future(owner):
+    ahead = (dt.date.today() + dt.timedelta(days=3)).isoformat()
+    appt = make_item(owner, kind="appointment", title="Later", date_for=ahead,
+                     time_of_day="09:00", end_time="09:30")
+    assert owner.post(f"/items/{appt['id']}/complete?date={ahead}").status_code == 400
+
+
+def test_cannot_complete_too_far_back(owner):
+    item = make_item(owner)
+    ancient = (dt.date.today() - dt.timedelta(days=120)).isoformat()
+    assert owner.post(f"/items/{item['id']}/complete?date={ancient}").status_code == 400
+
+
+def test_dated_completion_is_a_single_shot_across_days(owner):
+    # A dated card is one-shot: cleared from the board's overdue list the check
+    # lands on today, yet the card reads done on its own past day too, and
+    # undoing from that day clears the single completion wherever it landed.
+    yesterday = (dt.date.today() - dt.timedelta(days=1)).isoformat()
+    appt = make_item(owner, kind="appointment", title="Missed call", date_for=yesterday,
+                     time_of_day="09:00", end_time="09:30")
+    owner.post(f"/items/{appt['id']}/complete?date={TODAY}")  # overdue-clear, recorded today
+
+    back = owner.get(f"/items/calendar?start={yesterday}&end={yesterday}").json()
+    assert next(i for i in back["days"][0]["items"] if i["id"] == appt["id"])["completed"] is True
+
+    assert owner.delete(f"/items/{appt['id']}/complete?date={yesterday}").json()["completed"] is False
+    back = owner.get(f"/items/calendar?start={yesterday}&end={yesterday}").json()
+    assert next(i for i in back["days"][0]["items"] if i["id"] == appt["id"])["completed"] is False
+
+
 def test_feed_rejects_faraway_dates(owner):
     far = (dt.date.today() + dt.timedelta(days=30)).isoformat()
     assert owner.get(f"/items/feed?date={far}").status_code == 400

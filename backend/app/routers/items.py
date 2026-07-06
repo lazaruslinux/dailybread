@@ -331,6 +331,18 @@ _MAX_OVERDUE_LOOKBACK = dt.timedelta(days=90)
 _NEXT_DAYS = dt.timedelta(days=7)
 
 
+def _check_complete_date(date_for: dt.date) -> None:
+    """Completing is allowed further back than the board's ±1-day "today" clamp:
+    you can mark a missed item on the day it actually was (the calendar's whole
+    point), within the same 90-day window the overdue list carries. Marking
+    something done in the future is still refused (a day of timezone slack aside)."""
+    today = dt.date.today()
+    if date_for - today > _MAX_DATE_DRIFT:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Can't complete something in the future")
+    if today - date_for > _MAX_OVERDUE_LOOKBACK:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "That day is too far back to mark")
+
+
 @router.get("/feed", response_model=FeedOut)
 def feed(
     date_for: dt.date = Query(alias="date"),
@@ -573,13 +585,13 @@ def complete_item(
     db: Session = Depends(get_db),
     user: User = Depends(require_family),
 ):
-    _check_date(date_for)
+    _check_complete_date(date_for)
     item = _get_item(db, item_id, user.family_id)
     _require_visible(item, user)
     target = _resolve_completion_target(db, item, user, for_user)
 
     if item.kind == ItemKind.routine:
-        # Per-person: the target member's own occurrence.
+        # Per-person: the target member's own occurrence on this day.
         exists = db.scalar(
             select(Completion.id).where(
                 Completion.item_id == item.id,
@@ -587,8 +599,13 @@ def complete_item(
                 Completion.date_for == date_for,
             )
         )
+    elif item.date_for is not None:
+        # A dated card is a one-shot: any single completion means done, whatever
+        # day it was marked. The calendar records the real day; the board's
+        # overdue-clear records today. Either way, don't add a second row.
+        exists = db.scalar(select(Completion.id).where(Completion.item_id == item.id))
     else:
-        # Shared: one check for the whole card, whoever taps it.
+        # Undated task: per-day, so it can archive the day after it's checked.
         exists = db.scalar(
             select(Completion.id).where(
                 Completion.item_id == item.id, Completion.date_for == date_for
@@ -610,28 +627,31 @@ def uncomplete_item(
     db: Session = Depends(get_db),
     user: User = Depends(require_family),
 ):
-    """Undo an accidental check-off for that day."""
-    _check_date(date_for)
+    """Undo a check-off. For a routine or an undated task this clears that one
+    day; for a dated one-shot it clears the single completion whatever day it
+    landed on, so undoing from the calendar's real day and from the board's
+    overdue-clear (recorded today) both work."""
+    _check_complete_date(date_for)
     item = _get_item(db, item_id, user.family_id)
     _require_visible(item, user)
     target = _resolve_completion_target(db, item, user, for_user)
 
     if item.kind == ItemKind.routine:
-        completion = db.scalar(
-            select(Completion).where(
-                Completion.item_id == item.id,
-                Completion.user_id == target.id,
-                Completion.date_for == date_for,
-            )
+        stmt = select(Completion).where(
+            Completion.item_id == item.id,
+            Completion.user_id == target.id,
+            Completion.date_for == date_for,
         )
+    elif item.date_for is not None:
+        stmt = select(Completion).where(Completion.item_id == item.id)
     else:
-        completion = db.scalar(
-            select(Completion).where(
-                Completion.item_id == item.id, Completion.date_for == date_for
-            )
+        stmt = select(Completion).where(
+            Completion.item_id == item.id, Completion.date_for == date_for
         )
-    if completion is not None:
+    completions = db.scalars(stmt).all()
+    for completion in completions:
         db.delete(completion)
+    if completions:
         db.commit()
 
     return _build_feed_item(db, item, user, date_for)

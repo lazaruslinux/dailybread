@@ -3,6 +3,7 @@ import { Plus, Undo2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
+import { canCheckItem } from '../lib/items'
 import { FamilyStrip } from '../components/FamilyStrip'
 import { ItemCard, SectionDivider } from '../components/ItemCard'
 import { ItemDetail } from '../components/ItemDetail'
@@ -203,16 +204,7 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
     }
   }
 
-  function canCheck(item: api.FeedItem): boolean {
-    if (!user) return false
-    // Routines are per-person: only a participant checks their own. Other kinds
-    // can be checked by anyone involved (owner or assignee), plus either parent
-    // on a family-board card, so co-parents share the household's chores.
-    if (item.kind === 'routine')
-      return item.assignee_completions?.some((c) => c.user_id === user.id) ?? false
-    if (item.owner_id === user.id || item.assignees.some((a) => a.id === user.id)) return true
-    return user.role === 'parent' && item.visibility === 'family'
-  }
+  const canCheck = (item: api.FeedItem) => canCheckItem(item, user)
 
   const openEditor = (item: api.FeedItem | null) => {
     setDetail(null)

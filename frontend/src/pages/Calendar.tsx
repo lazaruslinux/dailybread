@@ -7,6 +7,7 @@ import { Avatar } from '../components/Avatar'
 import { KIND_STYLE } from '../components/ItemCard'
 import { ItemSheet } from '../components/ItemSheet'
 import { FormError } from '../components/ui'
+import { canCheckItem } from '../lib/items'
 import { formatTime } from '../lib/moods'
 
 const DOW = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
@@ -57,10 +58,21 @@ function fullDay(iso: string): string {
   })
 }
 
-// One scheduled card in the day's agenda: read-only (tapping into detail/edit is
-// a later slice). Time on the left, kind + title in the middle, who it's for on
-// the right, a check when it's already done.
-function AgendaRow({ item, family }: { item: api.FeedItem; family: api.FamilyMember[] }) {
+// One scheduled card in the day's agenda. When the viewer can act on it and the
+// day isn't in the future, a left circle checks it off ON THAT DAY, so a missed
+// item is marked on the day it actually was. Otherwise it's read-only, with a
+// quiet check when it's already done.
+function AgendaRow({
+  item,
+  family,
+  checkable,
+  onToggle,
+}: {
+  item: api.FeedItem
+  family: api.FamilyMember[]
+  checkable: boolean
+  onToggle?: () => void
+}) {
   const { Icon, tint, label } = KIND_STYLE[item.kind]
   const when = item.all_day ? 'All day' : formatTime(item.time_of_day)
   const people = item.assignees
@@ -68,6 +80,23 @@ function AgendaRow({ item, family }: { item: api.FeedItem; family: api.FamilyMem
     .filter((m): m is api.FamilyMember => Boolean(m))
   return (
     <div className="glass flex items-center gap-3 p-3">
+      {checkable && onToggle ? (
+        <button
+          type="button"
+          aria-label={item.completed ? `Mark ${item.title} not done` : `Mark ${item.title} done`}
+          onClick={onToggle}
+          className="-m-1 shrink-0 p-1"
+          data-check
+        >
+          <span
+            className={`flex h-6 w-6 items-center justify-center rounded-full border-2 transition-colors ${
+              item.completed ? 'border-emerald-300/70 bg-emerald-400/25' : 'border-fg/30 bg-fg/5'
+            }`}
+          >
+            {item.completed && <Check className="h-3.5 w-3.5 text-emerald-300" strokeWidth={3} />}
+          </span>
+        </button>
+      ) : null}
       <div className="w-14 shrink-0 text-right text-[11px] font-semibold leading-tight text-fg/55">
         {when ?? ''}
       </div>
@@ -86,7 +115,7 @@ function AgendaRow({ item, family }: { item: api.FeedItem; family: api.FamilyMem
           ))}
         </div>
       )}
-      {item.completed && <Check className="h-4 w-4 shrink-0 text-emerald-400" strokeWidth={3} />}
+      {!checkable && item.completed && <Check className="h-4 w-4 shrink-0 text-emerald-400" strokeWidth={3} />}
     </div>
   )
 }
@@ -182,6 +211,38 @@ export function Calendar() {
 
   const countFor = (iso: string) => cal?.days.find((d) => d.date === iso)?.items.length ?? 0
   const selectedItems = cal?.days.find((d) => d.date === selected)?.items ?? []
+  // You can only mark days that have already happened (or today) — nothing is
+  // "done" in the future.
+  const dayIsMarkable = selected <= todayISO
+
+  // Flip a card's completed state on the day being viewed, optimistically, then
+  // reconcile with the server. The completion is recorded on THAT day.
+  function setDone(dayISO: string, id: number, done: boolean) {
+    setCal((c) =>
+      c
+        ? {
+            ...c,
+            days: c.days.map((d) =>
+              d.date === dayISO
+                ? { ...d, items: d.items.map((it) => (it.id === id ? { ...it, completed: done } : it)) }
+                : d,
+            ),
+          }
+        : c,
+    )
+  }
+  async function toggle(item: api.FeedItem, dayISO: string) {
+    const done = !item.completed
+    setDone(dayISO, item.id, done)
+    try {
+      if (done) await api.completeItem(item.id, undefined, dayISO)
+      else await api.uncompleteItem(item.id, undefined, dayISO)
+      refresh()
+    } catch (err) {
+      setDone(dayISO, item.id, !done)
+      setError(err instanceof api.ApiError ? err.message : 'Could not update the card.')
+    }
+  }
 
   const weeks = useMemo(() => {
     const rows: Date[][] = []
@@ -307,9 +368,18 @@ export function Calendar() {
           <p className="glass p-6 text-center text-sm text-fg/50">Nothing scheduled.</p>
         ) : (
           <div className="flex flex-col gap-2.5">
-            {selectedItems.map((item) => (
-              <AgendaRow key={`${item.id}-${selected}`} item={item} family={family} />
-            ))}
+            {selectedItems.map((item) => {
+              const checkable = dayIsMarkable && canCheckItem(item, user)
+              return (
+                <AgendaRow
+                  key={`${item.id}-${selected}`}
+                  item={item}
+                  family={family}
+                  checkable={checkable}
+                  onToggle={checkable ? () => toggle(item, selected) : undefined}
+                />
+              )
+            })}
           </div>
         )}
       </div>

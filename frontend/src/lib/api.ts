@@ -255,15 +255,17 @@ export const updateItem = (id: number, payload: Partial<ItemPayload>) =>
 
 export const deleteItem = (id: number) => request<void>(`/items/${id}`, { method: 'DELETE' })
 
-// forUserId lets a parent check a routine off on another member's behalf.
-const completePath = (id: number, forUserId?: number) =>
-  `/items/${id}/complete?date=${localDate()}${forUserId != null ? `&for=${forUserId}` : ''}`
+// forUserId lets a parent check a routine off on another member's behalf. date
+// defaults to today (the board); the calendar passes the day being viewed so a
+// missed item is marked on its actual day.
+const completePath = (id: number, forUserId?: number, date?: string) =>
+  `/items/${id}/complete?date=${date ?? localDate()}${forUserId != null ? `&for=${forUserId}` : ''}`
 
-export const completeItem = (id: number, forUserId?: number) =>
-  request<FeedItem>(completePath(id, forUserId), { method: 'POST' })
+export const completeItem = (id: number, forUserId?: number, date?: string) =>
+  request<FeedItem>(completePath(id, forUserId, date), { method: 'POST' })
 
-export const uncompleteItem = (id: number, forUserId?: number) =>
-  request<FeedItem>(completePath(id, forUserId), { method: 'DELETE' })
+export const uncompleteItem = (id: number, forUserId?: number, date?: string) =>
+  request<FeedItem>(completePath(id, forUserId, date), { method: 'DELETE' })
 
 // ---- grocery list -----------------------------------------------------------
 
