@@ -59,3 +59,18 @@ def test_members_cannot_edit_each_others_profiles(child):
     res = child.patch("/me/profile", json={"bio": "I like turtles"})
     assert res.status_code == 200
     assert res.json()["bio"] == "I like turtles"
+
+
+def test_status_shows_on_the_day_it_is_set(owner):
+    owner.patch("/me/profile", json={"bio": "Busy but good"})
+    prof = owner.get(f"/users/{user_id(owner)}/profile?date={TODAY}").json()
+    assert prof["bio"] == "Busy but good"
+
+
+def test_status_clears_overnight(owner, child):
+    # A status is a daily note like a mood: seen from the next day it reads as
+    # no status, so it clears itself overnight without anyone editing it.
+    owner.patch("/me/profile", json={"bio": "Busy but good"})
+    tomorrow = (dt.date.today() + dt.timedelta(days=1)).isoformat()
+    prof = child.get(f"/users/{user_id(owner)}/profile?date={tomorrow}").json()
+    assert prof["bio"] == ""

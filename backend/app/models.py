@@ -65,8 +65,12 @@ class User(Base):
     # account; everyone else is False. Distinct from is_admin, which is
     # family-scoped board management.
     is_owner: Mapped[bool] = mapped_column(Boolean, default=False)
-    # Short "about me" for the profile page. Owner-editable only.
+    # The member's short daily "status" for the profile page ("How are you
+    # doing?"). Owner-editable only, and shown to others only for the day it was
+    # set: status_date holds that day, and anything older reads as no status,
+    # so a status clears itself overnight the way a mood does.
     bio: Mapped[str] = mapped_column(String(500), default="")
+    status_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     # When the member last set an avatar photo. NULL means no photo (fall back
     # to generated initials); the value also doubles as a cache-busting version
     # for the image URL, since the file path itself is fixed per user id.

@@ -1,4 +1,4 @@
-import { ChevronDown, NotebookPen } from 'lucide-react'
+import { Archive, ChevronDown, NotebookPen } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../lib/api'
 import { Button } from './ui'
@@ -12,9 +12,11 @@ function formatDay(dateStr: string): string {
   })
 }
 
-// A member's private daily journal, in the You tab. You always edit today's
-// entry; earlier days sit below as read-only, tap-to-expand cards. Nothing here
-// is ever visible to another member — there is no endpoint to read someone
+// A member's private daily journal, in the You tab. You only ever write today's
+// entry; at midnight it moves to the archive and a fresh page opens. Earlier
+// days are tucked behind a button and their text stays hidden until you open a
+// specific day, so glancing at the tab never exposes what you wrote. Nothing
+// here is visible to another member — there is no endpoint to read someone
 // else's, so this is the one truly private corner of the app.
 export function JournalCard() {
   const today = api.localDate()
@@ -23,6 +25,7 @@ export function JournalCard() {
   const [history, setHistory] = useState<api.JournalEntry[]>([])
   const [busy, setBusy] = useState(false)
   const [justSaved, setJustSaved] = useState(false)
+  const [archiveOpen, setArchiveOpen] = useState(false)
   const [openDay, setOpenDay] = useState<string | null>(null)
   const savedTimer = useRef<number | undefined>(undefined)
 
@@ -55,14 +58,18 @@ export function JournalCard() {
     }
   }
 
-  // Today already lives in the editor above, so keep it out of the list below.
+  // Today already lives in the editor above, so keep it out of the archive.
   const past = history.filter((h) => h.date_for !== today)
 
   return (
     <div className="glass p-4">
-      <span className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-fg/50">
-        <NotebookPen className="h-3.5 w-3.5 text-accent-bright" /> Journal
+      <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-fg/50">
+        <NotebookPen className="h-3.5 w-3.5 text-accent-bright" /> Daily journal
       </span>
+      <p className="mt-1 font-display text-lg leading-tight text-fg">{formatDay(today)}</p>
+      <p className="mb-3 mt-1 text-xs text-fg/45">
+        Private to you. Tonight it moves to your archive and tomorrow starts fresh.
+      </p>
 
       <textarea
         value={text}
@@ -87,39 +94,51 @@ export function JournalCard() {
 
       {past.length > 0 && (
         <div className="mt-4 border-t border-fg/10 pt-3">
-          <span className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-fg/40">
-            Past entries
-          </span>
-          <div className="flex flex-col gap-1.5">
-            {past.map((h) => {
-              const open = openDay === h.date_for
-              return (
-                <div key={h.date_for} className="rounded-xl border border-fg/10 bg-fg/5">
-                  <button
-                    type="button"
-                    onClick={() => setOpenDay(open ? null : h.date_for)}
-                    aria-expanded={open}
-                    className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
-                  >
-                    <span className="min-w-0">
-                      <span className="block text-sm font-semibold text-fg/85">
-                        {formatDay(h.date_for)}
-                      </span>
-                      {!open && <span className="block truncate text-xs text-fg/45">{h.body}</span>}
-                    </span>
-                    <ChevronDown
-                      className={`h-4 w-4 shrink-0 text-fg/40 transition-transform ${open ? 'rotate-180' : ''}`}
-                    />
-                  </button>
-                  {open && (
-                    <p className="whitespace-pre-wrap px-3 pb-3 text-sm leading-relaxed text-fg/75">
-                      {h.body}
-                    </p>
-                  )}
-                </div>
-              )
-            })}
-          </div>
+          <button
+            type="button"
+            onClick={() => setArchiveOpen((o) => !o)}
+            aria-expanded={archiveOpen}
+            className="flex w-full items-center justify-between gap-2 rounded-xl px-1 py-1.5 text-left text-fg/70 transition-colors hover:text-fg"
+          >
+            <span className="flex items-center gap-2 text-sm font-semibold">
+              <Archive className="h-4 w-4 text-fg/45" />
+              Past entries
+              <span className="text-fg/40">({past.length})</span>
+            </span>
+            <ChevronDown
+              className={`h-4 w-4 shrink-0 text-fg/40 transition-transform ${archiveOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+
+          {archiveOpen && (
+            <div className="mt-2 flex flex-col gap-1.5">
+              {past.map((h) => {
+                const open = openDay === h.date_for
+                return (
+                  <div key={h.date_for} className="rounded-xl border border-fg/10 bg-fg/5">
+                    <button
+                      type="button"
+                      onClick={() => setOpenDay(open ? null : h.date_for)}
+                      aria-expanded={open}
+                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
+                    >
+                      {/* Date only — the entry's text stays hidden until this
+                          day is opened, so the archive never shows content at a glance. */}
+                      <span className="text-sm font-semibold text-fg/85">{formatDay(h.date_for)}</span>
+                      <ChevronDown
+                        className={`h-4 w-4 shrink-0 text-fg/40 transition-transform ${open ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+                    {open && (
+                      <p className="whitespace-pre-wrap px-3 pb-3 text-sm leading-relaxed text-fg/75">
+                        {h.body}
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>

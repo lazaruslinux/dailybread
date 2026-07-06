@@ -182,7 +182,10 @@ export function Profile({ userId }: { userId: number }) {
         className="glass mb-4 p-5"
       >
         <div className="mb-2 flex items-center justify-between">
-          <p className="text-xs font-semibold uppercase tracking-widest text-fg/40">Status</p>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-widest text-fg/40">Status</p>
+            {isSelf && <p className="mt-0.5 text-[11px] text-fg/35">Clears each night</p>}
+          </div>
           {isSelf && !editingBio && (
             <button
               onClick={() => {

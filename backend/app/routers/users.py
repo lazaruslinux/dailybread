@@ -24,7 +24,13 @@ router = APIRouter(tags=["users"])
 _MAX_DATE_DRIFT = dt.timedelta(days=1)
 
 
-def _profile_out(user: User, mood: Mood | None, viewer: User) -> ProfileOut:
+def _daily_status(user: User, today: dt.date) -> str:
+    """The status is a per-day note: it shows only for the day it was set and
+    reads as empty once the day rolls over, so it clears itself overnight."""
+    return user.bio if user.status_date == today else ""
+
+
+def _profile_out(user: User, mood: Mood | None, viewer: User, today: dt.date) -> ProfileOut:
     return ProfileOut(
         id=user.id,
         username=user.username,
@@ -34,7 +40,7 @@ def _profile_out(user: User, mood: Mood | None, viewer: User) -> ProfileOut:
         is_owner=user.is_owner,
         family_id=user.family_id,
         avatar_updated_at=user.avatar_updated_at,
-        bio=user.bio,
+        bio=_daily_status(user, today),
         created_at=user.created_at,
         mood=_visible_mood(mood, viewer, user.id),
     )
@@ -108,7 +114,7 @@ def profile(
     mood = db.scalar(
         select(Mood).where(Mood.user_id == user.id, Mood.date_for == date_for)
     )
-    return _profile_out(user, mood, viewer)
+    return _profile_out(user, mood, viewer, date_for)
 
 
 @router.patch("/me/profile", response_model=ProfileOut)
@@ -117,18 +123,20 @@ def update_my_profile(
     db: Session = Depends(get_db),
     me: User = Depends(require_family),
 ):
-    """Your profile is yours: bio and display name, no one else's. Roles and
+    """Your profile is yours: status and display name, no one else's. Roles and
     admin flags stay in the admin-only endpoints."""
+    today = dt.date.today()
     if data.display_name is not None:
         me.display_name = data.display_name
     if data.bio is not None:
+        # Setting the status stamps today, so it's shown as today's and clears
+        # overnight; clearing it (empty text) still just reads as no status.
         me.bio = data.bio
+        me.status_date = today
     db.commit()
     db.refresh(me)
-    mood = db.scalar(
-        select(Mood).where(Mood.user_id == me.id, Mood.date_for == dt.date.today())
-    )
-    return _profile_out(me, mood, me)
+    mood = db.scalar(select(Mood).where(Mood.user_id == me.id, Mood.date_for == today))
+    return _profile_out(me, mood, me, today)
 
 
 @router.put("/me/mood", response_model=MoodOut)
@@ -312,10 +320,9 @@ async def upload_avatar(
     user.avatar_updated_at = dt.datetime.now(dt.timezone.utc)
     db.commit()
     db.refresh(user)
-    mood = db.scalar(
-        select(Mood).where(Mood.user_id == user.id, Mood.date_for == dt.date.today())
-    )
-    return _profile_out(user, mood, viewer)
+    today = dt.date.today()
+    mood = db.scalar(select(Mood).where(Mood.user_id == user.id, Mood.date_for == today))
+    return _profile_out(user, mood, viewer, today)
 
 
 @router.delete("/users/{user_id}/avatar", status_code=status.HTTP_204_NO_CONTENT)
