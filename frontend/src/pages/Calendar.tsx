@@ -25,17 +25,24 @@ function mondayOf(d: Date): Date {
   x.setDate(x.getDate() - ((x.getDay() + 6) % 7))
   return x
 }
+function startOfMonth(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), 1)
+}
+function endOfMonth(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0)
+}
+function addMonths(d: Date, n: number): Date {
+  return new Date(d.getFullYear(), d.getMonth() + n, 1)
+}
 
-function monthLabel(start: Date, end: Date): string {
-  const opts: Intl.DateTimeFormatOptions = { month: 'long' }
-  const sameMonth = start.getMonth() === end.getMonth()
-  const sameYear = start.getFullYear() === end.getFullYear()
-  if (sameMonth) return `${start.toLocaleDateString(undefined, opts)} ${start.getFullYear()}`
-  const a = start.toLocaleDateString(undefined, { month: 'short' })
-  const b = end.toLocaleDateString(undefined, { month: 'short' })
-  return sameYear
-    ? `${a} – ${b} ${end.getFullYear()}`
-    : `${a} ${start.getFullYear()} – ${b} ${end.getFullYear()}`
+function fortnightLabel(start: Date, end: Date): string {
+  const sM = start.toLocaleDateString(undefined, { month: 'short' })
+  const eM = end.toLocaleDateString(undefined, { month: 'short' })
+  const range =
+    start.getMonth() === end.getMonth()
+      ? `${sM} ${start.getDate()} – ${end.getDate()}`
+      : `${sM} ${start.getDate()} – ${eM} ${end.getDate()}`
+  return `${range}, ${end.getFullYear()}`
 }
 
 function fullDay(iso: string): string {
@@ -76,27 +83,83 @@ function AgendaRow({ item, family }: { item: api.FeedItem; family: api.FamilyMem
           ))}
         </div>
       )}
-      {item.completed && (
-        <Check className="h-4 w-4 shrink-0 text-emerald-400" strokeWidth={3} />
-      )}
+      {item.completed && <Check className="h-4 w-4 shrink-0 text-emerald-400" strokeWidth={3} />}
     </div>
   )
 }
 
+// One day in the grid. Shared by the two-week and month layouts; month passes
+// dimmed=true for days that spill in from the neighbouring month.
+function DayCell({
+  day,
+  count,
+  isToday,
+  isSelected,
+  dimmed,
+  onSelect,
+}: {
+  day: Date
+  count: number
+  isToday: boolean
+  isSelected: boolean
+  dimmed: boolean
+  onSelect: () => void
+}) {
+  return (
+    <button
+      onClick={onSelect}
+      aria-pressed={isSelected}
+      className={`flex flex-col items-center gap-1 rounded-xl py-1.5 transition-colors ${
+        isSelected ? 'bg-accent-bright/20 ring-1 ring-accent-bright/50' : 'hover:bg-fg/5'
+      } ${dimmed ? 'opacity-35' : ''}`}
+    >
+      <span
+        className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold ${
+          isToday ? 'bg-accent text-white' : 'text-fg/85'
+        }`}
+      >
+        {day.getDate()}
+      </span>
+      <span className={`h-1.5 w-1.5 rounded-full ${count > 0 ? 'bg-accent-bright' : 'bg-transparent'}`} />
+    </button>
+  )
+}
+
+type Mode = 'fortnight' | 'month'
+
 export function Calendar() {
   const todayISO = api.localDate()
-  const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()))
+  const [mode, setMode] = useState<Mode>('fortnight')
+  // Fortnight is anchored on a Monday; month on the 1st of the shown month.
+  const [fortnightStart, setFortnightStart] = useState(() => mondayOf(new Date()))
+  const [monthAnchor, setMonthAnchor] = useState(() => startOfMonth(new Date()))
   const [selected, setSelected] = useState(todayISO)
   const [cal, setCal] = useState<api.Calendar | null>(null)
   const [family, setFamily] = useState<api.FamilyMember[]>([])
   const [error, setError] = useState<string | null>(null)
 
-  const weekEnd = useMemo(() => addDays(weekStart, 6), [weekStart])
+  // The days the grid draws, as full weeks. Two weeks for the fortnight; for a
+  // month, the whole weeks that the month touches (so it starts on a Monday and
+  // ends on a Sunday, with neighbouring days dimmed).
+  const gridDays = useMemo(() => {
+    const days: Date[] = []
+    if (mode === 'fortnight') {
+      for (let i = 0; i < 14; i++) days.push(addDays(fortnightStart, i))
+    } else {
+      const gStart = mondayOf(startOfMonth(monthAnchor))
+      const gEnd = addDays(mondayOf(endOfMonth(monthAnchor)), 6)
+      for (let d = gStart; d <= gEnd; d = addDays(d, 1)) days.push(d)
+    }
+    return days
+  }, [mode, fortnightStart, monthAnchor])
+
+  const rangeStart = gridDays[0]
+  const rangeEnd = gridDays[gridDays.length - 1]
 
   const refresh = useCallback(async () => {
     try {
       const [c, fam] = await Promise.all([
-        api.getCalendar(toISO(weekStart), toISO(weekEnd)),
+        api.getCalendar(toISO(rangeStart), toISO(rangeEnd)),
         api.getFamily(),
       ])
       setCal(c)
@@ -105,7 +168,7 @@ export function Calendar() {
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Could not load the calendar.')
     }
-  }, [weekStart, weekEnd])
+  }, [rangeStart, rangeEnd])
 
   useEffect(() => {
     refresh()
@@ -114,89 +177,108 @@ export function Calendar() {
   const countFor = (iso: string) => cal?.days.find((d) => d.date === iso)?.items.length ?? 0
   const selectedItems = cal?.days.find((d) => d.date === selected)?.items ?? []
 
-  const goToday = () => {
-    setWeekStart(mondayOf(new Date()))
-    setSelected(todayISO)
-  }
-  const shiftWeek = (weeks: number) => {
-    const next = addDays(weekStart, weeks * 7)
-    setWeekStart(next)
-    // Keep the selection on the same weekday in the new week.
-    const dow = DOW.findIndex((_, i) => toISO(addDays(weekStart, i)) === selected)
-    setSelected(toISO(addDays(next, dow >= 0 ? dow : 0)))
+  const weeks = useMemo(() => {
+    const rows: Date[][] = []
+    for (let i = 0; i < gridDays.length; i += 7) rows.push(gridDays.slice(i, i + 7))
+    return rows
+  }, [gridDays])
+
+  const label =
+    mode === 'fortnight'
+      ? fortnightLabel(fortnightStart, addDays(fortnightStart, 13))
+      : monthAnchor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+
+  const page = (dir: -1 | 1) => {
+    if (mode === 'fortnight') setFortnightStart((s) => addDays(s, dir * 14))
+    else setMonthAnchor((m) => addMonths(m, dir))
   }
 
-  const onCurrentWeek = toISO(weekStart) === toISO(mondayOf(new Date()))
+  const goToday = () => {
+    setFortnightStart(mondayOf(new Date()))
+    setMonthAnchor(startOfMonth(new Date()))
+    setSelected(todayISO)
+  }
+
+  // Is the grid already showing the period that contains today?
+  const onCurrent =
+    mode === 'fortnight'
+      ? toISO(rangeStart) <= todayISO && todayISO <= toISO(rangeEnd)
+      : monthAnchor.getMonth() === new Date().getMonth() &&
+        monthAnchor.getFullYear() === new Date().getFullYear()
 
   return (
     <div className="flex flex-col gap-4">
       <div className="glass p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <button
-            onClick={() => shiftWeek(-1)}
-            aria-label="Previous week"
-            className="rounded-lg p-1.5 text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </button>
-          <span className="font-display text-lg font-semibold tracking-[-0.01em]">
-            {monthLabel(weekStart, weekEnd)}
-          </span>
-          <button
-            onClick={() => shiftWeek(1)}
-            aria-label="Next week"
-            className="rounded-lg p-1.5 text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
-          >
-            <ChevronRight className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-7 gap-1">
-          {DOW.map((lbl, i) => {
-            const day = addDays(weekStart, i)
-            const iso = toISO(day)
-            const isToday = iso === todayISO
-            const isSelected = iso === selected
-            const count = countFor(iso)
-            return (
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <div className="flex rounded-full border border-fg/10 bg-fg/5 p-0.5 text-xs font-semibold">
+            {(['fortnight', 'month'] as Mode[]).map((m) => (
               <button
-                key={iso}
-                onClick={() => setSelected(iso)}
-                aria-pressed={isSelected}
-                className={`flex flex-col items-center gap-1 rounded-xl border py-2 transition-colors ${
-                  isSelected
-                    ? 'border-accent-bright/60 bg-accent-bright/20'
-                    : 'border-transparent hover:bg-fg/5'
+                key={m}
+                onClick={() => setMode(m)}
+                aria-pressed={mode === m}
+                className={`rounded-full px-3 py-1 transition-colors ${
+                  mode === m ? 'bg-accent-bright/25 text-fg' : 'text-fg/55 hover:text-fg'
                 }`}
               >
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-fg/45">
-                  {lbl}
-                </span>
-                <span
-                  className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold ${
-                    isToday ? 'bg-accent text-white' : 'text-fg/85'
-                  }`}
-                >
-                  {day.getDate()}
-                </span>
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${count > 0 ? 'bg-accent-bright' : 'bg-transparent'}`}
-                />
+                {m === 'fortnight' ? '2 weeks' : 'Month'}
               </button>
-            )
-          })}
-        </div>
-
-        {!onCurrentWeek && (
-          <div className="mt-3 flex justify-center">
+            ))}
+          </div>
+          {!onCurrent && (
             <button
               onClick={goToday}
               className="rounded-full bg-fg/10 px-3 py-1 text-xs font-semibold text-fg/70 hover:bg-fg/15"
             >
               Today
             </button>
-          </div>
-        )}
+          )}
+        </div>
+
+        <div className="mb-2 flex items-center justify-between">
+          <button
+            onClick={() => page(-1)}
+            aria-label={mode === 'fortnight' ? 'Previous two weeks' : 'Previous month'}
+            className="rounded-lg p-1.5 text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <span className="font-display text-lg font-semibold tracking-[-0.01em]">{label}</span>
+          <button
+            onClick={() => page(1)}
+            aria-label={mode === 'fortnight' ? 'Next two weeks' : 'Next month'}
+            className="rounded-lg p-1.5 text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="mb-1 grid grid-cols-7">
+          {DOW.map((lbl) => (
+            <span key={lbl} className="text-center text-[10px] font-semibold uppercase tracking-wide text-fg/40">
+              {lbl}
+            </span>
+          ))}
+        </div>
+        <div className="flex flex-col gap-1">
+          {weeks.map((week) => (
+            <div key={toISO(week[0])} className="grid grid-cols-7 gap-1">
+              {week.map((day) => {
+                const iso = toISO(day)
+                return (
+                  <DayCell
+                    key={iso}
+                    day={day}
+                    count={countFor(iso)}
+                    isToday={iso === todayISO}
+                    isSelected={iso === selected}
+                    dimmed={mode === 'month' && day.getMonth() !== monthAnchor.getMonth()}
+                    onSelect={() => setSelected(iso)}
+                  />
+                )
+              })}
+            </div>
+          ))}
+        </div>
       </div>
 
       <FormError message={error} />

@@ -81,10 +81,10 @@ function AppShell() {
             {tab === 'home' && !overlay && (
               <button
                 onClick={() => setOverlay({ name: 'calendar' })}
-                aria-label="Open calendar"
-                className="glass rounded-full p-2 text-fg/70 transition-colors hover:text-fg"
+                aria-label="View calendar"
+                className="flex items-center gap-1.5 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-3 py-1.5 text-sm font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
               >
-                <CalendarDays className="h-5 w-5" />
+                <CalendarDays className="h-4 w-4" strokeWidth={2.5} /> Calendar
               </button>
             )}
           </div>
