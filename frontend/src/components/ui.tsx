@@ -19,7 +19,7 @@ export function Field({ label, id, onClear, ...rest }: FieldProps) {
     // min-w-0 lets the field shrink inside grid/flex rows; without it the
     // browser holds the input at its intrinsic width and it overflows.
     <label htmlFor={inputId} className="block min-w-0">
-      <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-white/50">
+      <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
         {label}
       </span>
       <div className="relative">
@@ -29,7 +29,7 @@ export function Field({ label, id, onClear, ...rest }: FieldProps) {
             type="button"
             onClick={onClear}
             aria-label={`Clear ${label.toLowerCase()}`}
-            className="absolute top-1/2 right-2 -translate-y-1/2 rounded-full bg-white/10 p-1 text-white/60 hover:bg-white/20 hover:text-white"
+            className="absolute top-1/2 right-2 -translate-y-1/2 rounded-full bg-fg/10 p-1 text-fg/60 hover:bg-fg/20 hover:text-fg"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -46,8 +46,8 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const VARIANT_CLASS: Record<NonNullable<ButtonProps['variant']>, string> = {
   primary:
-    'bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-lg shadow-indigo-500/25 hover:from-indigo-400 hover:to-violet-400',
-  ghost: 'bg-white/10 text-white/85 hover:bg-white/15 border border-white/10',
+    'bg-gradient-to-r from-accent to-accent-strong text-fg shadow-lg shadow-accent/25 hover:from-accent-bright hover:to-accent-strong',
+  ghost: 'bg-fg/10 text-fg/85 hover:bg-fg/15 border border-fg/10',
   danger: 'bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border border-rose-400/20',
 }
 
@@ -111,10 +111,10 @@ export function Brand({ subtitle }: { subtitle: string }) {
           <line x1="338" y1="210" x2="316" y2="256" />
         </g>
       </svg>
-      <h1 className="text-3xl font-bold tracking-tight">
-        daily<span className="bg-gradient-to-r from-indigo-300 to-violet-300 bg-clip-text text-transparent">bread</span>
+      <h1 className="font-display text-[2rem] font-semibold tracking-[-0.02em]">
+        daily<span className="bg-gradient-to-r from-accent-bright to-accent-strong bg-clip-text text-transparent">bread</span>
       </h1>
-      <p className="mt-1.5 text-sm text-white/55">{subtitle}</p>
+      <p className="mt-1.5 text-sm text-fg/55">{subtitle}</p>
     </div>
   )
 }

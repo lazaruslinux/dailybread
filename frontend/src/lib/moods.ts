@@ -12,8 +12,8 @@ export interface MoodMeta {
 }
 
 export const MOODS: Record<MoodLevel, MoodMeta> = {
-  sunny: { label: 'Great', Icon: Sun, tint: 'text-amber-300', chip: 'bg-amber-400/20' },
-  partly: { label: 'Good', Icon: CloudSun, tint: 'text-yellow-200', chip: 'bg-yellow-300/15' },
+  sunny: { label: 'Great', Icon: Sun, tint: 'text-gold', chip: 'bg-gold/20' },
+  partly: { label: 'Good', Icon: CloudSun, tint: 'text-gold', chip: 'bg-gold/15' },
   cloudy: { label: 'Okay', Icon: Cloud, tint: 'text-slate-300', chip: 'bg-slate-400/20' },
   rainy: { label: 'Low', Icon: CloudRain, tint: 'text-sky-300', chip: 'bg-sky-400/20' },
   stormy: { label: 'Rough', Icon: CloudLightning, tint: 'text-violet-300', chip: 'bg-violet-400/20' },

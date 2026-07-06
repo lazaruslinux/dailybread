@@ -83,7 +83,7 @@ export function GroceryPanel() {
 
   const chip = (selected: boolean) =>
     `flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold transition-colors ${
-      selected ? 'bg-indigo-400/25 text-white' : 'bg-white/5 text-white/55 hover:bg-white/10'
+      selected ? 'bg-accent-bright/25 text-fg' : 'bg-fg/5 text-fg/55 hover:bg-fg/10'
     }`
 
   return (
@@ -91,7 +91,7 @@ export function GroceryPanel() {
       <div className="mb-3 flex items-baseline justify-between">
         <h2 className="font-bold">Grocery list</h2>
         {visible.length > 0 && (
-          <span className="text-xs text-white/50">
+          <span className="text-xs text-fg/50">
             {visible.length - checkedCount} to grab
             {checkedCount > 0 ? ` · ${checkedCount} checked` : ''}
           </span>
@@ -102,7 +102,7 @@ export function GroceryPanel() {
       <div className="-mx-1 mb-4 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
         <button type="button" onClick={() => setActive(null)} className={chip(active === null)}>
           General
-          {unchecked(null) > 0 && <span className="text-xs text-white/50">{unchecked(null)}</span>}
+          {unchecked(null) > 0 && <span className="text-xs text-fg/50">{unchecked(null)}</span>}
         </button>
         {lists.map((l) => (
           <button
@@ -112,14 +112,14 @@ export function GroceryPanel() {
             className={chip(active === l.id)}
           >
             {l.name}
-            {unchecked(l.id) > 0 && <span className="text-xs text-white/50">{unchecked(l.id)}</span>}
+            {unchecked(l.id) > 0 && <span className="text-xs text-fg/50">{unchecked(l.id)}</span>}
           </button>
         ))}
         {canEdit && !addingStore && (
           <button
             type="button"
             onClick={() => setAddingStore(true)}
-            className="flex shrink-0 items-center gap-1 rounded-full border border-dashed border-white/25 px-3 py-1.5 text-sm font-semibold text-white/55 transition-colors hover:bg-white/10"
+            className="flex shrink-0 items-center gap-1 rounded-full border border-dashed border-fg/25 px-3 py-1.5 text-sm font-semibold text-fg/55 transition-colors hover:bg-fg/10"
           >
             <Store className="h-3.5 w-3.5" /> Add store
           </button>
@@ -141,7 +141,7 @@ export function GroceryPanel() {
             type="submit"
             disabled={busy || !storeName.trim()}
             aria-label="Add this store"
-            className="flex w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 disabled:opacity-40"
+            className="flex w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-accent to-accent-strong disabled:opacity-40"
           >
             <Check className="h-5 w-5" strokeWidth={2.5} />
           </button>
@@ -152,7 +152,7 @@ export function GroceryPanel() {
               setStoreName('')
             }}
             aria-label="Cancel adding store"
-            className="flex w-11 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white/60"
+            className="flex w-11 shrink-0 items-center justify-center rounded-xl bg-fg/10 text-fg/60"
           >
             <X className="h-5 w-5" />
           </button>
@@ -173,7 +173,7 @@ export function GroceryPanel() {
             type="submit"
             disabled={busy || !title.trim()}
             aria-label="Add to the list"
-            className="flex w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 disabled:opacity-40"
+            className="flex w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-accent to-accent-strong disabled:opacity-40"
           >
             <Plus className="h-5 w-5" strokeWidth={2.5} />
           </button>
@@ -181,7 +181,7 @@ export function GroceryPanel() {
       )}
 
       {visible.length === 0 && (
-        <p className="py-6 text-center text-sm text-white/50">
+        <p className="py-6 text-center text-sm text-fg/50">
           {activeStore ? `Nothing for ${activeStore.name} yet.` : 'The list is empty.'}
           {canEdit ? ' Add the first item above.' : ''}
         </p>
@@ -193,18 +193,18 @@ export function GroceryPanel() {
               type="button"
               disabled={!canEdit || busy}
               onClick={() => run(() => api.updateGrocery(item.id, { checked: !item.checked }))}
-              className="flex min-w-0 flex-1 items-center gap-3 rounded-xl p-2.5 text-left transition-colors enabled:hover:bg-white/5"
+              className="flex min-w-0 flex-1 items-center gap-3 rounded-xl p-2.5 text-left transition-colors enabled:hover:bg-fg/5"
             >
               <span
                 className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors ${
-                  item.checked ? 'border-emerald-400/60 bg-emerald-400/25' : 'border-white/25'
+                  item.checked ? 'border-emerald-400/60 bg-emerald-400/25' : 'border-fg/25'
                 }`}
               >
                 {item.checked && <Check className="h-3.5 w-3.5 text-emerald-300" strokeWidth={3} />}
               </span>
               <span
                 className={`truncate ${
-                  item.checked ? 'text-white/45 line-through decoration-white/30' : 'text-white/90'
+                  item.checked ? 'text-fg/45 line-through decoration-fg/30' : 'text-fg/90'
                 }`}
               >
                 {item.title}
@@ -216,7 +216,7 @@ export function GroceryPanel() {
                 disabled={busy}
                 onClick={() => run(() => api.deleteGrocery(item.id))}
                 aria-label={`Delete ${item.title}`}
-                className="shrink-0 rounded-lg p-2 text-white/30 transition-colors hover:bg-white/10 hover:text-rose-300"
+                className="shrink-0 rounded-lg p-2 text-fg/30 transition-colors hover:bg-fg/10 hover:text-rose-300"
               >
                 <Trash2 className="h-4 w-4" />
               </button>
@@ -247,7 +247,7 @@ export function GroceryPanel() {
               setActive(null)
             })
           }
-          className="mt-3 w-full text-center text-xs font-semibold text-white/35 transition-colors hover:text-rose-300"
+          className="mt-3 w-full text-center text-xs font-semibold text-fg/35 transition-colors hover:text-rose-300"
         >
           Remove {activeStore.name} (its items move to General)
         </button>

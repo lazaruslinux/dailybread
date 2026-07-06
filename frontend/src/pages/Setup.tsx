@@ -85,7 +85,7 @@ export function Setup() {
         <Button type="submit" disabled={busy} className="mt-1">
           {busy ? 'Creating account' : 'Create admin account'}
         </Button>
-        <p className="text-center text-xs leading-relaxed text-white/40">
+        <p className="text-center text-xs leading-relaxed text-fg/40">
           This becomes the owner account. You can add the rest of the family from the admin
           dashboard afterward.
         </p>

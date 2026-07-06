@@ -35,6 +35,17 @@ export function verseForDate(d: Date): Verse {
   return VERSES[(dayOfYear(d) - 1) % VERSES.length]
 }
 
+// A small set of verses for one day: the day's verse plus a couple more,
+// spread across the collection so they feel varied. Deterministic from the
+// date, so the whole family can browse the same three and land on the same
+// one. verseForDate stays the first of these.
+export function versesForDate(d: Date, n = 3): Verse[] {
+  const len = VERSES.length
+  const base = (dayOfYear(d) - 1) % len
+  const stride = Math.floor(len / n) || 1
+  return Array.from({ length: n }, (_, i) => VERSES[(base + i * stride) % len])
+}
+
 // First entry lands on January 1: the verse the app is named for.
 export const VERSES: Verse[] = [
   {

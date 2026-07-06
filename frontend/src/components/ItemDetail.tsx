@@ -116,20 +116,20 @@ export function ItemDetail({
           <button
             onClick={onClose}
             aria-label="Close"
-            className="rounded-lg p-1.5 text-white/50 hover:bg-white/10 hover:text-white"
+            className="rounded-lg p-1.5 text-fg/50 hover:bg-fg/10 hover:text-fg"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <h2 className={`text-xl font-bold ${item.completed ? 'text-white/60 line-through decoration-white/30' : ''}`}>
+        <h2 className={`font-display text-2xl font-semibold tracking-[-0.01em] ${item.completed ? 'text-fg/60 line-through decoration-fg/30' : ''}`}>
           {item.title}
         </h2>
-        {item.notes && <p className="mt-2 text-sm leading-relaxed text-white/70">{item.notes}</p>}
+        {item.notes && <p className="mt-2 text-sm leading-relaxed text-fg/70">{item.notes}</p>}
 
-        <div className="mt-4 flex flex-col gap-2 text-sm text-white/70">
+        <div className="mt-4 flex flex-col gap-2 text-sm text-fg/70">
           <div className="flex items-start gap-2">
-            <span className="w-12 shrink-0 pt-1 text-xs font-semibold uppercase tracking-wide text-white/40">For</span>
+            <span className="w-12 shrink-0 pt-1 text-xs font-semibold uppercase tracking-wide text-fg/40">For</span>
             {item.assignees.length === 0 ? (
               <span className="pt-0.5">You</span>
             ) : (
@@ -145,7 +145,7 @@ export function ItemDetail({
           </div>
           {item.visibility === 'family' && (
             <div className="flex items-center gap-2">
-              <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-white/40">
+              <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-fg/40">
                 Shown
               </span>
               On the family board
@@ -153,7 +153,7 @@ export function ItemDetail({
           )}
           {item.repeat && (
             <div className="flex items-center gap-2">
-              <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-white/40">
+              <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-fg/40">
                 Repeats
               </span>
               {describeRepeat(item.repeat)}
@@ -161,13 +161,13 @@ export function ItemDetail({
           )}
           {whenLabel && (
             <div className="flex items-center gap-2">
-              <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-white/40">Time</span>
+              <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-fg/40">Time</span>
               {whenLabel}
             </div>
           )}
           {item.date_for && (
             <div className="flex items-center gap-2">
-              <span className="w-12 text-xs font-semibold uppercase tracking-wide text-white/40">
+              <span className="w-12 text-xs font-semibold uppercase tracking-wide text-fg/40">
                 {item.kind === 'task' ? 'Due' : 'Date'}
               </span>
               {formatDate(item.date_for)}
@@ -177,7 +177,7 @@ export function ItemDetail({
 
         {isRoutine && item.assignee_completions && (
           <div className="mt-6">
-            <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-white/40">
+            <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg/40">
               Who's done
             </span>
             <div className="flex flex-col gap-2">
@@ -191,19 +191,19 @@ export function ItemDetail({
                     type="button"
                     disabled={!canToggle}
                     onClick={() => onToggleFor?.(ac.user_id, !ac.completed)}
-                    className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-left transition-colors enabled:hover:bg-white/10 disabled:opacity-70"
+                    className="flex items-center gap-3 rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left transition-colors enabled:hover:bg-fg/10 disabled:opacity-70"
                   >
                     <span
                       className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${
                         ac.completed
                           ? 'border-emerald-300/70 bg-emerald-400/25'
-                          : 'border-white/30 bg-white/5'
+                          : 'border-fg/30 bg-fg/5'
                       }`}
                     >
                       {ac.completed && <Check className="h-3.5 w-3.5 text-emerald-300" strokeWidth={3} />}
                     </span>
                     <Avatar name={member?.display_name ?? '?'} size="sm" />
-                    <span className="flex-1 truncate font-semibold text-white/90">
+                    <span className="flex-1 truncate font-semibold text-fg/90">
                       {member?.display_name ?? 'Member'}
                     </span>
                     {ac.streak >= 3 && (

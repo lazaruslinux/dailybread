@@ -9,10 +9,10 @@ export function HealthBadge() {
     status === 'loading' ? 'Connecting' : status === 'ok' ? `Online (${data?.mode})` : 'Offline'
 
   const dotColor =
-    status === 'loading' ? 'bg-amber-400' : status === 'ok' ? 'bg-emerald-400' : 'bg-rose-400'
+    status === 'loading' ? 'bg-gold' : status === 'ok' ? 'bg-emerald-400' : 'bg-rose-400'
 
   return (
-    <div className="glass flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium text-white/80">
+    <div className="glass flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium text-fg/80">
       <span className={`h-2 w-2 rounded-full ${dotColor} ${status === 'loading' ? 'animate-pulse' : ''}`} />
       {label}
     </div>

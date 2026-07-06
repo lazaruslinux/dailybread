@@ -21,8 +21,8 @@ function Chip({
       aria-pressed={selected}
       className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-sm font-semibold transition-colors ${
         selected
-          ? 'border-indigo-400/60 bg-indigo-400/20 text-white'
-          : 'border-white/10 bg-white/5 text-white/55 hover:bg-white/10'
+          ? 'border-accent-bright/60 bg-accent-bright/20 text-fg'
+          : 'border-fg/10 bg-fg/5 text-fg/55 hover:bg-fg/10'
       }`}
     >
       {children}
@@ -31,7 +31,7 @@ function Chip({
 }
 
 // Compact box for a 1-2 digit number; deliberately not the full-width .field.
-const NUM = 'w-12 rounded-lg border border-white/15 bg-white/10 px-1 py-1 text-center text-sm text-white outline-none focus:border-indigo-400/60'
+const NUM = 'w-12 rounded-lg border border-fg/15 bg-fg/10 px-1 py-1 text-center text-sm text-fg outline-none focus:border-accent-bright/60'
 
 const KIND_LABEL: Record<api.ItemKind, string> = {
   routine: 'Routine',
@@ -182,11 +182,13 @@ export function ItemSheet({
         aria-modal="true"
       >
         <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-lg font-bold">{creating ? 'Add to the board' : 'Edit card'}</h2>
+          <h2 className="font-display text-xl font-semibold tracking-[-0.01em]">
+            {creating ? 'Add to the board' : 'Edit card'}
+          </h2>
           <button
             onClick={onClose}
             aria-label="Close"
-            className="rounded-lg p-1.5 text-white/50 hover:bg-white/10 hover:text-white"
+            className="rounded-lg p-1.5 text-fg/50 hover:bg-fg/10 hover:text-fg"
           >
             <X className="h-5 w-5" />
           </button>
@@ -194,7 +196,7 @@ export function ItemSheet({
 
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           <div>
-            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-white/50">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
               Type
             </span>
             <div className="grid grid-cols-2 gap-2">
@@ -206,15 +208,15 @@ export function ItemSheet({
                   disabled={!creating}
                   className={`rounded-xl border px-2 py-2 text-sm font-semibold transition-colors disabled:opacity-60 ${
                     kind === k
-                      ? 'border-indigo-400/60 bg-indigo-400/20 text-white'
-                      : 'border-white/10 bg-white/5 text-white/55 hover:bg-white/10'
+                      ? 'border-accent-bright/60 bg-accent-bright/20 text-fg'
+                      : 'border-fg/10 bg-fg/5 text-fg/55 hover:bg-fg/10'
                   }`}
                 >
                   {KIND_LABEL[k]}
                 </button>
               ))}
             </div>
-            <p className="mt-1.5 text-xs text-white/40">{KIND_HINT[kind]}</p>
+            <p className="mt-1.5 text-xs text-fg/40">{KIND_HINT[kind]}</p>
           </div>
 
           {/* No autoFocus on Title: on phones it would summon the keyboard
@@ -224,7 +226,7 @@ export function ItemSheet({
 
           {isRoutine && (
             <div>
-              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-white/50">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
                 Repeats
               </span>
               <div className="mb-2 grid grid-cols-2 gap-2">
@@ -247,8 +249,8 @@ export function ItemSheet({
                         aria-pressed={days.includes(d)}
                         className={`flex-1 rounded-lg border py-1.5 text-xs font-semibold transition-colors ${
                           days.includes(d)
-                            ? 'border-indigo-400/60 bg-indigo-400/20 text-white'
-                            : 'border-white/10 bg-white/5 text-white/55 hover:bg-white/10'
+                            ? 'border-accent-bright/60 bg-accent-bright/20 text-fg'
+                            : 'border-fg/10 bg-fg/5 text-fg/55 hover:bg-fg/10'
                         }`}
                       >
                         {label}
@@ -259,19 +261,19 @@ export function ItemSheet({
                     <button
                       type="button"
                       onClick={() => setDays(EVERY_DAY)}
-                      className="text-xs font-semibold text-indigo-300 hover:text-indigo-200"
+                      className="text-xs font-semibold text-accent-bright hover:text-accent-bright"
                     >
                       Daily
                     </button>
-                    <span className="text-white/20">·</span>
+                    <span className="text-fg/20">·</span>
                     <button
                       type="button"
                       onClick={() => setDays(WEEKDAYS)}
-                      className="text-xs font-semibold text-indigo-300 hover:text-indigo-200"
+                      className="text-xs font-semibold text-accent-bright hover:text-accent-bright"
                     >
                       Weekdays
                     </button>
-                    <label className="ml-auto flex items-center gap-1.5 text-xs text-white/50">
+                    <label className="ml-auto flex items-center gap-1.5 text-xs text-fg/50">
                       every
                       <input
                         type="number"
@@ -287,7 +289,7 @@ export function ItemSheet({
                 </>
               ) : (
                 <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-1.5 text-xs text-white/50">
+                  <label className="flex items-center gap-1.5 text-xs text-fg/50">
                     Day
                     <input
                       type="number"
@@ -298,7 +300,7 @@ export function ItemSheet({
                       className={NUM}
                     />
                   </label>
-                  <label className="ml-auto flex items-center gap-1.5 text-xs text-white/50">
+                  <label className="ml-auto flex items-center gap-1.5 text-xs text-fg/50">
                     every
                     <input
                       type="number"
@@ -317,7 +319,7 @@ export function ItemSheet({
           )}
 
           <div>
-            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-white/50">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
               Assign to
             </span>
             {/* Who is responsible and checks it off. Empty means just you. This
@@ -332,7 +334,7 @@ export function ItemSheet({
                 </Chip>
               ))}
             </div>
-            <p className="mt-1.5 text-xs text-white/40">{assignHint}</p>
+            <p className="mt-1.5 text-xs text-fg/40">{assignHint}</p>
           </div>
 
           <div>
@@ -341,14 +343,14 @@ export function ItemSheet({
               role="switch"
               aria-checked={familyBoard}
               onClick={() => setFamilyBoard((v) => !v)}
-              className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-left"
+              className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left"
             >
-              <span className="text-sm font-semibold text-white/85">Show on the family board</span>
-              <span className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${familyBoard ? 'bg-indigo-500' : 'bg-white/15'}`}>
-                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${familyBoard ? 'left-[1.125rem]' : 'left-0.5'}`} />
+              <span className="text-sm font-semibold text-fg/85">Show on the family board</span>
+              <span className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${familyBoard ? 'bg-accent' : 'bg-fg/15'}`}>
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-fg transition-all ${familyBoard ? 'left-[1.125rem]' : 'left-0.5'}`} />
               </span>
             </button>
-            <p className="mt-1.5 text-xs text-white/40">
+            <p className="mt-1.5 text-xs text-fg/40">
               {familyBoard
                 ? 'Everyone can see it and hide it if they like; only assigned people check it off'
                 : 'Only you and anyone you assign can see it'}
@@ -377,11 +379,11 @@ export function ItemSheet({
                   role="switch"
                   aria-checked={allDay}
                   onClick={() => setAllDay((v) => !v)}
-                  className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-left"
+                  className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left"
                 >
-                  <span className="text-sm font-semibold text-white/85">All day</span>
-                  <span className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${allDay ? 'bg-indigo-500' : 'bg-white/15'}`}>
-                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${allDay ? 'left-[1.125rem]' : 'left-0.5'}`} />
+                  <span className="text-sm font-semibold text-fg/85">All day</span>
+                  <span className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${allDay ? 'bg-accent' : 'bg-fg/15'}`}>
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-fg transition-all ${allDay ? 'left-[1.125rem]' : 'left-0.5'}`} />
                   </span>
                 </button>
               )}

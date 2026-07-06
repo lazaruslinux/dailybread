@@ -6,9 +6,9 @@ import { Avatar } from './Avatar'
 
 export const KIND_STYLE: Record<ItemKind, { Icon: LucideIcon; tint: string; label: string }> = {
   routine: { Icon: Repeat, tint: 'text-sky-300', label: 'Routine' },
-  task: { Icon: Circle, tint: 'text-amber-300', label: 'Task' },
+  task: { Icon: Circle, tint: 'text-gold', label: 'Task' },
   activity: { Icon: Activity, tint: 'text-emerald-300', label: 'Activity' },
-  appointment: { Icon: CalendarClock, tint: 'text-violet-300', label: 'Appointment' },
+  appointment: { Icon: CalendarClock, tint: 'text-accent-strong', label: 'Appointment' },
 }
 
 // A face with a small check badge when that person has done their own bit.
@@ -94,7 +94,7 @@ export function ItemCard({
             className={`flex h-7 w-7 items-center justify-center rounded-full border-2 transition-colors ${
               item.completed
                 ? 'border-emerald-300/70 bg-emerald-400/25'
-                : 'border-white/30 bg-white/5'
+                : 'border-fg/30 bg-fg/5'
             }`}
           >
             {item.completed && <Check className="h-4 w-4 text-emerald-300" strokeWidth={3} />}
@@ -103,7 +103,7 @@ export function ItemCard({
       ) : (
         <div
           className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
-            item.completed ? 'bg-emerald-400/25' : 'bg-white/15'
+            item.completed ? 'bg-emerald-400/25' : 'bg-fg/15'
           }`}
         >
           {item.completed ? (
@@ -115,7 +115,7 @@ export function ItemCard({
       )}
 
       <div className="min-w-0 flex-1">
-        <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-white/50">
+        <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-fg/50">
           <span className={`flex items-center gap-1 ${showCheckbox ? tint : ''}`}>
             {showCheckbox && <Icon className="h-3 w-3" strokeWidth={2.5} />}
             {label}
@@ -126,30 +126,25 @@ export function ItemCard({
             </span>
           )}
           {flag === 'due' && (
-            <span className="rounded-full bg-amber-400/20 px-1.5 py-px text-[10px] font-bold normal-case text-amber-300">
+            <span className="rounded-full bg-gold/20 px-1.5 py-px text-[10px] font-bold normal-case text-gold">
               Due
             </span>
           )}
           {perPerson && perPerson.length > 1 && (
-            <span className="rounded-full bg-white/10 px-1.5 py-px text-[10px] font-bold normal-case text-white/60">
-              {doneCount}/{perPerson.length} done
-            </span>
-          )}
-          {(item.streak ?? 0) >= 3 && (
-            <span className="flex items-center gap-0.5 rounded-full bg-orange-400/20 px-1.5 py-px text-[10px] font-bold normal-case text-orange-300">
-              <Flame className="h-3 w-3" /> {item.streak}
+            <span className="font-bold normal-case text-fg/40">
+              {doneCount}/{perPerson.length}
             </span>
           )}
         </span>
-        <p className={`truncate font-semibold ${item.completed ? 'text-white/60 line-through decoration-white/30' : 'text-white'}`}>
+        <p className={`truncate font-semibold ${item.completed ? 'text-fg/60 line-through decoration-fg/30' : 'text-fg'}`}>
           {item.title}
         </p>
-        {item.notes && <p className="truncate text-sm text-white/60">{item.notes}</p>}
+        {item.notes && <p className="truncate text-sm text-fg/60">{item.notes}</p>}
       </div>
 
       <div className="flex shrink-0 flex-col items-end gap-1.5">
         {timeLabel && (
-          <span className={`text-xs font-medium ${flag === 'overdue' ? 'text-rose-300' : 'text-white/50'}`}>
+          <span className={`text-xs font-medium ${flag === 'overdue' ? 'text-rose-300' : 'text-fg/50'}`}>
             {timeLabel}
           </span>
         )}
@@ -160,7 +155,7 @@ export function ItemCard({
               <ParticipantAvatar key={i} name={p.user?.display_name ?? '?'} done={p.completed} />
             ))}
             {perPerson.length > 3 && (
-              <span className="z-10 flex h-7 w-7 items-center justify-center rounded-full bg-white/15 text-[10px] font-bold ring-2 ring-black/40">
+              <span className="z-10 flex h-7 w-7 items-center justify-center rounded-full bg-fg/15 text-[10px] font-bold ring-2 ring-black/40">
                 +{perPerson.length - 3}
               </span>
             )}
@@ -174,12 +169,17 @@ export function ItemCard({
                 <Avatar key={a.id} name={a.display_name} size="sm" className="ring-2 ring-black/40" />
               ))}
               {item.assignees.length > 3 && (
-                <span className="z-10 flex h-7 w-7 items-center justify-center rounded-full bg-white/15 text-[10px] font-bold ring-2 ring-black/40">
+                <span className="z-10 flex h-7 w-7 items-center justify-center rounded-full bg-fg/15 text-[10px] font-bold ring-2 ring-black/40">
                   +{item.assignees.length - 3}
                 </span>
               )}
             </div>
           )
+        )}
+        {(item.streak ?? 0) >= 3 && (
+          <span className="flex items-center gap-0.5 text-[10px] font-bold text-orange-300">
+            <Flame className="h-3 w-3" /> {item.streak}
+          </span>
         )}
       </div>
 
@@ -193,7 +193,7 @@ export function ItemCard({
             e.stopPropagation()
             onEdit()
           }}
-          className="-my-2 -mr-2 shrink-0 rounded-xl p-2.5 text-white/35 transition-colors hover:bg-white/10 hover:text-white/70 active:bg-white/15"
+          className="-my-2 -mr-2 shrink-0 rounded-xl p-2.5 text-fg/35 transition-colors hover:bg-fg/10 hover:text-fg/70 active:bg-fg/15"
         >
           <Pencil className="h-4 w-4" strokeWidth={2} />
         </button>
@@ -211,8 +211,8 @@ export function NowDivider() {
       animate={{ opacity: 1 }}
       className="flex items-center gap-2 py-0.5"
     >
-      <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-300">Now</span>
-      <span className="h-px flex-1 bg-gradient-to-r from-indigo-400/70 to-transparent" />
+      <span className="text-[10px] font-bold uppercase tracking-widest text-accent-bright">Now</span>
+      <span className="h-px flex-1 bg-gradient-to-r from-accent-bright/70 to-transparent" />
     </motion.div>
   )
 }

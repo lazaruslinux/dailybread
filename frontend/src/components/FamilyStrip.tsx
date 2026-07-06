@@ -25,7 +25,7 @@ export function FamilyStrip({
           className="flex min-w-0 flex-col items-center gap-1.5 rounded-xl px-1 py-1 transition-opacity hover:opacity-80"
         >
           <Avatar name={m.display_name} mood={m.mood} />
-          <span className="max-w-14 truncate text-[11px] font-medium text-white/60">
+          <span className="max-w-14 truncate text-[11px] font-medium text-fg/60">
             {m.display_name.split(/\s+/)[0]}
           </span>
         </button>

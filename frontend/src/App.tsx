@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronLeft } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from './auth/AuthContext'
+import { applyTheme, getTheme } from './lib/theme'
 import { HealthBadge } from './components/HealthBadge'
 import { TabBar, type Tab } from './components/TabBar'
 import { Admin } from './pages/Admin'
@@ -47,6 +48,11 @@ function AppShell() {
   const [overlay, setOverlay] = useState<Overlay>(null)
   const firstName = user?.display_name.split(/\s+/)[0] ?? ''
 
+  // Apply this member's saved theme once we know who they are.
+  useEffect(() => {
+    applyTheme(getTheme(user?.id))
+  }, [user?.id])
+
   const switchTab = (next: Tab) => {
     setOverlay(null)
     setTab(next)
@@ -60,20 +66,20 @@ function AppShell() {
           {overlay ? (
             <button
               onClick={() => setOverlay(null)}
-              className="-ml-1 flex items-center gap-1 rounded-lg py-1 pr-2 text-sm font-semibold text-white/60 transition-colors hover:text-white"
+              className="-ml-1 flex items-center gap-1 rounded-lg py-1 pr-2 text-sm font-semibold text-fg/60 transition-colors hover:text-fg"
             >
               <ChevronLeft className="h-4 w-4" /> Back
             </button>
           ) : tab === 'today' ? (
-            <p className="text-sm text-white/50">{todayLabel()}</p>
+            <p className="text-sm text-fg/50">{todayLabel()}</p>
           ) : (
-            <p className="text-sm font-semibold text-white/70">{TAB_TITLE[tab]}</p>
+            <p className="text-sm font-semibold text-fg/70">{TAB_TITLE[tab]}</p>
           )}
           <HealthBadge />
         </div>
 
         {tab === 'today' && !overlay && (
-          <h1 className="text-3xl font-bold tracking-tight">
+          <h1 className="font-display text-[2.05rem] font-semibold leading-[1.1] tracking-[-0.02em]">
             {greeting()}, {firstName}
           </h1>
         )}
@@ -98,7 +104,7 @@ function AppShell() {
         </motion.div>
       </AnimatePresence>
 
-      <footer className="mt-10 text-center text-xs text-white/30">dailybread v0.0.1</footer>
+      <footer className="mt-10 text-center text-xs text-fg/30">dailybread v0.0.1</footer>
 
       <TabBar active={tab} onChange={switchTab} />
     </div>

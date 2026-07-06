@@ -44,14 +44,14 @@ export function CreateFamily() {
         <Button type="submit" disabled={busy || !name.trim()} className="mt-1">
           {busy ? 'Creating' : 'Create our family'}
         </Button>
-        <p className="text-center text-xs leading-relaxed text-white/40">
+        <p className="text-center text-xs leading-relaxed text-fg/40">
           You'll be the head of this household. Add the rest of your family from the admin
           dashboard once you're in.
         </p>
         <button
           type="button"
           onClick={logout}
-          className="text-center text-xs font-semibold text-white/40 transition-colors hover:text-white/70"
+          className="text-center text-xs font-semibold text-fg/40 transition-colors hover:text-fg/70"
         >
           Sign out
         </button>

@@ -43,28 +43,28 @@ function MemberRow({
       transition={{ delay: index * 0.04, type: 'spring', stiffness: 300, damping: 26 }}
       className="glass flex items-center gap-4 p-4"
     >
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-400/60 to-violet-500/60 text-sm font-bold">
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent-bright/60 to-accent-strong/60 text-sm font-bold">
         {initialsOf(member.display_name)}
       </div>
 
       <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-2 truncate font-semibold text-white">
+        <p className="flex items-center gap-2 truncate font-semibold text-fg">
           {member.display_name}
-          {isSelf && <span className="text-[10px] font-semibold text-white/40">you</span>}
+          {isSelf && <span className="text-[10px] font-semibold text-fg/40">you</span>}
         </p>
-        <p className="truncate text-sm text-white/55">@{member.username}</p>
+        <p className="truncate text-sm text-fg/55">@{member.username}</p>
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">
-        <span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white/70">
+        <span className="rounded-full bg-fg/10 px-2.5 py-1 text-[11px] font-semibold text-fg/70">
           {ROLE_LABEL[member.role]}
         </span>
         {member.is_owner ? (
-          <span className="flex items-center gap-1 rounded-full bg-amber-400/20 px-2.5 py-1 text-[11px] font-semibold text-amber-200">
+          <span className="flex items-center gap-1 rounded-full bg-gold/20 px-2.5 py-1 text-[11px] font-semibold text-gold">
             <ShieldCheck className="h-3 w-3" /> Server admin
           </span>
         ) : member.is_admin ? (
-          <span className="flex items-center gap-1 rounded-full bg-indigo-400/20 px-2.5 py-1 text-[11px] font-semibold text-indigo-200">
+          <span className="flex items-center gap-1 rounded-full bg-accent-bright/20 px-2.5 py-1 text-[11px] font-semibold text-accent-bright">
             <ShieldCheck className="h-3 w-3" /> Admin
           </span>
         ) : null}
@@ -74,7 +74,7 @@ function MemberRow({
         <button
           onClick={onEdit}
           aria-label={`Edit ${member.display_name}`}
-          className="rounded-lg p-2 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+          className="rounded-lg p-2 text-fg/50 transition-colors hover:bg-fg/10 hover:text-fg"
         >
           <Pencil className="h-4 w-4" />
         </button>
@@ -82,7 +82,7 @@ function MemberRow({
           <button
             onClick={onDelete}
             aria-label={`Remove ${member.display_name}`}
-            className="rounded-lg p-2 text-white/50 transition-colors hover:bg-rose-500/20 hover:text-rose-300"
+            className="rounded-lg p-2 text-fg/50 transition-colors hover:bg-rose-500/20 hover:text-rose-300"
           >
             <Trash2 className="h-4 w-4" />
           </button>
@@ -170,7 +170,7 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
           <button
             onClick={onClose}
             aria-label="Close"
-            className="rounded-lg p-1.5 text-white/50 hover:bg-white/10 hover:text-white"
+            className="rounded-lg p-1.5 text-fg/50 hover:bg-fg/10 hover:text-fg"
           >
             <X className="h-5 w-5" />
           </button>
@@ -194,14 +194,14 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
               required
             />
           ) : (
-            <p className="text-xs text-white/40">
-              Signing in as <span className="font-semibold text-white/60">@{member.username}</span>
+            <p className="text-xs text-fg/40">
+              Signing in as <span className="font-semibold text-fg/60">@{member.username}</span>
               {' '}(usernames can't be changed)
             </p>
           )}
 
           <div>
-            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-white/50">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
               Role
             </span>
             <div className="grid grid-cols-2 gap-2">
@@ -212,8 +212,8 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
                   onClick={() => pickRole(r)}
                   className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
                     role === r
-                      ? 'border-indigo-400/60 bg-indigo-400/20 text-white'
-                      : 'border-white/10 bg-white/5 text-white/55 hover:bg-white/10'
+                      ? 'border-accent-bright/60 bg-accent-bright/20 text-fg'
+                      : 'border-fg/10 bg-fg/5 text-fg/55 hover:bg-fg/10'
                   }`}
                 >
                   {ROLE_LABEL[r]}
@@ -223,12 +223,12 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
           </div>
 
           <label
-            className={`flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3 ${
+            className={`flex items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 ${
               role === 'child' || (isSelf && member?.is_admin) ? 'opacity-50' : 'cursor-pointer'
             }`}
           >
-            <span className="flex items-center gap-2 text-sm font-semibold text-white/80">
-              <ShieldCheck className="h-4 w-4 text-indigo-300" /> Can manage the family
+            <span className="flex items-center gap-2 text-sm font-semibold text-fg/80">
+              <ShieldCheck className="h-4 w-4 text-accent-bright" /> Can manage the family
             </span>
             <input
               type="checkbox"
@@ -236,11 +236,11 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
               onChange={(e) => setIsAdmin(e.target.checked)}
               // Children can't be admins, and you can't demote yourself.
               disabled={role === 'child' || (isSelf && member?.is_admin)}
-              className="h-5 w-5 accent-indigo-400"
+              className="h-5 w-5 accent-accent-bright"
             />
           </label>
           {isSelf && member?.is_admin && (
-            <p className="-mt-2 text-xs text-white/40">
+            <p className="-mt-2 text-xs text-fg/40">
               You can't remove your own admin access. That guarantees the family always has an
               admin.
             </p>
@@ -256,7 +256,7 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
             required={creating}
           />
           {!creating && password && (
-            <p className="-mt-2 flex items-center gap-1.5 text-xs text-amber-300/80">
+            <p className="-mt-2 flex items-center gap-1.5 text-xs text-gold/80">
               <KeyRound className="h-3.5 w-3.5" /> This will replace their current password.
             </p>
           )}
@@ -314,7 +314,7 @@ function DeleteConfirm({
         aria-modal="true"
       >
         <p className="mb-1 font-bold">Remove {member.display_name}?</p>
-        <p className="mb-5 text-sm text-white/55">
+        <p className="mb-5 text-sm text-fg/55">
           @{member.username} will be signed out everywhere and their account deleted.
         </p>
         <FormError message={error} />
@@ -387,12 +387,12 @@ function InviteHouseholdSheet({ onClose }: { onClose: () => void }) {
       >
         <div className="mb-5 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-lg font-bold">
-            <Home className="h-5 w-5 text-indigo-300" /> Invite another household
+            <Home className="h-5 w-5 text-accent-bright" /> Invite another household
           </h2>
           <button
             onClick={onClose}
             aria-label="Close"
-            className="rounded-lg p-1.5 text-white/50 hover:bg-white/10 hover:text-white"
+            className="rounded-lg p-1.5 text-fg/50 hover:bg-fg/10 hover:text-fg"
           >
             <X className="h-5 w-5" />
           </button>
@@ -400,9 +400,9 @@ function InviteHouseholdSheet({ onClose }: { onClose: () => void }) {
 
         {created ? (
           <div className="flex flex-col gap-4">
-            <p className="text-sm leading-relaxed text-white/70">
+            <p className="text-sm leading-relaxed text-fg/70">
               Created a new parent account,{' '}
-              <span className="font-semibold text-white">@{created}</span>. Give them that username
+              <span className="font-semibold text-fg">@{created}</span>. Give them that username
               and the password you set. When they sign in they'll name their own family and add
               their members. Their board is completely separate from yours, so they won't appear in
               your list here.
@@ -411,7 +411,7 @@ function InviteHouseholdSheet({ onClose }: { onClose: () => void }) {
           </div>
         ) : (
           <form onSubmit={onSubmit} className="flex flex-col gap-4">
-            <p className="text-xs leading-relaxed text-white/50">
+            <p className="text-xs leading-relaxed text-fg/50">
               This starts a brand-new family on this dailybread, headed by the person you invite. Use
               "Add family member" instead if you're adding someone to your own family.
             </p>
@@ -481,7 +481,7 @@ export function Admin() {
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold tracking-tight">Family members</h2>
-          <p className="text-sm text-white/50">Accounts on this dailybread</p>
+          <p className="text-sm text-fg/50">Accounts on this dailybread</p>
         </div>
         <Button onClick={() => setSheet({ open: true, member: null })} className="flex items-center gap-1.5">
           <Plus className="h-4 w-4" /> Add
@@ -504,7 +504,7 @@ export function Admin() {
           ))}
         </AnimatePresence>
         {members === null && !loadError && (
-          <p className="py-8 text-center text-sm text-white/40">Loading</p>
+          <p className="py-8 text-center text-sm text-fg/40">Loading</p>
         )}
       </div>
 
@@ -512,19 +512,19 @@ export function Admin() {
           founds a whole new family on the install, not a member of yours. Only
           the instance owner can do it, so a family B admin never sees this. */}
       {user?.is_owner && (
-        <div className="mt-8 border-t border-white/10 pt-5">
-          <p className="text-xs font-semibold uppercase tracking-widest text-white/40">
+        <div className="mt-8 border-t border-fg/10 pt-5">
+          <p className="text-xs font-semibold uppercase tracking-widest text-fg/40">
             Server admin
           </p>
-          <p className="mt-1 mb-3 text-sm text-white/50">
+          <p className="mt-1 mb-3 text-sm text-fg/50">
             Set up a separate family on this dailybread. They run their own board; you won't see
             their members here.
           </p>
           <button
             onClick={() => setInviting(true)}
-            className="glass flex w-full items-center gap-3 p-4 text-left font-semibold text-white/80 transition-colors hover:text-white"
+            className="glass flex w-full items-center gap-3 p-4 text-left font-semibold text-fg/80 transition-colors hover:text-fg"
           >
-            <Home className="h-4 w-4 text-indigo-300" /> Invite another household
+            <Home className="h-4 w-4 text-accent-bright" /> Invite another household
           </button>
         </div>
       )}

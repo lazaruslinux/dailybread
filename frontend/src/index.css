@@ -1,32 +1,130 @@
 @import 'tailwindcss';
 
-/* dailybread theme: dark, iOS-like, frosted glass over a soft aurora
-   background. Tailwind v4 is configured right here in CSS (no config file). */
+/* dailybread theme system: frosted glass over a soft background. Every color
+   lives in a CSS variable so a theme is just a set of overrides on the root
+   (data-theme). Tailwind v4 is configured here in CSS; the accent + foreground
+   tokens map to runtime variables so utilities like bg-accent / text-fg switch
+   with the theme. Dark themes keep --fg white (so text-fg == text-white and the
+   neutral utilities are unchanged); Light flips --fg to dark ink. */
+
+@theme {
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-bright: var(--accent-bright);
+  --color-fg: var(--fg);
+  --color-gold: var(--gold);
+}
+
+/* ---- Default theme (the aurora + indigo look) ------------------------------ */
+:root {
+  --font-body: 'Hanken Grotesk Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
+  --font-reading: 'Newsreader Variable', Georgia, serif;
+
+  --fg: #ffffff; /* foreground ink; overridden only by Light */
+
+  --bg-base: #0b1220;
+  --aurora-1: rgba(99, 102, 241, 0.4);
+  --aurora-2: rgba(56, 189, 248, 0.28);
+  --aurora-3: rgba(217, 70, 239, 0.22);
+
+  --glass-bg: rgba(255, 255, 255, 0.08);
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --field-bg: rgba(255, 255, 255, 0.07);
+  --field-bg-focus: rgba(255, 255, 255, 0.1);
+
+  --accent: #6366f1; /* solid fills (buttons, FAB, toggles) */
+  --accent-strong: #8b5cf6; /* gradient partner */
+  --accent-bright: #818cf8; /* text/icons/selected states that must pop */
+  --gold: #fcd34d; /* warm accent: verse label, task, mood sun */
+}
+
+/* ---- Crimson: near-black, white text, dark crimson accents ----------------- */
+:root[data-theme='crimson'] {
+  --bg-base: #0a0a0c;
+  --aurora-1: rgba(159, 18, 57, 0.32);
+  --aurora-2: rgba(80, 7, 30, 0);
+  --aurora-3: rgba(120, 12, 42, 0.32);
+
+  --glass-bg: rgba(255, 255, 255, 0.045);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --field-bg: rgba(255, 255, 255, 0.05);
+  --field-bg-focus: rgba(255, 255, 255, 0.08);
+
+  --accent: #a11235;
+  --accent-strong: #6b0f22;
+  --accent-bright: #e11d48;
+}
+
+/* ---- Forest: near-black with tones of forest green ------------------------- */
+:root[data-theme='forest'] {
+  --bg-base: #08090a;
+  --aurora-1: rgba(22, 101, 52, 0.34);
+  --aurora-2: rgba(6, 30, 20, 0);
+  --aurora-3: rgba(20, 83, 45, 0.32);
+
+  --glass-bg: rgba(255, 255, 255, 0.045);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --field-bg: rgba(255, 255, 255, 0.05);
+  --field-bg-focus: rgba(255, 255, 255, 0.08);
+
+  --accent: #166534;
+  --accent-strong: #14532d;
+  --accent-bright: #4ade80;
+}
+
+/* ---- Light: soft light surfaces, dark ink, indigo accents ------------------ */
+:root[data-theme='light'] {
+  --fg: #131a2b;
+
+  --bg-base: #eceff5;
+  --aurora-1: rgba(99, 102, 241, 0.16);
+  --aurora-2: rgba(56, 189, 248, 0.12);
+  --aurora-3: rgba(217, 70, 239, 0.1);
+
+  --glass-bg: rgba(255, 255, 255, 0.66);
+  --glass-border: rgba(19, 26, 43, 0.1);
+  --field-bg: rgba(255, 255, 255, 0.75);
+  --field-bg-focus: rgba(255, 255, 255, 0.95);
+
+  --accent: #4f46e5;
+  --accent-strong: #7c3aed;
+  --accent-bright: #4338ca; /* dark enough to read on light */
+  --gold: #b45309; /* deep amber so it reads on white */
+}
+
+/* Warm editorial serif for hero moments (greeting, wordmark). */
+.font-display {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  letter-spacing: -0.015em;
+}
+/* A modern reading serif for scripture. */
+.font-reading {
+  font-family: var(--font-reading);
+  font-optical-sizing: auto;
+}
 
 body {
   margin: 0;
   min-height: 100svh;
-  color: #fff;
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue',
-    sans-serif;
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-optical-sizing: auto;
   -webkit-font-smoothing: antialiased;
-  /* Layered radial glows give the glass something colorful to blur. The
-     solid color underneath is the fallback while gradients paint. */
   background:
-    radial-gradient(1100px 700px at 85% -10%, rgba(99, 102, 241, 0.4), transparent 60%),
-    radial-gradient(900px 650px at -15% 25%, rgba(56, 189, 248, 0.28), transparent 55%),
-    radial-gradient(950px 900px at 55% 115%, rgba(217, 70, 239, 0.22), transparent 60%),
-    #0b1220;
+    radial-gradient(1100px 700px at 85% -10%, var(--aurora-1), transparent 60%),
+    radial-gradient(900px 650px at -15% 25%, var(--aurora-2), transparent 55%),
+    radial-gradient(950px 900px at 55% 115%, var(--aurora-3), transparent 60%),
+    var(--bg-base);
   background-attachment: fixed;
 }
 
-/* The signature surface: translucent card with backdrop blur. Kept as one
-   reusable class so every card, sheet, and pill matches exactly. */
+/* The signature surface: translucent card with backdrop blur. */
 .glass {
   border-radius: 1.4rem;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
   backdrop-filter: blur(20px) saturate(1.4);
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
   box-shadow:
@@ -34,16 +132,15 @@ body {
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-/* Form fields on glass. Native inputs need a little help to not look flat
-   white; keep them translucent with a soft focus ring. */
+/* Form fields on glass. */
 .field {
   width: 100%;
   border-radius: 0.9rem;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--glass-border);
+  background: var(--field-bg);
   padding: 0.7rem 1rem;
   font-size: 1rem;
-  color: #fff;
+  color: var(--fg);
   outline: none;
   transition:
     border-color 0.15s ease,
@@ -51,7 +148,7 @@ body {
     box-shadow 0.15s ease;
 }
 .field::placeholder {
-  color: rgba(255, 255, 255, 0.35);
+  color: color-mix(in oklab, var(--fg) 35%, transparent);
 }
 /* iOS WebKit renders date/time inputs as inline-flex at fit-content width,
    so they ignore width:100% and collapse to a tiny pill when empty. Forcing
@@ -63,26 +160,43 @@ body {
   display: block;
   min-width: 0;
   min-height: 2.95rem;
-  /* Slightly tighter than text fields so a full mm/dd/yyyy plus the clear
-     button fits inside one grid column on a phone. */
   padding-left: 0.75rem;
   padding-right: 0.5rem;
   font-size: 0.95rem;
 }
-/* Desktop Chrome shows a picker icon inside these inputs; scoot it left so
-   the clear button doesn't sit on top of it, and tint it for the dark theme. */
 .field[type='date']::-webkit-calendar-picker-indicator,
 .field[type='time']::-webkit-calendar-picker-indicator {
   margin-right: 1.4rem;
   filter: invert(1);
   opacity: 0.45;
 }
+:root[data-theme='light'] .field[type='date']::-webkit-calendar-picker-indicator,
+:root[data-theme='light'] .field[type='time']::-webkit-calendar-picker-indicator {
+  filter: none;
+}
 .field:focus {
-  border-color: rgba(129, 140, 248, 0.7);
-  background: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+  border-color: var(--accent-bright);
+  background: var(--field-bg-focus);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 30%, transparent);
 }
 
 ::selection {
-  background: rgba(129, 140, 248, 0.4);
+  background: color-mix(in oklab, var(--accent-bright) 40%, transparent);
+}
+
+/* Faint film grain over the aurora for tactile depth. Sits above the board
+   content but below the fixed chrome (tab bar, FAB, sheets), and never eats a
+   tap. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.04;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+:root[data-theme='light'] body::after {
+  opacity: 0.02;
 }

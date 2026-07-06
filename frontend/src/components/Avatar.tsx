@@ -29,13 +29,13 @@ export function Avatar({
   return (
     <div className="relative inline-block shrink-0">
       <div
-        className={`flex items-center justify-center rounded-full bg-gradient-to-br from-indigo-400/60 to-violet-500/60 font-bold ${s.circle} ${className}`}
+        className={`flex items-center justify-center rounded-full bg-gradient-to-br from-accent-bright/60 to-accent-strong/60 font-bold text-white ${s.circle} ${className}`}
       >
         {initialsOf(name)}
       </div>
       {meta && (
         <span
-          className={`absolute flex items-center justify-center rounded-full border border-white/20 bg-[#151b2e] ${s.badge}`}
+          className={`absolute flex items-center justify-center rounded-full border border-fg/20 bg-[#151b2e] ${s.badge}`}
           title={meta.label}
         >
           <meta.Icon className={`h-full w-full ${meta.tint}`} strokeWidth={2.5} />

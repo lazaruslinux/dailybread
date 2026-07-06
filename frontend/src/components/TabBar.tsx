@@ -34,17 +34,17 @@ export function TabBar({ active, onChange }: { active: Tab; onChange: (tab: Tab)
                   // One shared highlight that glides between tabs.
                   <motion.span
                     layoutId="tab-highlight"
-                    className="absolute inset-0 rounded-xl bg-white/10"
+                    className="absolute inset-0 rounded-xl bg-fg/10"
                     transition={{ type: 'spring', stiffness: 400, damping: 32 }}
                   />
                 )}
                 <Icon
-                  className={`relative h-5 w-5 ${isActive ? 'text-indigo-300' : 'text-white/45'}`}
+                  className={`relative h-5 w-5 ${isActive ? 'text-accent-bright' : 'text-fg/45'}`}
                   strokeWidth={2}
                 />
                 <span
                   className={`relative text-[10px] font-semibold ${
-                    isActive ? 'text-white' : 'text-white/45'
+                    isActive ? 'text-fg' : 'text-fg/45'
                   }`}
                 >
                   {label}

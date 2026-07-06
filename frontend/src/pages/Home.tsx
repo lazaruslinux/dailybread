@@ -23,7 +23,7 @@ function nowIndex(items: api.FeedItem[], clock: Date): number {
 
 function SectionLabel({ children }: { children: string }) {
   return (
-    <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-widest text-white/40">
+    <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-widest text-fg/40">
       {children}
     </p>
   )
@@ -46,8 +46,8 @@ function FilterChip({
       aria-pressed={active}
       className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
         active
-          ? 'border-indigo-400/60 bg-indigo-400/20 text-white'
-          : 'border-white/10 bg-white/5 text-white/55 hover:bg-white/10'
+          ? 'border-accent-bright/60 bg-accent-bright/20 text-fg'
+          : 'border-fg/10 bg-fg/5 text-fg/55 hover:bg-fg/10'
       }`}
     >
       {children}
@@ -275,7 +275,7 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
 
       {isParent && family.length > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-1.5">
-          <span className="mr-0.5 text-[11px] font-semibold uppercase tracking-wide text-white/35">
+          <span className="mr-0.5 text-[11px] font-semibold uppercase tracking-wide text-fg/35">
             Show
           </span>
           <FilterChip active={filter.length === 0} onClick={() => setFilter([])}>
@@ -292,7 +292,7 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
       <FormError message={error} />
 
       {feed && today.length === 0 && anytime.length === 0 && (
-        <p className="glass p-6 text-center text-sm text-white/50">
+        <p className="glass p-6 text-center text-sm text-fg/50">
           {filter.length > 0
             ? 'No cards for the people you picked.'
             : 'Nothing on the board today. Enjoy it.'}
@@ -329,7 +329,7 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
           <div className="flex flex-col gap-3">
             {upcoming.map((item, i) => (
               <div key={item.id}>
-                <p className="mb-1 pl-1 text-[11px] font-medium text-white/35">
+                <p className="mb-1 pl-1 text-[11px] font-medium text-fg/35">
                   {item.date_for ? upcomingLabel(item.date_for) : ''}
                 </p>
                 <ItemCard index={i} {...cardProps(item, false)} />
@@ -348,7 +348,7 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
           whileTap={{ scale: 0.9 }}
           onClick={() => openEditor(null)}
           aria-label="Add to the board"
-          className="fixed bottom-24 right-1/2 z-30 flex h-14 w-14 translate-x-[calc(min(50vw,14rem)-2rem)] items-center justify-center rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 shadow-xl shadow-indigo-500/30"
+          className="fixed bottom-24 right-1/2 z-30 flex h-14 w-14 translate-x-[calc(min(50vw,14rem)-2rem)] items-center justify-center rounded-full bg-gradient-to-r from-accent to-accent-strong shadow-xl shadow-accent/30"
         >
           <Plus className="h-6 w-6" strokeWidth={2.5} />
         </motion.button>
@@ -363,13 +363,13 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
             className="glass fixed bottom-40 left-1/2 z-30 flex w-[calc(100%-2.5rem)] max-w-sm -translate-x-1/2 items-center gap-3 px-4 py-3"
             data-undo-toast
           >
-            <p className="min-w-0 flex-1 truncate text-sm text-white/85">
+            <p className="min-w-0 flex-1 truncate text-sm text-fg/85">
               Done: <span className="font-semibold">{toast.title}</span>
             </p>
             <button
               type="button"
               onClick={undo}
-              className="flex shrink-0 items-center gap-1 rounded-lg bg-white/10 px-2.5 py-1.5 text-sm font-semibold text-white/85 hover:bg-white/20"
+              className="flex shrink-0 items-center gap-1 rounded-lg bg-fg/10 px-2.5 py-1.5 text-sm font-semibold text-fg/85 hover:bg-fg/20"
             >
               <Undo2 className="h-3.5 w-3.5" /> Undo
             </button>
