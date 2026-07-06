@@ -1,8 +1,11 @@
-import { Check, ChevronLeft, ChevronRight } from 'lucide-react'
+import { AnimatePresence } from 'framer-motion'
+import { Check, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as api from '../lib/api'
+import { useAuth } from '../auth/AuthContext'
 import { Avatar } from '../components/Avatar'
 import { KIND_STYLE } from '../components/ItemCard'
+import { ItemSheet } from '../components/ItemSheet'
 import { FormError } from '../components/ui'
 import { formatTime } from '../lib/moods'
 
@@ -128,8 +131,11 @@ function DayCell({
 type Mode = 'fortnight' | 'month'
 
 export function Calendar() {
+  const { user } = useAuth()
+  const isParent = user?.role === 'parent'
   const todayISO = api.localDate()
   const [mode, setMode] = useState<Mode>('fortnight')
+  const [adding, setAdding] = useState(false)
   // Fortnight is anchored on a Monday; month on the 1st of the shown month.
   const [fortnightStart, setFortnightStart] = useState(() => mondayOf(new Date()))
   const [monthAnchor, setMonthAnchor] = useState(() => startOfMonth(new Date()))
@@ -284,9 +290,19 @@ export function Calendar() {
       <FormError message={error} />
 
       <div>
-        <p className="mb-2 pl-1 text-xs font-semibold uppercase tracking-widest text-fg/40">
-          {fullDay(selected)}
-        </p>
+        <div className="mb-2 flex items-center justify-between pl-1">
+          <p className="text-xs font-semibold uppercase tracking-widest text-fg/40">
+            {fullDay(selected)}
+          </p>
+          {isParent && (
+            <button
+              onClick={() => setAdding(true)}
+              className="flex items-center gap-1 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-2.5 py-1 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
+            >
+              <Plus className="h-3.5 w-3.5" strokeWidth={2.5} /> Add
+            </button>
+          )}
+        </div>
         {selectedItems.length === 0 ? (
           <p className="glass p-6 text-center text-sm text-fg/50">Nothing scheduled.</p>
         ) : (
@@ -297,6 +313,22 @@ export function Calendar() {
           </div>
         )}
       </div>
+
+      <AnimatePresence>
+        {adding && (
+          <ItemSheet
+            item={null}
+            family={family}
+            defaultDate={selected}
+            defaultKind="appointment"
+            onClose={() => setAdding(false)}
+            onSaved={() => {
+              setAdding(false)
+              refresh()
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }

@@ -57,16 +57,22 @@ const WEEKDAYS = [0, 1, 2, 3, 4]
 export function ItemSheet({
   item,
   family,
+  defaultDate,
+  defaultKind,
   onClose,
   onSaved,
 }: {
   item: api.FeedItem | null // null = creating
   family: api.FamilyMember[]
+  // When creating from a calendar day, seed the date (and a sensible kind) so
+  // the new card lands on the day the parent tapped.
+  defaultDate?: string
+  defaultKind?: api.ItemKind
   onClose: () => void
   onSaved: () => void
 }) {
   const creating = item === null
-  const [kind, setKind] = useState<api.ItemKind>(item?.kind ?? 'routine')
+  const [kind, setKind] = useState<api.ItemKind>(item?.kind ?? defaultKind ?? 'routine')
   const [title, setTitle] = useState(item?.title ?? '')
   const [notes, setNotes] = useState(item?.notes ?? '')
 
@@ -85,7 +91,7 @@ export function ItemSheet({
   const [time, setTime] = useState(item?.time_of_day?.slice(0, 5) ?? '')
   const [endTime, setEndTime] = useState(item?.end_time?.slice(0, 5) ?? '')
   const [allDay, setAllDay] = useState(item?.all_day ?? false)
-  const [date, setDate] = useState(item?.date_for ?? '')
+  const [date, setDate] = useState(item?.date_for ?? defaultDate ?? '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
