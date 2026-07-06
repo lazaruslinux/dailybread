@@ -183,8 +183,10 @@ export function ItemDetail({
             <div className="flex flex-col gap-2">
               {item.assignee_completions.map((ac) => {
                 const member = family?.find((m) => m.id === ac.user_id)
-                // You can toggle your own; a parent can toggle anyone's.
-                const canToggle = Boolean(me) && (me!.id === ac.user_id || me!.role === 'parent')
+                // You can toggle your own; a parent can toggle anyone's. When no
+                // handler is wired (a future day on the calendar), it's read-only.
+                const canToggle =
+                  Boolean(onToggleFor) && Boolean(me) && (me!.id === ac.user_id || me!.role === 'parent')
                 return (
                   <button
                     key={ac.user_id}

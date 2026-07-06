@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { Avatar } from '../components/Avatar'
+import { ItemDetail } from '../components/ItemDetail'
 import { KIND_STYLE } from '../components/ItemCard'
 import { ItemSheet } from '../components/ItemSheet'
 import { FormError } from '../components/ui'
@@ -58,6 +59,17 @@ function fullDay(iso: string): string {
   })
 }
 
+// Short day header for the overview groups: "Today" for today, else "Mon, Jul 7".
+function dayHeading(iso: string, todayISO: string): string {
+  if (iso === todayISO) return 'Today'
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
 // One scheduled card in the day's agenda. When the viewer can act on it and the
 // day isn't in the future, a left circle checks it off ON THAT DAY, so a missed
 // item is marked on the day it actually was. Otherwise it's read-only, with a
@@ -67,11 +79,13 @@ function AgendaRow({
   family,
   checkable,
   onToggle,
+  onOpen,
 }: {
   item: api.FeedItem
   family: api.FamilyMember[]
   checkable: boolean
   onToggle?: () => void
+  onOpen?: () => void
 }) {
   const { Icon, tint, label } = KIND_STYLE[item.kind]
   const when = item.all_day ? 'All day' : formatTime(item.time_of_day)
@@ -79,12 +93,15 @@ function AgendaRow({
     .map((a) => family.find((m) => m.id === a.id))
     .filter((m): m is api.FamilyMember => Boolean(m))
   return (
-    <div className="glass flex items-center gap-3 p-3">
+    <div onClick={onOpen} className="glass flex cursor-pointer items-center gap-3 p-3">
       {checkable && onToggle ? (
         <button
           type="button"
           aria-label={item.completed ? `Mark ${item.title} not done` : `Mark ${item.title} done`}
-          onClick={onToggle}
+          onClick={(e) => {
+            e.stopPropagation()
+            onToggle()
+          }}
           className="-m-1 shrink-0 p-1"
           data-check
         >
@@ -159,19 +176,30 @@ function DayCell({
 
 type Mode = 'fortnight' | 'month'
 
+// How many cards the whole-period overview shows before offering "Load more".
+const PERIOD_PAGE = 20
+
 export function Calendar() {
   const { user } = useAuth()
   const isParent = user?.role === 'parent'
   const todayISO = api.localDate()
   const [mode, setMode] = useState<Mode>('fortnight')
-  const [adding, setAdding] = useState(false)
   // Fortnight is anchored on a Monday; month on the 1st of the shown month.
   const [fortnightStart, setFortnightStart] = useState(() => mondayOf(new Date()))
   const [monthAnchor, setMonthAnchor] = useState(() => startOfMonth(new Date()))
-  const [selected, setSelected] = useState(todayISO)
+  // No day selected = the whole-period overview (every scheduled one-off across
+  // the view). Selecting a day narrows to just that day, routines included.
+  const [selected, setSelected] = useState<string | null>(null)
   const [cal, setCal] = useState<api.Calendar | null>(null)
   const [family, setFamily] = useState<api.FamilyMember[]>([])
   const [error, setError] = useState<string | null>(null)
+  // The card whose detail sheet is open, and the day it was opened on (so a
+  // routine is marked on the right occurrence). Plus the add/edit sheet.
+  const [detail, setDetail] = useState<{ item: api.FeedItem; day: string } | null>(null)
+  const [sheet, setSheet] = useState<{ item: api.FeedItem | null; date: string } | null>(null)
+  // The overview shows this many cards before "Load more" (a busy month would
+  // otherwise be a wall of rows).
+  const [shown, setShown] = useState(PERIOD_PAGE)
 
   // The days the grid draws, as full weeks. Two weeks for the fortnight; for a
   // month, the whole weeks that the month touches (so it starts on a Monday and
@@ -209,38 +237,97 @@ export function Calendar() {
     refresh()
   }, [refresh])
 
+  // Reset paging when the view changes under it.
+  const rangeStartISO = toISO(rangeStart)
+  useEffect(() => setShown(PERIOD_PAGE), [mode, rangeStartISO])
+
   const countFor = (iso: string) => cal?.days.find((d) => d.date === iso)?.items.length ?? 0
-  const selectedItems = cal?.days.find((d) => d.date === selected)?.items ?? []
+  const selectedItems = selected ? cal?.days.find((d) => d.date === selected)?.items ?? [] : []
+
+  // The whole-period overview: every dated one-off across the view, in date
+  // order, each tagged with its day. Routines are left out — a daily habit
+  // would repeat on every day and bury the real schedule; you see routines when
+  // you open a specific day.
+  const overview = useMemo(() => {
+    const out: { date: string; item: api.FeedItem }[] = []
+    for (const d of cal?.days ?? [])
+      for (const it of d.items) if (it.kind !== 'routine') out.push({ date: d.date, item: it })
+    return out
+  }, [cal])
+  const overviewShown = overview.slice(0, shown)
+  const overviewGroups = useMemo(() => {
+    const groups: { date: string; items: api.FeedItem[] }[] = []
+    for (const { date, item } of overviewShown) {
+      let g = groups[groups.length - 1]
+      if (!g || g.date !== date) {
+        g = { date, items: [] }
+        groups.push(g)
+      }
+      g.items.push(item)
+    }
+    return groups
+  }, [overviewShown])
+
   // You can only mark days that have already happened (or today) — nothing is
   // "done" in the future.
-  const dayIsMarkable = selected <= todayISO
+  const markable = (dayISO: string) => dayISO <= todayISO
 
-  // Flip a card's completed state on the day being viewed, optimistically, then
-  // reconcile with the server. The completion is recorded on THAT day.
-  function setDone(dayISO: string, id: number, done: boolean) {
+  // Patch a card's completion in the calendar and in an open detail sheet.
+  function patch(dayISO: string, id: number, fn: (it: api.FeedItem) => api.FeedItem) {
     setCal((c) =>
       c
         ? {
             ...c,
             days: c.days.map((d) =>
-              d.date === dayISO
-                ? { ...d, items: d.items.map((it) => (it.id === id ? { ...it, completed: done } : it)) }
-                : d,
+              d.date === dayISO ? { ...d, items: d.items.map((it) => (it.id === id ? fn(it) : it)) } : d,
             ),
           }
         : c,
     )
+    setDetail((dt) => (dt && dt.item.id === id && dt.day === dayISO ? { ...dt, item: fn(dt.item) } : dt))
   }
+
+  // Flip a shared/own completion on the given day, optimistically, then
+  // reconcile. The completion is recorded on THAT day (accurate history).
   async function toggle(item: api.FeedItem, dayISO: string) {
     const done = !item.completed
-    setDone(dayISO, item.id, done)
+    patch(dayISO, item.id, (it) => ({ ...it, completed: done }))
     try {
       if (done) await api.completeItem(item.id, undefined, dayISO)
       else await api.uncompleteItem(item.id, undefined, dayISO)
       refresh()
     } catch (err) {
-      setDone(dayISO, item.id, !done)
+      patch(dayISO, item.id, (it) => ({ ...it, completed: !done }))
       setError(err instanceof api.ApiError ? err.message : 'Could not update the card.')
+    }
+  }
+
+  // Flip one member's own row on a per-person (routine) card, for that day.
+  async function toggleFor(item: api.FeedItem, userId: number, done: boolean, dayISO: string) {
+    const set = (value: boolean) => (it: api.FeedItem): api.FeedItem => ({
+      ...it,
+      completed: userId === user?.id ? value : it.completed,
+      assignee_completions:
+        it.assignee_completions?.map((c) => (c.user_id === userId ? { ...c, completed: value } : c)) ?? null,
+    })
+    patch(dayISO, item.id, set(done))
+    try {
+      if (done) await api.completeItem(item.id, userId, dayISO)
+      else await api.uncompleteItem(item.id, userId, dayISO)
+      refresh()
+    } catch (err) {
+      patch(dayISO, item.id, set(!done))
+      setError(err instanceof api.ApiError ? err.message : 'Could not update the card.')
+    }
+  }
+
+  async function deleteFromDetail(item: api.FeedItem) {
+    try {
+      await api.deleteItem(item.id)
+      setDetail(null)
+      refresh()
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Could not remove the card.')
     }
   }
 
@@ -339,7 +426,7 @@ export function Calendar() {
                     isToday={iso === todayISO}
                     isSelected={iso === selected}
                     dimmed={mode === 'month' && day.getMonth() !== monthAnchor.getMonth()}
-                    onSelect={() => setSelected(iso)}
+                    onSelect={() => setSelected((s) => (s === iso ? null : iso))}
                   />
                 )
               })}
@@ -350,50 +437,134 @@ export function Calendar() {
 
       <FormError message={error} />
 
-      <div>
-        <div className="mb-2 flex items-center justify-between pl-1">
-          <p className="text-xs font-semibold uppercase tracking-widest text-fg/40">
-            {fullDay(selected)}
-          </p>
-          {isParent && (
-            <button
-              onClick={() => setAdding(true)}
-              className="flex items-center gap-1 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-2.5 py-1 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
-            >
-              <Plus className="h-3.5 w-3.5" strokeWidth={2.5} /> Add
-            </button>
+      {selected ? (
+        // ONE DAY: the selected day's cards, routines included, with its own Add.
+        <div>
+          <div className="mb-2 flex items-center justify-between pl-1">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-widest text-fg/40">
+                {fullDay(selected)}
+              </p>
+              <button
+                onClick={() => setSelected(null)}
+                className="mt-0.5 text-[11px] font-semibold text-accent-bright hover:underline"
+              >
+                Show the whole {mode === 'fortnight' ? 'two weeks' : 'month'}
+              </button>
+            </div>
+            {isParent && (
+              <button
+                onClick={() => setSheet({ item: null, date: selected })}
+                className="flex items-center gap-1 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-2.5 py-1 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
+              >
+                <Plus className="h-3.5 w-3.5" strokeWidth={2.5} /> Add
+              </button>
+            )}
+          </div>
+          {selectedItems.length === 0 ? (
+            <p className="glass p-6 text-center text-sm text-fg/50">Nothing scheduled.</p>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              {selectedItems.map((item) => {
+                const canMark = markable(selected) && canCheckItem(item, user)
+                return (
+                  <AgendaRow
+                    key={`${item.id}-${selected}`}
+                    item={item}
+                    family={family}
+                    checkable={canMark}
+                    onToggle={canMark ? () => toggle(item, selected) : undefined}
+                    onOpen={() => setDetail({ item, day: selected })}
+                  />
+                )
+              })}
+            </div>
           )}
         </div>
-        {selectedItems.length === 0 ? (
-          <p className="glass p-6 text-center text-sm text-fg/50">Nothing scheduled.</p>
-        ) : (
-          <div className="flex flex-col gap-2.5">
-            {selectedItems.map((item) => {
-              const checkable = dayIsMarkable && canCheckItem(item, user)
-              return (
-                <AgendaRow
-                  key={`${item.id}-${selected}`}
-                  item={item}
-                  family={family}
-                  checkable={checkable}
-                  onToggle={checkable ? () => toggle(item, selected) : undefined}
-                />
-              )
-            })}
-          </div>
-        )}
-      </div>
+      ) : (
+        // WHOLE PERIOD: every scheduled one-off across the view, grouped by day.
+        <div>
+          <p className="mb-2 pl-1 text-xs font-semibold uppercase tracking-widest text-fg/40">
+            Scheduled · tap a day to focus
+          </p>
+          {overview.length === 0 ? (
+            <p className="glass p-6 text-center text-sm text-fg/50">Nothing scheduled in this period.</p>
+          ) : (
+            <div className="flex flex-col gap-4">
+              {overviewGroups.map((g) => (
+                <div key={g.date}>
+                  <p className="mb-1.5 pl-1 text-[11px] font-semibold text-fg/45">{dayHeading(g.date, todayISO)}</p>
+                  <div className="flex flex-col gap-2.5">
+                    {g.items.map((item) => {
+                      const canMark = markable(g.date) && canCheckItem(item, user)
+                      return (
+                        <AgendaRow
+                          key={`${item.id}-${g.date}`}
+                          item={item}
+                          family={family}
+                          checkable={canMark}
+                          onToggle={canMark ? () => toggle(item, g.date) : undefined}
+                          onOpen={() => setDetail({ item, day: g.date })}
+                        />
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+              {overview.length > shown && (
+                <button
+                  onClick={() => setShown((n) => n + PERIOD_PAGE)}
+                  className="glass py-2.5 text-center text-sm font-semibold text-fg/70 transition-colors hover:text-fg"
+                >
+                  Load more ({overview.length - shown} more)
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <AnimatePresence>
-        {adding && (
+        {detail &&
+          (() => {
+            const dayMarkable = markable(detail.day)
+            const canMark = dayMarkable && canCheckItem(detail.item, user)
+            return (
+              <ItemDetail
+                item={detail.item}
+                canCheck={canMark}
+                family={family}
+                me={user}
+                onToggle={() => toggle(detail.item, detail.day)}
+                onToggleFor={
+                  dayMarkable ? (userId, done) => toggleFor(detail.item, userId, done, detail.day) : undefined
+                }
+                onEdit={
+                  isParent
+                    ? () => {
+                        setSheet({ item: detail.item, date: detail.item.date_for ?? detail.day })
+                        setDetail(null)
+                      }
+                    : undefined
+                }
+                onDelete={isParent ? () => deleteFromDetail(detail.item) : undefined}
+                onClose={() => setDetail(null)}
+              />
+            )
+          })()}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {sheet && (
           <ItemSheet
-            item={null}
+            item={sheet.item}
             family={family}
-            defaultDate={selected}
+            defaultDate={sheet.date}
             defaultKind="appointment"
-            onClose={() => setAdding(false)}
+            onClose={() => setSheet(null)}
             onSaved={() => {
-              setAdding(false)
+              setSheet(null)
+              setDetail(null)
               refresh()
             }}
           />
