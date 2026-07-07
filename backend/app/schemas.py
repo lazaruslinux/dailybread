@@ -274,6 +274,51 @@ class GroceryStateOut(BaseModel):
     items: list[GroceryItemOut]
 
 
+# ---- recipes -------------------------------------------------------------------
+
+
+class RecipeIn(BaseModel):
+    """A parent creating a recipe. Nutrition is per serving and optional (the
+    cook fills it in); ingredients are one per line."""
+
+    name: str = Field(min_length=1, max_length=120)
+    servings: int = Field(default=1, ge=1, le=100)
+    calories: int | None = Field(default=None, ge=0, le=100000)
+    protein_g: int | None = Field(default=None, ge=0, le=10000)
+    carbs_g: int | None = Field(default=None, ge=0, le=10000)
+    fat_g: int | None = Field(default=None, ge=0, le=10000)
+    ingredients: str = Field(default="", max_length=5000)
+    steps: str = Field(default="", max_length=10000)
+
+
+class RecipeUpdate(BaseModel):
+    """Editing a recipe. Omitted fields stay; a macro sent as null clears it
+    (told apart from "omitted" via model_fields_set, like ItemUpdate)."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    servings: int | None = Field(default=None, ge=1, le=100)
+    calories: int | None = Field(default=None, ge=0, le=100000)
+    protein_g: int | None = Field(default=None, ge=0, le=10000)
+    carbs_g: int | None = Field(default=None, ge=0, le=10000)
+    fat_g: int | None = Field(default=None, ge=0, le=10000)
+    ingredients: str | None = Field(default=None, max_length=5000)
+    steps: str | None = Field(default=None, max_length=10000)
+
+
+class RecipeOut(BaseModel):
+    id: int
+    name: str
+    servings: int
+    calories: int | None
+    protein_g: int | None
+    carbs_g: int | None
+    fat_g: int | None
+    ingredients: str
+    steps: str
+
+    model_config = {"from_attributes": True}
+
+
 # ---- profiles and moods --------------------------------------------------------
 
 

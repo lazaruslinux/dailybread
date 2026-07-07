@@ -250,6 +250,34 @@ class GroceryItem(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class Recipe(Base):
+    """A saved family recipe: what it is, how to make it, and its nutrition per
+    serving. The week planner points meals at these, so choosing a night's
+    dinner is just picking one — the ingredients and macros were entered once.
+
+    Nutrition is per serving and entered by the cook (not computed from a food
+    database yet); each field is nullable so a recipe can be saved before its
+    macros are worked out. Ingredients are one-per-line text for now; a later
+    "add to the grocery list" splits them on newlines."""
+
+    __tablename__ = "recipes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    servings: Mapped[int] = mapped_column(Integer, default=1)
+    calories: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    protein_g: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    carbs_g: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fat_g: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ingredients: Mapped[str] = mapped_column(Text, default="")
+    steps: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+
 class MoodLevel(str, enum.Enum):
     """Five-step mood scale rendered as weather in the UI (sun to storm)."""
 

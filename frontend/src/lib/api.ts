@@ -313,6 +313,44 @@ export const clearCheckedGrocery = (listId: number | null) =>
     method: 'POST',
   })
 
+// ---- recipes ------------------------------------------------------------------
+
+export interface Recipe {
+  id: number
+  name: string
+  servings: number
+  // Per serving; null when the cook hasn't filled it in.
+  calories: number | null
+  protein_g: number | null
+  carbs_g: number | null
+  fat_g: number | null
+  ingredients: string // one per line
+  steps: string
+}
+
+// Create/edit payload. Macros omitted (undefined) stay; sent as null they clear.
+export interface RecipePayload {
+  name: string
+  servings?: number
+  calories?: number | null
+  protein_g?: number | null
+  carbs_g?: number | null
+  fat_g?: number | null
+  ingredients?: string
+  steps?: string
+}
+
+export const getRecipes = () => request<Recipe[]>('/recipes')
+
+export const createRecipe = (payload: RecipePayload) =>
+  request<Recipe>('/recipes', { method: 'POST', body: JSON.stringify(payload) })
+
+export const updateRecipe = (id: number, payload: RecipePayload) =>
+  request<Recipe>(`/recipes/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+
+export const deleteRecipe = (id: number) =>
+  request<void>(`/recipes/${id}`, { method: 'DELETE' })
+
 // ---- profiles and moods ---------------------------------------------------------
 
 export type MoodLevel = 'sunny' | 'partly' | 'cloudy' | 'rainy' | 'stormy'

@@ -9,29 +9,10 @@ a nonexistent one.
 
 import datetime as dt
 
-import pytest
-
-from tests.conftest import login, user_id
+from tests.conftest import JOSH, user_id
 
 TODAY = str(dt.date.today())
-JOSH = {"username": "josh", "display_name": "Josh", "password": "josh-pass-1234"}
 BKID = {"username": "bkid", "display_name": "B Kid", "password": "bkid-pass-1234"}
-
-
-@pytest.fixture()
-def homeless(app, owner):
-    """A new-household account that hasn't created its family yet."""
-    res = owner.post("/auth/users", json={**JOSH, "role": "parent", "new_household": True})
-    assert res.status_code == 201, res.text
-    return login(app, JOSH)
-
-
-@pytest.fixture()
-def other(homeless):
-    """Family B's head of household, family created."""
-    res = homeless.post("/families", json={"name": "The Bs"})
-    assert res.status_code == 201, res.text
-    return homeless
 
 
 def test_bootstrap_owner_lands_in_a_family(owner):

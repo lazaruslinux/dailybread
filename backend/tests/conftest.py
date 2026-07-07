@@ -25,6 +25,8 @@ from app.main import app as real_app
 OWNER = {"username": "owner", "display_name": "Owner Parent", "password": "owner-pass-123"}
 PARENT = {"username": "parent2", "display_name": "Second Parent", "password": "parent-pass-123"}
 CHILD = {"username": "kid", "display_name": "The Kid", "password": "child-pass-123"}
+# A second household, for cross-family isolation checks.
+JOSH = {"username": "josh", "display_name": "Josh", "password": "josh-pass-1234"}
 
 
 @pytest.fixture()
@@ -100,6 +102,22 @@ def child(app, owner) -> TestClient:
     res = owner.post("/auth/users", json={**CHILD, "role": "child"})
     assert res.status_code == 201, res.text
     return login(app, CHILD)
+
+
+@pytest.fixture()
+def homeless(app, owner) -> TestClient:
+    """A new-household account that hasn't created its family yet."""
+    res = owner.post("/auth/users", json={**JOSH, "role": "parent", "new_household": True})
+    assert res.status_code == 201, res.text
+    return login(app, JOSH)
+
+
+@pytest.fixture()
+def other(homeless) -> TestClient:
+    """Family B's head of household, with its family created (for isolation)."""
+    res = homeless.post("/families", json={"name": "The Bs"})
+    assert res.status_code == 201, res.text
+    return homeless
 
 
 def user_id(client: TestClient) -> int:

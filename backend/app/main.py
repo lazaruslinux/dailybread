@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.db import db_ok
-from app.routers import auth, families, grocery, items, users
+from app.routers import auth, families, grocery, items, recipes, users
 
 # Schema management moved to Alembic: the container entrypoint runs
 # "alembic upgrade head" before starting the server, so by the time the app
@@ -39,6 +39,7 @@ app.include_router(auth.router)
 app.include_router(families.router)
 app.include_router(grocery.router)
 app.include_router(items.router)
+app.include_router(recipes.router)
 app.include_router(users.router)
 
 
