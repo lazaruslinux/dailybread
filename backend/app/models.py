@@ -254,12 +254,12 @@ class GroceryItem(Base):
 class Recipe(Base):
     """A saved family recipe: what it is, how to make it, and its nutrition per
     serving. The week planner points meals at these, so choosing a night's
-    dinner is just picking one — the ingredients and macros were entered once.
+    dinner is just picking one — the ingredients were entered once.
 
-    Nutrition is per serving and entered by the cook (not computed from a food
-    database yet); each field is nullable so a recipe can be saved before its
-    macros are worked out. Ingredients are one-per-line text for now; a later
-    "add to the grocery list" splits them on newlines."""
+    Nutrition isn't stored: it's computed by scaling each ingredient's food
+    (per-100g macros) by its amount, then dividing by servings. Ingredients are
+    structured rows (a food + how much of it), so "add to the grocery list" and
+    macro totals both fall out of the same data instead of parsing free text."""
 
     __tablename__ = "recipes"
 
@@ -267,16 +267,49 @@ class Recipe(Base):
     family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
     name: Mapped[str] = mapped_column(String(120))
     servings: Mapped[int] = mapped_column(Integer, default=1)
-    calories: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    protein_g: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    carbs_g: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    fat_g: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    ingredients: Mapped[str] = mapped_column(Text, default="")
     steps: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )
+
+    # The ingredient lines, in the order the cook entered them. Deleting a recipe
+    # takes its lines with it (delete-orphan here, ON DELETE CASCADE in the DB).
+    ingredients: Mapped[list["RecipeIngredient"]] = relationship(
+        cascade="all, delete-orphan",
+        order_by="RecipeIngredient.position",
+        back_populates="recipe",
+    )
+
+
+# How many grams one unit of measure weighs. Kept to mass units on purpose: a
+# volume like "1 cup" only converts to grams with the food's density, which the
+# databases don't give us, so we don't pretend to know it.
+GRAMS_PER_UNIT: dict[str, float] = {"g": 1.0, "oz": 28.3495, "lb": 453.592}
+
+
+class RecipeIngredient(Base):
+    """One line of a recipe: a food and how much of it. The amount is stored in
+    the unit the cook typed (grams, ounces, pounds) for honest redisplay; grams
+    (and therefore nutrition) are derived from it via GRAMS_PER_UNIT."""
+
+    __tablename__ = "recipe_ingredients"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    recipe_id: Mapped[int] = mapped_column(
+        ForeignKey("recipes.id", ondelete="CASCADE"), index=True
+    )
+    food_id: Mapped[int] = mapped_column(ForeignKey("foods.id"), index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    amount: Mapped[float] = mapped_column(Float, default=0.0)
+    unit: Mapped[str] = mapped_column(String(4), default="g")
+
+    recipe: Mapped[Recipe] = relationship(back_populates="ingredients")
+    food: Mapped["Food"] = relationship()
+
+    @property
+    def grams(self) -> float:
+        return self.amount * GRAMS_PER_UNIT.get(self.unit, 1.0)
 
 
 class FoodSource(str, enum.Enum):

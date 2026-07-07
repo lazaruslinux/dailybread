@@ -313,31 +313,110 @@ export const clearCheckedGrocery = (listId: number | null) =>
     method: 'POST',
   })
 
+// ---- foods --------------------------------------------------------------------
+
+export type FoodSource = 'usda' | 'off' | 'custom'
+
+// A food with per-100g nutrition. `id` is null for an un-saved search/barcode
+// result (the server saves it when it's first used in a recipe); set for a
+// stored custom food. macros are null when a source didn't supply them.
+export interface Food {
+  id: number | null
+  source: FoodSource
+  source_id: string | null
+  name: string
+  brand: string
+  calories: number | null
+  protein_g: number | null
+  carbs_g: number | null
+  fat_g: number | null
+}
+
+export interface CustomFoodPayload {
+  name: string
+  brand?: string
+  calories?: number | null
+  protein_g?: number | null
+  carbs_g?: number | null
+  fat_g?: number | null
+}
+
+export const searchFoods = (q: string) =>
+  request<Food[]>(`/foods/search?q=${encodeURIComponent(q)}`)
+
+export const lookupBarcode = (code: string) => request<Food>(`/foods/barcode/${code}`)
+
+export const getCustomFoods = () => request<Food[]>('/foods')
+
+export const createCustomFood = (payload: CustomFoodPayload) =>
+  request<Food>('/foods', { method: 'POST', body: JSON.stringify(payload) })
+
 // ---- recipes ------------------------------------------------------------------
+
+export type MassUnit = 'g' | 'oz' | 'lb'
+
+// One saved ingredient line: what food, how much, and the macros that amount
+// contributes (per-100g scaled by grams), so the client totals without redoing
+// the math. `grams` is the canonical amount those contributions are based on.
+export interface RecipeIngredient {
+  id: number
+  food_id: number
+  source: FoodSource
+  source_id: string | null
+  name: string
+  brand: string
+  amount: number
+  unit: string
+  grams: number
+  calories: number | null
+  protein_g: number | null
+  carbs_g: number | null
+  fat_g: number | null
+}
+
+// Per-serving nutrition, computed from the lines. A field is null when no
+// ingredient supplied that macro (so it reads "—", not a misleading 0).
+export interface RecipeMacros {
+  calories: number | null
+  protein_g: number | null
+  carbs_g: number | null
+  fat_g: number | null
+}
 
 export interface Recipe {
   id: number
   name: string
   servings: number
-  // Per serving; null when the cook hasn't filled it in.
-  calories: number | null
-  protein_g: number | null
-  carbs_g: number | null
-  fat_g: number | null
-  ingredients: string // one per line
   steps: string
+  ingredients: RecipeIngredient[]
+  per_serving: RecipeMacros
 }
 
-// Create/edit payload. Macros omitted (undefined) stay; sent as null they clear.
-export interface RecipePayload {
+// An ingredient line being saved. It carries the whole food (not just an id):
+// a search/barcode food isn't in our database until it's used, so saving the
+// recipe is what persists it. `food_id` is set only when reusing a food that's
+// already saved (a custom food, or one a prior recipe cached).
+export interface RecipeIngredientPayload {
+  food_id?: number | null
+  source: FoodSource
+  source_id?: string | null
   name: string
-  servings?: number
+  brand?: string
   calories?: number | null
   protein_g?: number | null
   carbs_g?: number | null
   fat_g?: number | null
-  ingredients?: string
+  amount: number
+  unit: MassUnit
+}
+
+// Create/edit payload. On edit, omitting `ingredients` leaves them; sending the
+// array replaces the whole list.
+export interface RecipePayload {
+  name: string
+  servings?: number
   steps?: string
+  ingredients?: RecipeIngredientPayload[]
 }
 
 export const getRecipes = () => request<Recipe[]>('/recipes')

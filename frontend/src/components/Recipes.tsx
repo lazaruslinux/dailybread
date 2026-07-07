@@ -1,19 +1,111 @@
 import { motion } from 'framer-motion'
-import { BookOpen, Pencil, Plus, Trash2, X } from 'lucide-react'
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { BookOpen, ChevronLeft, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { Button, FormError } from './ui'
 
-// "520 cal · 31P / 45C / 22F", skipping any macro that isn't filled in.
-function macroSummary(r: api.Recipe): string {
+// Mass units only: a volume like "1 cup" needs the food's density to become
+// grams, which the databases don't give us, so we don't offer it. Mirror of the
+// backend GRAMS_PER_UNIT — nutrition is computed live here as the cook edits.
+const GRAMS_PER_UNIT: Record<api.MassUnit, number> = { g: 1, oz: 28.3495, lb: 453.592 }
+const UNITS: api.MassUnit[] = ['g', 'oz', 'lb']
+
+// An ingredient line while editing: the food's per-100g macros travel with it so
+// totals recompute instantly, without a round-trip, when the amount changes.
+interface EditLine {
+  key: string
+  food_id: number | null
+  source: api.FoodSource
+  source_id: string | null
+  name: string
+  brand: string
+  calories: number | null
+  protein_g: number | null
+  carbs_g: number | null
+  fat_g: number | null
+  amount: number
+  unit: api.MassUnit
+}
+
+let _keySeq = 0
+const nextKey = () => `l${_keySeq++}`
+
+function lineFromFood(food: api.Food): EditLine {
+  return {
+    key: nextKey(),
+    food_id: food.id,
+    source: food.source,
+    source_id: food.source_id,
+    name: food.name,
+    brand: food.brand,
+    calories: food.calories,
+    protein_g: food.protein_g,
+    carbs_g: food.carbs_g,
+    fat_g: food.fat_g,
+    amount: 100,
+    unit: 'g',
+  }
+}
+
+// Rebuild an editor line from a saved recipe line. The API sends each macro
+// already scaled to the line's grams, so back out the per-100g figure the
+// editor works in (grams is always > 0 for a saved line).
+function lineFromSaved(ing: api.RecipeIngredient): EditLine {
+  const per100 = (v: number | null) => (v != null && ing.grams > 0 ? (v * 100) / ing.grams : null)
+  return {
+    key: nextKey(),
+    food_id: ing.food_id,
+    source: ing.source,
+    source_id: ing.source_id,
+    name: ing.name,
+    brand: ing.brand,
+    calories: per100(ing.calories),
+    protein_g: per100(ing.protein_g),
+    carbs_g: per100(ing.carbs_g),
+    fat_g: per100(ing.fat_g),
+    amount: ing.amount,
+    unit: (ing.unit as api.MassUnit) in GRAMS_PER_UNIT ? (ing.unit as api.MassUnit) : 'g',
+  }
+}
+
+const gramsOf = (l: EditLine) => l.amount * GRAMS_PER_UNIT[l.unit]
+
+const MACROS = ['calories', 'protein_g', 'carbs_g', 'fat_g'] as const
+type Macro = (typeof MACROS)[number]
+
+// Per-serving totals, live, from the editor lines. A macro stays null until some
+// food supplies it, so an empty or macro-less recipe reads "—", never a fake 0.
+function perServing(lines: EditLine[], servings: number): api.RecipeMacros {
+  const totals: Record<Macro, number | null> = { calories: null, protein_g: null, carbs_g: null, fat_g: null }
+  for (const l of lines) {
+    const factor = gramsOf(l) / 100
+    for (const m of MACROS) {
+      const v = l[m]
+      if (v != null) totals[m] = (totals[m] ?? 0) + v * factor
+    }
+  }
+  const s = servings || 1
+  const round1 = (v: number | null) => (v != null ? Math.round((v / s) * 10) / 10 : null)
+  return {
+    calories: round1(totals.calories),
+    protein_g: round1(totals.protein_g),
+    carbs_g: round1(totals.carbs_g),
+    fat_g: round1(totals.fat_g),
+  }
+}
+
+const fmt = (n: number | null) => (n != null ? String(Math.round(n)) : '—')
+
+// "125 cal · 13P / 20C / 9F" per serving, skipping any macro nothing supplied.
+function macroSummary(m: api.RecipeMacros): string {
   const parts: string[] = []
-  if (r.calories != null) parts.push(`${r.calories} cal`)
+  if (m.calories != null) parts.push(`${Math.round(m.calories)} cal`)
   const macros = [
-    r.protein_g != null ? `${r.protein_g}P` : null,
-    r.carbs_g != null ? `${r.carbs_g}C` : null,
-    r.fat_g != null ? `${r.fat_g}F` : null,
+    m.protein_g != null ? `${Math.round(m.protein_g)}P` : null,
+    m.carbs_g != null ? `${Math.round(m.carbs_g)}C` : null,
+    m.fat_g != null ? `${Math.round(m.fat_g)}F` : null,
   ].filter(Boolean)
   if (macros.length) parts.push(macros.join(' / '))
   return parts.join(' · ')
@@ -66,7 +158,8 @@ function Stat({ label, value }: { label: string; value: string }) {
   )
 }
 
-// Read-only view of one recipe: nutrition per serving, ingredients, steps.
+// Read-only view of one recipe: computed nutrition per serving, its ingredient
+// lines, and steps.
 function RecipeDetail({
   recipe,
   canEdit,
@@ -82,7 +175,7 @@ function RecipeDetail({
 }) {
   const [armed, setArmed] = useState(false)
   const [busy, setBusy] = useState(false)
-  const dash = (n: number | null) => (n != null ? String(n) : '—')
+  const m = recipe.per_serving
 
   return (
     <Sheet onClose={onClose}>
@@ -101,18 +194,29 @@ function RecipeDetail({
       </p>
 
       <div className="mt-4 flex gap-2">
-        <Stat label="Cal" value={dash(recipe.calories)} />
-        <Stat label="Protein" value={dash(recipe.protein_g)} />
-        <Stat label="Carbs" value={dash(recipe.carbs_g)} />
-        <Stat label="Fat" value={dash(recipe.fat_g)} />
+        <Stat label="Cal" value={fmt(m.calories)} />
+        <Stat label="Protein" value={fmt(m.protein_g)} />
+        <Stat label="Carbs" value={fmt(m.carbs_g)} />
+        <Stat label="Fat" value={fmt(m.fat_g)} />
       </div>
 
-      {recipe.ingredients.trim() && (
+      {recipe.ingredients.length > 0 && (
         <div className="mt-5">
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-fg/40">Ingredients</span>
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-fg/80">{recipe.ingredients}</p>
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/40">Ingredients</span>
+          <ul className="flex flex-col gap-1">
+            {recipe.ingredients.map((ing) => (
+              <li key={ing.id} className="flex items-baseline justify-between gap-3 text-sm">
+                <span className="text-fg/85">{ing.name}</span>
+                <span className="shrink-0 tabular-nums text-fg/45">
+                  {+ing.amount.toFixed(2)} {ing.unit}
+                  {ing.calories != null && ` · ${Math.round(ing.calories)} cal`}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
+
       {recipe.steps.trim() && (
         <div className="mt-4">
           <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-fg/40">Steps</span>
@@ -152,33 +256,192 @@ function RecipeDetail({
   )
 }
 
-// A macro number field: empty means "not filled in" (null).
-function NumField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string
-  value: number | null
-  onChange: (v: number | null) => void
-}) {
+// The food picker: search the USDA database (server-proxied) and the family's
+// own custom foods, tap one to add it as an ingredient. Barcode scanning is a
+// later step; this covers search + custom for now.
+function FoodPicker({ onPick, onBack }: { onPick: (food: api.Food) => void; onBack: () => void }) {
+  const [q, setQ] = useState('')
+  const [results, setResults] = useState<api.Food[]>([])
+  const [custom, setCustom] = useState<api.Food[]>([])
+  const [searching, setSearching] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // The family's custom foods are always shown (they're a short list); load once.
+  useEffect(() => {
+    api.getCustomFoods().then(setCustom).catch(() => {})
+  }, [])
+
+  // Debounce search so we don't hit the server on every keystroke.
+  useEffect(() => {
+    const query = q.trim()
+    if (query.length < 2) {
+      setResults([])
+      setSearching(false)
+      return
+    }
+    setSearching(true)
+    const id = setTimeout(async () => {
+      try {
+        setResults(await api.searchFoods(query))
+        setError(null)
+      } catch (err) {
+        setError(err instanceof api.ApiError ? err.message : 'Search failed.')
+        setResults([])
+      } finally {
+        setSearching(false)
+      }
+    }, 350)
+    return () => clearTimeout(id)
+  }, [q])
+
+  const shownCustom = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    return needle ? custom.filter((f) => f.name.toLowerCase().includes(needle)) : custom
+  }, [custom, q])
+
+  function Row({ food }: { food: api.Food }) {
+    return (
+      <button
+        type="button"
+        onClick={() => onPick(food)}
+        className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-fg/10"
+      >
+        <span className="min-w-0">
+          <span className="block truncate text-sm">{food.name}</span>
+          {food.brand && <span className="block truncate text-xs text-fg/45">{food.brand}</span>}
+        </span>
+        {food.calories != null && (
+          <span className="shrink-0 text-xs tabular-nums text-fg/45">{Math.round(food.calories)}/100g</span>
+        )}
+      </button>
+    )
+  }
+
   return (
-    <label className="flex flex-1 flex-col gap-1">
-      <span className="text-[10px] font-semibold uppercase tracking-wide text-fg/45">{label}</span>
-      <input
-        inputMode="numeric"
-        value={value ?? ''}
-        onChange={(e) => {
-          const digits = e.target.value.replace(/[^0-9]/g, '')
-          onChange(digits === '' ? null : Number(digits))
-        }}
-        className="field text-center"
-      />
-    </label>
+    <div>
+      <div className="mb-3 flex items-center gap-2">
+        <button onClick={onBack} aria-label="Back" className="rounded-lg p-1.5 text-fg/50 hover:bg-fg/10 hover:text-fg">
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        <span className="text-xs font-semibold uppercase tracking-wide text-accent-bright">Add ingredient</span>
+      </div>
+
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search foods (e.g. chicken breast)"
+          className="field"
+          // Inline pad-left clears the search icon; a `pl-9` utility loses to
+          // `.field`'s own padding (same specificity, .field defined later).
+          style={{ paddingLeft: '2.25rem' }}
+          autoFocus
+        />
+      </div>
+
+      <FormError message={error} />
+
+      <div className="mt-3 flex flex-col gap-3">
+        {shownCustom.length > 0 && (
+          <div>
+            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-fg/40">Your foods</span>
+            <div className="flex flex-col">
+              {shownCustom.map((f) => (
+                <Row key={`c${f.id}`} food={f} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {q.trim().length >= 2 && (
+          <div>
+            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-fg/40">
+              Food database
+            </span>
+            {searching ? (
+              <p className="px-2.5 py-3 text-sm text-fg/45">Searching…</p>
+            ) : results.length === 0 ? (
+              <p className="px-2.5 py-3 text-sm text-fg/45">No matches.</p>
+            ) : (
+              <div className="flex flex-col">
+                {results.map((f) => (
+                  <Row key={`${f.source}:${f.source_id}`} food={f} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {q.trim().length < 2 && shownCustom.length === 0 && (
+          <p className="px-2.5 py-6 text-center text-sm text-fg/45">
+            Type to search the food database, or add custom foods first.
+          </p>
+        )}
+      </div>
+    </div>
   )
 }
 
-// Create or edit a recipe.
+// One editable ingredient line: amount + unit, its live contribution, remove.
+function LineRow({
+  line,
+  onChange,
+  onRemove,
+}: {
+  line: EditLine
+  onChange: (l: EditLine) => void
+  onRemove: () => void
+}) {
+  const cals = line.calories != null ? Math.round((line.calories * gramsOf(line)) / 100) : null
+  return (
+    <div className="flex items-center gap-2 rounded-xl bg-fg/5 px-3 py-2">
+      <div className="min-w-0 flex-1">
+        <span className="block truncate text-sm">{line.name}</span>
+        {cals != null && <span className="block text-xs text-fg/45">{cals} cal</span>}
+      </div>
+      {/* `.field` is width:100%, so size these by a fixed-width parent (like the
+          servings field does) rather than a width utility it would override. */}
+      <div className="w-16 shrink-0">
+        <input
+          inputMode="decimal"
+          value={line.amount === 0 ? '' : String(line.amount)}
+          onChange={(e) => {
+            const v = e.target.value.replace(/[^0-9.]/g, '')
+            onChange({ ...line, amount: v === '' ? 0 : Number(v) })
+          }}
+          className="field px-2 text-center"
+          aria-label={`Amount of ${line.name}`}
+        />
+      </div>
+      <div className="w-16 shrink-0">
+        <select
+          value={line.unit}
+          onChange={(e) => onChange({ ...line, unit: e.target.value as api.MassUnit })}
+          className="field px-2"
+          aria-label={`Unit for ${line.name}`}
+        >
+          {UNITS.map((u) => (
+            <option key={u} value={u}>
+              {u}
+            </option>
+          ))}
+        </select>
+      </div>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Remove ${line.name}`}
+        className="rounded-lg p-1.5 text-fg/40 hover:bg-fg/10 hover:text-danger"
+      >
+        <Trash2 className="h-4 w-4" />
+      </button>
+    </div>
+  )
+}
+
+// Create or edit a recipe: name, servings, ingredient lines (with a food
+// picker), live per-serving nutrition, and steps.
 function RecipeSheet({
   recipe,
   onClose,
@@ -190,14 +453,17 @@ function RecipeSheet({
 }) {
   const [name, setName] = useState(recipe?.name ?? '')
   const [servings, setServings] = useState<number | null>(recipe?.servings ?? 1)
-  const [calories, setCalories] = useState<number | null>(recipe?.calories ?? null)
-  const [protein, setProtein] = useState<number | null>(recipe?.protein_g ?? null)
-  const [carbs, setCarbs] = useState<number | null>(recipe?.carbs_g ?? null)
-  const [fat, setFat] = useState<number | null>(recipe?.fat_g ?? null)
-  const [ingredients, setIngredients] = useState(recipe?.ingredients ?? '')
+  const [lines, setLines] = useState<EditLine[]>(() => (recipe?.ingredients ?? []).map(lineFromSaved))
   const [steps, setSteps] = useState(recipe?.steps ?? '')
+  const [picking, setPicking] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  const totals = useMemo(() => perServing(lines, servings ?? 1), [lines, servings])
+
+  const setLine = (key: string, next: EditLine) =>
+    setLines((ls) => ls.map((l) => (l.key === key ? next : l)))
+  const removeLine = (key: string) => setLines((ls) => ls.filter((l) => l.key !== key))
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -208,12 +474,22 @@ function RecipeSheet({
     const payload: api.RecipePayload = {
       name: trimmed,
       servings: servings ?? 1,
-      calories,
-      protein_g: protein,
-      carbs_g: carbs,
-      fat_g: fat,
-      ingredients,
       steps,
+      ingredients: lines
+        .filter((l) => l.amount > 0)
+        .map((l) => ({
+          food_id: l.food_id,
+          source: l.source,
+          source_id: l.source_id,
+          name: l.name,
+          brand: l.brand,
+          calories: l.calories,
+          protein_g: l.protein_g,
+          carbs_g: l.carbs_g,
+          fat_g: l.fat_g,
+          amount: l.amount,
+          unit: l.unit,
+        })),
     }
     try {
       if (recipe) await api.updateRecipe(recipe.id, payload)
@@ -224,6 +500,20 @@ function RecipeSheet({
     } finally {
       setBusy(false)
     }
+  }
+
+  if (picking) {
+    return (
+      <Sheet onClose={onClose}>
+        <FoodPicker
+          onBack={() => setPicking(false)}
+          onPick={(food) => {
+            setLines((ls) => [...ls, lineFromFood(food)])
+            setPicking(false)
+          }}
+        />
+      </Sheet>
+    )
   }
 
   return (
@@ -250,40 +540,56 @@ function RecipeSheet({
           />
         </label>
 
-        <div className="flex items-end gap-3">
-          <label className="flex w-24 flex-col gap-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-fg/45">Servings</span>
-            <input
-              inputMode="numeric"
-              value={servings ?? ''}
-              onChange={(e) => {
-                const d = e.target.value.replace(/[^0-9]/g, '')
-                setServings(d === '' ? null : Number(d))
-              }}
-              className="field text-center"
-            />
-          </label>
-          <p className="pb-2 text-xs text-fg/40">Nutrition below is per serving.</p>
-        </div>
-
-        <div className="flex gap-2">
-          <NumField label="Cal" value={calories} onChange={setCalories} />
-          <NumField label="Protein" value={protein} onChange={setProtein} />
-          <NumField label="Carbs" value={carbs} onChange={setCarbs} />
-          <NumField label="Fat" value={fat} onChange={setFat} />
-        </div>
-
-        <label className="flex flex-col gap-1">
-          <span className="text-xs font-semibold uppercase tracking-wide text-fg/45">Ingredients</span>
-          <textarea
-            value={ingredients}
-            onChange={(e) => setIngredients(e.target.value)}
-            rows={4}
-            maxLength={5000}
-            placeholder={'One per line\nGround beef\nRice'}
-            className="field resize-y leading-relaxed"
+        <label className="flex w-28 flex-col gap-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-fg/45">Servings</span>
+          <input
+            inputMode="numeric"
+            value={servings ?? ''}
+            onChange={(e) => {
+              const d = e.target.value.replace(/[^0-9]/g, '')
+              setServings(d === '' ? null : Number(d))
+            }}
+            className="field text-center"
           />
         </label>
+
+        <div>
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wide text-fg/45">Ingredients</span>
+            <button
+              type="button"
+              onClick={() => setPicking(true)}
+              className="flex items-center gap-1 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-2.5 py-1 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
+            >
+              <Plus className="h-3.5 w-3.5" strokeWidth={2.5} /> Add
+            </button>
+          </div>
+          {lines.length === 0 ? (
+            <p className="rounded-xl bg-fg/5 px-3 py-4 text-center text-sm text-fg/45">
+              Add foods and their amounts — nutrition adds up as you go.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {lines.map((l) => (
+                <LineRow key={l.key} line={l} onChange={(n) => setLine(l.key, n)} onRemove={() => removeLine(l.key)} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {lines.length > 0 && (
+          <div>
+            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-fg/45">
+              Per serving
+            </span>
+            <div className="flex gap-2">
+              <Stat label="Cal" value={fmt(totals.calories)} />
+              <Stat label="Protein" value={fmt(totals.protein_g)} />
+              <Stat label="Carbs" value={fmt(totals.carbs_g)} />
+              <Stat label="Fat" value={fmt(totals.fat_g)} />
+            </div>
+          </div>
+        )}
 
         <label className="flex flex-col gap-1">
           <span className="text-xs font-semibold uppercase tracking-wide text-fg/45">Steps (optional)</span>
@@ -308,8 +614,9 @@ function RecipeSheet({
 
 type View = { mode: 'closed' } | { mode: 'detail'; recipe: api.Recipe } | { mode: 'edit'; recipe: api.Recipe | null }
 
-// The family recipe box: saved recipes with per-serving nutrition. Everyone can
-// browse; only parents add, edit, or delete. Self-contained like GroceryPanel.
+// The family recipe box: saved recipes with computed per-serving nutrition.
+// Everyone can browse; only parents add, edit, or delete. Self-contained like
+// GroceryPanel.
 export function RecipeBox() {
   const { user } = useAuth()
   const canEdit = user?.role === 'parent'
@@ -317,18 +624,26 @@ export function RecipeBox() {
   const [recipes, setRecipes] = useState<api.Recipe[]>([])
   const [error, setError] = useState<string | null>(null)
   const [view, setView] = useState<View>({ mode: 'closed' })
+  const mounted = useRef(true)
 
   const refresh = useCallback(async () => {
     try {
-      setRecipes(await api.getRecipes())
-      setError(null)
+      const box = await api.getRecipes()
+      if (mounted.current) {
+        setRecipes(box)
+        setError(null)
+      }
     } catch (err) {
-      setError(err instanceof api.ApiError ? err.message : 'Could not load recipes.')
+      if (mounted.current) setError(err instanceof api.ApiError ? err.message : 'Could not load recipes.')
     }
   }, [])
 
   useEffect(() => {
+    mounted.current = true
     refresh()
+    return () => {
+      mounted.current = false
+    }
   }, [refresh])
 
   async function onDelete(id: number) {
@@ -361,7 +676,7 @@ export function RecipeBox() {
       ) : (
         <ul className="flex flex-col gap-2">
           {recipes.map((r) => {
-            const summary = macroSummary(r)
+            const summary = macroSummary(r.per_serving)
             return (
               <li key={r.id}>
                 <button

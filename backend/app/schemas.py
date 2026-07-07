@@ -1,4 +1,5 @@
 import datetime as dt
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -277,46 +278,89 @@ class GroceryStateOut(BaseModel):
 # ---- recipes -------------------------------------------------------------------
 
 
+MassUnit = Literal["g", "oz", "lb"]
+
+
+class RecipeIngredientIn(BaseModel):
+    """One ingredient line the cook is saving. It carries the food itself, not
+    just a reference: a food picked from search or a barcode isn't in our
+    database until it's used, so the recipe save is what persists it. `food_id`
+    is set only when reusing a food that's already saved (a custom food, or one
+    a previous recipe already cached); otherwise source/source_id/name/macros
+    describe the food to find-or-create."""
+
+    food_id: int | None = None
+    source: FoodSource
+    source_id: str | None = Field(default=None, max_length=64)
+    name: str = Field(min_length=1, max_length=200)
+    brand: str = Field(default="", max_length=120)
+    calories: float | None = Field(default=None, ge=0, le=100000)
+    protein_g: float | None = Field(default=None, ge=0, le=10000)
+    carbs_g: float | None = Field(default=None, ge=0, le=10000)
+    fat_g: float | None = Field(default=None, ge=0, le=10000)
+    amount: float = Field(gt=0, le=100000)
+    unit: MassUnit = "g"
+
+
 class RecipeIn(BaseModel):
-    """A parent creating a recipe. Nutrition is per serving and optional (the
-    cook fills it in); ingredients are one per line."""
+    """A parent creating a recipe. Nutrition isn't sent — it's computed from the
+    ingredient lines. A recipe can be saved with no ingredients yet."""
 
     name: str = Field(min_length=1, max_length=120)
     servings: int = Field(default=1, ge=1, le=100)
-    calories: int | None = Field(default=None, ge=0, le=100000)
-    protein_g: int | None = Field(default=None, ge=0, le=10000)
-    carbs_g: int | None = Field(default=None, ge=0, le=10000)
-    fat_g: int | None = Field(default=None, ge=0, le=10000)
-    ingredients: str = Field(default="", max_length=5000)
     steps: str = Field(default="", max_length=10000)
+    ingredients: list[RecipeIngredientIn] = Field(default_factory=list, max_length=100)
 
 
 class RecipeUpdate(BaseModel):
-    """Editing a recipe. Omitted fields stay; a macro sent as null clears it
-    (told apart from "omitted" via model_fields_set, like ItemUpdate)."""
+    """Editing a recipe. Omitted fields stay (told apart from "sent" via
+    model_fields_set, like ItemUpdate); sending `ingredients` replaces the whole
+    list, which is how the editor works — it posts the lines it currently has."""
 
     name: str | None = Field(default=None, min_length=1, max_length=120)
     servings: int | None = Field(default=None, ge=1, le=100)
-    calories: int | None = Field(default=None, ge=0, le=100000)
-    protein_g: int | None = Field(default=None, ge=0, le=10000)
-    carbs_g: int | None = Field(default=None, ge=0, le=10000)
-    fat_g: int | None = Field(default=None, ge=0, le=10000)
-    ingredients: str | None = Field(default=None, max_length=5000)
     steps: str | None = Field(default=None, max_length=10000)
+    ingredients: list[RecipeIngredientIn] | None = Field(default=None, max_length=100)
+
+
+class RecipeIngredientOut(BaseModel):
+    """A saved ingredient line: what food, how much, and the macros that amount
+    contributes (per-100g scaled by grams) so the client can total without
+    re-deriving. `grams` is the canonical amount the contribution is based on."""
+
+    id: int
+    food_id: int
+    source: FoodSource
+    source_id: str | None
+    name: str
+    brand: str
+    amount: float
+    unit: str
+    grams: float
+    calories: float | None
+    protein_g: float | None
+    carbs_g: float | None
+    fat_g: float | None
+
+
+class RecipeMacros(BaseModel):
+    """Per-serving nutrition, computed from the ingredient lines. A field is null
+    only when no ingredient supplied that macro at all (so an empty recipe, or
+    foods that never listed protein, reads as "—" rather than a misleading 0)."""
+
+    calories: float | None
+    protein_g: float | None
+    carbs_g: float | None
+    fat_g: float | None
 
 
 class RecipeOut(BaseModel):
     id: int
     name: str
     servings: int
-    calories: int | None
-    protein_g: int | None
-    carbs_g: int | None
-    fat_g: int | None
-    ingredients: str
     steps: str
-
-    model_config = {"from_attributes": True}
+    ingredients: list[RecipeIngredientOut]
+    per_serving: RecipeMacros
 
 
 # ---- foods (database cache + custom) -------------------------------------------
