@@ -5,7 +5,7 @@ import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { Avatar } from '../components/Avatar'
 import { ItemDetail } from '../components/ItemDetail'
-import { KIND_STYLE } from '../components/ItemCard'
+import { KIND_STYLE, SectionDivider } from '../components/ItemCard'
 import { ItemSheet } from '../components/ItemSheet'
 import { FormError } from '../components/ui'
 import { canCheckItem } from '../lib/items'
@@ -265,6 +265,8 @@ export function Calendar() {
       }
       g.items.push(item)
     }
+    // Done cards sink to the bottom of each day.
+    for (const g of groups) g.items.sort((a, b) => Number(a.completed) - Number(b.completed))
     return groups
   }, [overviewShown])
 
@@ -329,6 +331,26 @@ export function Calendar() {
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Could not remove the card.')
     }
+  }
+
+  // A day's cards split into what's still to do (top) and what's done (a
+  // "Completed" section at the bottom), so a checked-off card settles out of
+  // the way instead of sitting up top.
+  const openItems = selectedItems.filter((i) => !i.completed)
+  const doneItems = selectedItems.filter((i) => i.completed)
+
+  const renderRow = (item: api.FeedItem, dayISO: string) => {
+    const canMark = markable(dayISO) && canCheckItem(item, user)
+    return (
+      <AgendaRow
+        key={`${item.id}-${dayISO}`}
+        item={item}
+        family={family}
+        checkable={canMark}
+        onToggle={canMark ? () => toggle(item, dayISO) : undefined}
+        onOpen={() => setDetail({ item, day: dayISO })}
+      />
+    )
   }
 
   const weeks = useMemo(() => {
@@ -465,19 +487,17 @@ export function Calendar() {
             <p className="glass p-6 text-center text-sm text-fg/50">Nothing scheduled.</p>
           ) : (
             <div className="flex flex-col gap-2.5">
-              {selectedItems.map((item) => {
-                const canMark = markable(selected) && canCheckItem(item, user)
-                return (
-                  <AgendaRow
-                    key={`${item.id}-${selected}`}
-                    item={item}
-                    family={family}
-                    checkable={canMark}
-                    onToggle={canMark ? () => toggle(item, selected) : undefined}
-                    onOpen={() => setDetail({ item, day: selected })}
-                  />
-                )
-              })}
+              {openItems.length > 0 ? (
+                openItems.map((item) => renderRow(item, selected))
+              ) : (
+                <p className="glass p-6 text-center text-sm text-fg/55">All done for this day.</p>
+              )}
+              {doneItems.length > 0 && (
+                <>
+                  <SectionDivider label="Completed" />
+                  {doneItems.map((item) => renderRow(item, selected))}
+                </>
+              )}
             </div>
           )}
         </div>
@@ -495,19 +515,7 @@ export function Calendar() {
                 <div key={g.date}>
                   <p className="mb-1.5 pl-1 text-[11px] font-semibold text-fg/45">{dayHeading(g.date, todayISO)}</p>
                   <div className="flex flex-col gap-2.5">
-                    {g.items.map((item) => {
-                      const canMark = markable(g.date) && canCheckItem(item, user)
-                      return (
-                        <AgendaRow
-                          key={`${item.id}-${g.date}`}
-                          item={item}
-                          family={family}
-                          checkable={canMark}
-                          onToggle={canMark ? () => toggle(item, g.date) : undefined}
-                          onOpen={() => setDetail({ item, day: g.date })}
-                        />
-                      )
-                    })}
+                    {g.items.map((item) => renderRow(item, g.date))}
                   </div>
                 </div>
               ))}
