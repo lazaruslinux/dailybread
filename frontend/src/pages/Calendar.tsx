@@ -431,8 +431,8 @@ export function Calendar() {
         </div>
 
         <div className="mb-1 grid grid-cols-7">
-          {DOW.map((lbl) => (
-            <span key={lbl} className="text-center text-[10px] font-semibold uppercase tracking-wide text-fg/40">
+          {DOW.map((lbl, i) => (
+            <span key={i} className="text-center text-[10px] font-semibold uppercase tracking-wide text-fg/40">
               {lbl}
             </span>
           ))}
