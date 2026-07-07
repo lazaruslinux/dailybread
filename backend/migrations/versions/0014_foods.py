@@ -17,17 +17,14 @@ down_revision = "0013"
 branch_labels = None
 depends_on = None
 
-food_source = sa.Enum("usda", "off", "custom", name="food_source")
-
-
 def upgrade() -> None:
-    bind = op.get_bind()
-    food_source.create(bind, checkfirst=True)
+    # The inline Enum creates the food_source type as part of CREATE TABLE
+    # (Postgres); downgrade drops the type after the table.
     op.create_table(
         "foods",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("family_id", sa.Integer(), sa.ForeignKey("families.id"), nullable=True),
-        sa.Column("source", food_source, nullable=False),
+        sa.Column("source", sa.Enum("usda", "off", "custom", name="food_source"), nullable=False),
         sa.Column("source_id", sa.String(length=64), nullable=True),
         sa.Column("name", sa.String(length=200), nullable=False),
         sa.Column("brand", sa.String(length=120), nullable=False, server_default=""),
@@ -45,4 +42,4 @@ def downgrade() -> None:
     op.drop_index("ix_foods_source_id", table_name="foods")
     op.drop_index("ix_foods_family_id", table_name="foods")
     op.drop_table("foods")
-    food_source.drop(op.get_bind(), checkfirst=True)
+    op.execute("DROP TYPE food_source")

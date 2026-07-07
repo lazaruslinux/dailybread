@@ -64,6 +64,12 @@ def search_usda(query: str, api_key: str, limit: int = 25) -> list[FoodResult]:
         )
     except httpx.HTTPError as e:
         raise FoodApiError("Couldn't reach the food database.") from e
+    if r.status_code == 400:
+        # A malformed/unsearchable query (e.g. odd punctuation) — not an outage.
+        # Treat it as simply no matches rather than an error.
+        return []
+    if r.status_code in (401, 403):
+        raise FoodApiError("The food database rejected the API key.")
     if r.status_code == 429:
         raise FoodApiError("Food search is busy right now; try again in a moment.")
     if r.status_code >= 400:
