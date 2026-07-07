@@ -376,6 +376,7 @@ class FoodOut(BaseModel):
     source_id: str | None = None
     name: str
     brand: str = ""
+    serving: str = ""  # display label for the source's serving; "" when unknown
     calories: float | None = None
     protein_g: float | None = None
     carbs_g: float | None = None

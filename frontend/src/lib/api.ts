@@ -326,6 +326,7 @@ export interface Food {
   source_id: string | null
   name: string
   brand: string
+  serving: string // display label for the source's serving, e.g. "1 slice (21 g)"; "" when unknown
   calories: number | null
   protein_g: number | null
   carbs_g: number | null

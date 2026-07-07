@@ -23,6 +23,7 @@ def _result_out(r: foods_api.FoodResult) -> FoodOut:
         source_id=r.source_id,
         name=r.name,
         brand=r.brand,
+        serving=r.serving,
         calories=r.calories,
         protein_g=r.protein_g,
         carbs_g=r.carbs_g,

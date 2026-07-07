@@ -30,6 +30,7 @@
 
   --glass-bg: rgba(255, 255, 255, 0.66);
   --glass-border: rgba(38, 32, 26, 0.1);
+  --surface: #fdfbf6; /* opaque elevated surface for dialogs (glass would let the backdrop bleed through) */
   --field-bg: rgba(255, 255, 255, 0.72);
   --field-bg-focus: rgba(255, 255, 255, 0.95);
 
@@ -57,6 +58,7 @@
 
   --glass-bg: rgba(255, 255, 255, 0.045);
   --glass-border: rgba(255, 255, 255, 0.1);
+  --surface: #17181b; /* opaque elevated surface, reads above the near-black base */
   --field-bg: rgba(255, 255, 255, 0.05);
   --field-bg-focus: rgba(255, 255, 255, 0.08);
 
@@ -109,6 +111,17 @@ body {
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* Opaque dialog surface. Same geometry as .glass but solid, so a modal over the
+   dimmed backdrop doesn't let the darkness bleed through the card. */
+.sheet-card {
+  border-radius: 1.4rem;
+  border: 1px solid var(--glass-border);
+  background: var(--surface);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 /* Form fields on glass. */

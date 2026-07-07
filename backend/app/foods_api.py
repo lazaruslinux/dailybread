@@ -36,6 +36,7 @@ class FoodResult:
     protein_g: float | None
     carbs_g: float | None
     fat_g: float | None
+    serving: str = ""  # human label for the label serving, e.g. "1 slice (21 g)"
 
 
 def _num(v) -> float | None:
@@ -43,6 +44,21 @@ def _num(v) -> float | None:
         return round(float(v), 2)
     except (TypeError, ValueError):
         return None
+
+
+def _usda_serving(f: dict) -> str:
+    """A display serving from a USDA search hit. Branded foods carry a household
+    text ("1 slice") and/or a gram size; we show whichever we have, both when we
+    can. Foundation/SR Legacy items usually have neither, so this returns ""."""
+    household = (f.get("householdServingFullText") or "").strip()
+    grams = ""
+    size = _num(f.get("servingSize"))
+    if size is not None:
+        unit = (f.get("servingSizeUnit") or "").strip()
+        grams = f"{size:g} {unit}".strip()
+    if household and grams:
+        return f"{household} ({grams})"
+    return household or grams
 
 
 def search_usda(query: str, api_key: str, limit: int = 25) -> list[FoodResult]:
@@ -88,6 +104,7 @@ def search_usda(query: str, api_key: str, limit: int = 25) -> list[FoodResult]:
                 protein_g=_num(by_number.get(_N_PROTEIN)),
                 carbs_g=_num(by_number.get(_N_CARBS)),
                 fat_g=_num(by_number.get(_N_FAT)),
+                serving=_usda_serving(f),
             )
         )
     return results
@@ -98,7 +115,7 @@ def lookup_barcode(barcode: str) -> FoodResult | None:
     try:
         r = httpx.get(
             OFF_PRODUCT_URL.format(barcode=barcode),
-            params={"fields": "product_name,brands,nutriments"},
+            params={"fields": "product_name,brands,nutriments,serving_size"},
             headers={"User-Agent": _UA},
             timeout=_TIMEOUT,
         )
@@ -121,4 +138,5 @@ def lookup_barcode(barcode: str) -> FoodResult | None:
         protein_g=_num(nut.get("proteins_100g")),
         carbs_g=_num(nut.get("carbohydrates_100g")),
         fat_g=_num(nut.get("fat_100g")),
+        serving=(p.get("serving_size") or "").strip(),
     )

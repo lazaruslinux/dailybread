@@ -130,7 +130,7 @@ function Sheet({ children, onClose }: { children: React.ReactNode; onClose: () =
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <motion.div
@@ -138,7 +138,7 @@ function Sheet({ children, onClose }: { children: React.ReactNode; onClose: () =
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 40 }}
         transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-        className="glass max-h-[90svh] w-full max-w-sm overflow-y-auto p-6"
+        className="sheet-card max-h-[90svh] w-full max-w-sm overflow-y-auto p-6"
         role="dialog"
         aria-modal="true"
       >
@@ -256,6 +256,8 @@ function RecipeDetail({
   )
 }
 
+const SOURCE_LABEL: Record<api.FoodSource, string> = { usda: 'USDA', off: 'OFF', custom: 'Custom' }
+
 // The food picker: search the USDA database (server-proxied) and the family's
 // own custom foods, tap one to add it as an ingredient. Barcode scanning is a
 // later step; this covers search + custom for now.
@@ -300,19 +302,22 @@ function FoodPicker({ onPick, onBack }: { onPick: (food: api.Food) => void; onBa
   }, [custom, q])
 
   function Row({ food }: { food: api.Food }) {
+    // Cronometer-style: name on top, the brand + label serving beneath, and the
+    // source database as a badge on the right.
+    const sub = [food.brand, food.serving].filter(Boolean).join(' · ')
     return (
       <button
         type="button"
         onClick={() => onPick(food)}
         className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-fg/10"
       >
-        <span className="min-w-0">
-          <span className="block truncate text-sm">{food.name}</span>
-          {food.brand && <span className="block truncate text-xs text-fg/45">{food.brand}</span>}
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium">{food.name}</span>
+          {sub && <span className="block truncate text-xs text-fg/45">{sub}</span>}
         </span>
-        {food.calories != null && (
-          <span className="shrink-0 text-xs tabular-nums text-fg/45">{Math.round(food.calories)}/100g</span>
-        )}
+        <span className="shrink-0 rounded-md border border-fg/10 bg-fg/5 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fg/50">
+          {SOURCE_LABEL[food.source]}
+        </span>
       </button>
     )
   }
