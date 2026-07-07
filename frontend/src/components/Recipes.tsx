@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion'
 import { BookOpen, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { createPortal } from 'react-dom'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { Button, FormError } from './ui'
@@ -18,9 +19,21 @@ function macroSummary(r: api.Recipe): string {
   return parts.join(' · ')
 }
 
-// The modal shell shared by the view and the editor.
+// The modal shell shared by the view and the editor. Rendered through a portal
+// to <body>: the Kitchen page's frosted `.glass` cards use backdrop-filter,
+// which makes position:fixed anchor to the card instead of the viewport — so a
+// modal nested under one only covers a band (and on iOS the page shows through).
+// The portal lifts it out to the top of the DOM where `fixed inset-0` fills the
+// screen. Body scroll is locked while it's open so the page can't drift behind.
 function Sheet({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  return (
+  useEffect(() => {
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [])
+  return createPortal(
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -39,7 +52,8 @@ function Sheet({ children, onClose }: { children: React.ReactNode; onClose: () =
       >
         {children}
       </motion.div>
-    </motion.div>
+    </motion.div>,
+    document.body,
   )
 }
 
