@@ -19,3 +19,6 @@ pyjwt
 # Avatar uploads: multipart form parsing + image decode/crop/resize/encode
 python-multipart
 pillow
+
+# Outbound food-database lookups (USDA FoodData Central, Open Food Facts)
+httpx

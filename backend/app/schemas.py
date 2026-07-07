@@ -2,7 +2,7 @@ import datetime as dt
 
 from pydantic import BaseModel, Field
 
-from app.models import ItemKind, MoodLevel, RepeatType, Role, Visibility
+from app.models import FoodSource, ItemKind, MoodLevel, RepeatType, Role, Visibility
 
 
 # Pydantic models define the JSON shapes for requests/responses and validate
@@ -317,6 +317,39 @@ class RecipeOut(BaseModel):
     steps: str
 
     model_config = {"from_attributes": True}
+
+
+# ---- foods (database cache + custom) -------------------------------------------
+
+
+class FoodOut(BaseModel):
+    """A food with per-100g nutrition. id is None for an un-saved search/barcode
+    result (the client saves it when it's used in a recipe); set for a stored
+    custom food."""
+
+    id: int | None = None
+    source: FoodSource
+    source_id: str | None = None
+    name: str
+    brand: str = ""
+    calories: float | None = None
+    protein_g: float | None = None
+    carbs_g: float | None = None
+    fat_g: float | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class FoodIn(BaseModel):
+    """A parent adding a custom food the databases don't have. Nutrition is per
+    100 g, to match the USDA/Open Food Facts foods it sits alongside."""
+
+    name: str = Field(min_length=1, max_length=200)
+    brand: str = Field(default="", max_length=120)
+    calories: float | None = Field(default=None, ge=0, le=100000)
+    protein_g: float | None = Field(default=None, ge=0, le=10000)
+    carbs_g: float | None = Field(default=None, ge=0, le=10000)
+    fat_g: float | None = Field(default=None, ge=0, le=10000)
 
 
 # ---- profiles and moods --------------------------------------------------------

@@ -25,5 +25,12 @@ class Settings(BaseSettings):
     # production. Relative paths resolve against the backend working directory.
     media_root: str = "./media"
 
+    # Food database: the server proxies food search to USDA FoodData Central and
+    # barcode lookups to Open Food Facts, so the family's phones never call a
+    # third party directly. A free key from https://fdc.nal.usda.gov/api-key-signup
+    # enables search; empty disables it (barcodes need no key). Recipes compute
+    # their nutrition from foods looked up here.
+    usda_api_key: str = ""
+
 
 settings = Settings()

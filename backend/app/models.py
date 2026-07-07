@@ -6,6 +6,7 @@ from sqlalchemy import (
     Column,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -276,6 +277,41 @@ class Recipe(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )
+
+
+class FoodSource(str, enum.Enum):
+    """Where a food's nutrition came from."""
+
+    usda = "usda"  # USDA FoodData Central (generic + branded)
+    off = "off"  # Open Food Facts (barcodes)
+    custom = "custom"  # a family's own entry for something the databases lack
+
+
+class Food(Base):
+    """A food with per-100g nutrition, used as a recipe ingredient. Rows are
+    either cached from USDA/OFF on first use (family_id NULL = shared across the
+    install) or a family's own custom entry (family_id set). Recipes reference
+    these and compute their totals by scaling each ingredient's amount."""
+
+    __tablename__ = "foods"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # NULL for a shared cache row (a USDA/OFF food anyone can reuse); set for a
+    # family's custom food, which only that family sees.
+    family_id: Mapped[int | None] = mapped_column(
+        ForeignKey("families.id"), nullable=True, index=True
+    )
+    source: Mapped[FoodSource] = mapped_column(SAEnum(FoodSource, name="food_source"))
+    # The FDC id (usda) or barcode (off); NULL for custom foods.
+    source_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    brand: Mapped[str] = mapped_column(String(120), default="")
+    # Nutrition per 100 g; None when a source didn't supply a value.
+    calories: Mapped[float | None] = mapped_column(Float, nullable=True)
+    protein_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    carbs_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fat_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class MoodLevel(str, enum.Enum):
