@@ -722,3 +722,350 @@ export function RecipeBox() {
     </section>
   )
 }
+
+// ---- custom foods -------------------------------------------------------------
+
+type NutriKey =
+  | 'calories'
+  | 'fat_g'
+  | 'saturated_fat_g'
+  | 'trans_fat_g'
+  | 'cholesterol_mg'
+  | 'sodium_mg'
+  | 'carbs_g'
+  | 'fiber_g'
+  | 'sugar_g'
+  | 'protein_g'
+
+// The Nutrition Facts label, in the order a package prints it; sub-nutrients
+// (saturated/trans under fat, fiber/sugar under carbs) are indented.
+const NUTRIENT_ROWS: { key: NutriKey; label: string; unit: string; indent?: boolean }[] = [
+  { key: 'calories', label: 'Energy', unit: 'kcal' },
+  { key: 'fat_g', label: 'Fat', unit: 'g' },
+  { key: 'saturated_fat_g', label: 'Saturated', unit: 'g', indent: true },
+  { key: 'trans_fat_g', label: 'Trans', unit: 'g', indent: true },
+  { key: 'cholesterol_mg', label: 'Cholesterol', unit: 'mg' },
+  { key: 'sodium_mg', label: 'Sodium', unit: 'mg' },
+  { key: 'carbs_g', label: 'Carbs', unit: 'g' },
+  { key: 'fiber_g', label: 'Fiber', unit: 'g', indent: true },
+  { key: 'sugar_g', label: 'Sugar', unit: 'g', indent: true },
+  { key: 'protein_g', label: 'Protein', unit: 'g' },
+]
+
+const NUTRI_KEYS = NUTRIENT_ROWS.map((r) => r.key)
+const emptyNutri = () => Object.fromEntries(NUTRI_KEYS.map((k) => [k, ''])) as Record<NutriKey, string>
+
+interface ServingDraft {
+  name: string
+  grams: string
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100
+const numOrNull = (s: string) => (s.trim() === '' ? null : Number(s))
+const decimal = (s: string) => s.replace(/[^0-9.]/g, '')
+
+// A one-line summary for a custom-food row: its first serving and that serving's
+// calories, backed out of the per-100g figure we store.
+function foodSummary(f: api.Food): string {
+  const s = f.servings[0]
+  const cal = (grams: number) => (f.calories != null ? `${Math.round((f.calories * grams) / 100)} cal` : '')
+  const parts = [f.brand]
+  if (s) parts.push([s.name, cal(s.grams)].filter(Boolean).join(' · '))
+  else if (f.calories != null) parts.push(`${Math.round(f.calories)} cal / 100 g`)
+  return parts.filter(Boolean).join(' · ')
+}
+
+// Create or edit a custom food, Cronometer-style: a name, one or more named
+// servings, and the Nutrition Facts as printed for one chosen serving. The
+// values on screen are always "per" the selected serving; switching that serving
+// rescales them so they describe the same food. The server stores per-100g.
+function FoodSheet({
+  food,
+  onClose,
+  onSaved,
+}: {
+  food: api.Food | null
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const editing = food !== null
+  const [name, setName] = useState(food?.name ?? '')
+  const [brand, setBrand] = useState(food?.brand ?? '')
+  const [servings, setServings] = useState<ServingDraft[]>(() =>
+    editing && food.servings.length
+      ? food.servings.map((s) => ({ name: s.name, grams: String(s.grams) }))
+      : [{ name: '100 g', grams: '100' }],
+  )
+  const [basis, setBasis] = useState(0)
+  // Nutrition shown per the basis serving. Seed an edit from the stored per-100g
+  // figures scaled to the first serving's grams.
+  const [nutri, setNutri] = useState<Record<NutriKey, string>>(() => {
+    if (!editing) return emptyNutri()
+    const g = food.servings[0]?.grams ?? 100
+    const out = emptyNutri()
+    for (const k of NUTRI_KEYS) {
+      const v = food[k]
+      if (v != null) out[k] = String(round2((v * g) / 100))
+    }
+    return out
+  })
+  const [busy, setBusy] = useState(false)
+  const [armed, setArmed] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const setServing = (i: number, s: ServingDraft) =>
+    setServings((ls) => ls.map((l, j) => (j === i ? s : l)))
+  const addServing = () => setServings((ls) => [...ls, { name: '', grams: '' }])
+  const removeServing = (i: number) =>
+    setServings((ls) => {
+      const next = ls.filter((_, j) => j !== i)
+      setBasis((b) => (i < b ? b - 1 : Math.min(b, next.length - 1)))
+      return next
+    })
+
+  // Switching which serving the numbers are "per" rescales them by the gram
+  // ratio, so they keep describing the same food.
+  function changeBasis(next: number) {
+    const oldG = Number(servings[basis]?.grams) || 0
+    const newG = Number(servings[next]?.grams) || 0
+    if (oldG > 0 && newG > 0 && oldG !== newG) {
+      setNutri((prev) => {
+        const out = { ...prev }
+        for (const k of NUTRI_KEYS) if (out[k] !== '') out[k] = String(round2((Number(out[k]) * newG) / oldG))
+        return out
+      })
+    }
+    setBasis(next)
+  }
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault()
+    const cleaned = servings.map((s) => ({ name: s.name.trim(), grams: Number(s.grams) }))
+    if (!name.trim()) return setError('Give the food a name.')
+    if (!cleaned.every((s) => s.name && s.grams > 0))
+      return setError('Every serving needs a name and a weight in grams.')
+
+    setBusy(true)
+    setError(null)
+    const payload: api.CustomFoodPayload = {
+      name: name.trim(),
+      brand: brand.trim(),
+      servings: cleaned,
+      basis_index: basis,
+      ...(Object.fromEntries(NUTRI_KEYS.map((k) => [k, numOrNull(nutri[k])])) as Record<NutriKey, number | null>),
+    }
+    try {
+      if (editing) await api.updateCustomFood(food.id!, payload)
+      else await api.createCustomFood(payload)
+      onSaved()
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Could not save the food.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Sheet onClose={onClose}>
+      <div className="mb-4 flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase tracking-wide text-accent-bright">
+          {editing ? 'Edit food' : 'New food'}
+        </span>
+        <button onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-fg/50 hover:bg-fg/10 hover:text-fg">
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-semibold uppercase tracking-wide text-fg/45">Name</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={200}
+            placeholder="e.g. Clif Bar, Peanut Butter" className="field" autoFocus />
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-semibold uppercase tracking-wide text-fg/45">Brand (optional)</span>
+          <input value={brand} onChange={(e) => setBrand(e.target.value)} maxLength={120}
+            placeholder="e.g. Clif" className="field" />
+        </label>
+
+        <div>
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/45">Serving sizes</span>
+          <p className="mb-2 text-xs text-fg/45">As printed on the package. The weight in grams is what lets a serving
+            add up in recipes.</p>
+          <div className="flex flex-col gap-1.5">
+            {servings.map((s, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input value={s.name} onChange={(e) => setServing(i, { ...s, name: e.target.value })}
+                  maxLength={60} placeholder="1 bar" className="field min-w-0 flex-1" aria-label={`Serving ${i + 1} name`} />
+                <div className="flex w-24 shrink-0 items-center gap-1">
+                  <input inputMode="decimal" value={s.grams}
+                    onChange={(e) => setServing(i, { ...s, grams: decimal(e.target.value) })}
+                    placeholder="0" className="field px-2 text-right" aria-label={`Serving ${i + 1} grams`} />
+                  <span className="text-xs text-fg/45">g</span>
+                </div>
+                <button type="button" onClick={() => removeServing(i)} disabled={servings.length === 1}
+                  aria-label={`Remove serving ${i + 1}`}
+                  className="rounded-lg p-1.5 text-fg/40 hover:bg-fg/10 hover:text-danger disabled:opacity-30">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={addServing}
+            className="mt-2 flex items-center gap-1 text-xs font-semibold text-accent-bright hover:opacity-80">
+            <Plus className="h-3.5 w-3.5" strokeWidth={2.5} /> Add serving size
+          </button>
+        </div>
+
+        <div>
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-fg/45">Nutrition facts</span>
+            {servings.length > 1 && (
+              <label className="flex items-center gap-1.5 text-xs text-fg/45">
+                per
+                <select value={basis} onChange={(e) => changeBasis(Number(e.target.value))}
+                  className="field w-auto px-2 py-1 text-xs" aria-label="Nutrition displayed per serving">
+                  {servings.map((s, i) => (
+                    <option key={i} value={i}>{s.name.trim() || `Serving ${i + 1}`}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+          <div className="flex flex-col divide-y divide-fg/5 rounded-xl bg-fg/5 px-3">
+            {NUTRIENT_ROWS.map((row) => (
+              <div key={row.key} className="flex items-center justify-between gap-3 py-2">
+                <span className={`text-sm ${row.indent ? 'pl-4 text-fg/60' : 'text-fg/85'}`}>{row.label}</span>
+                <div className="flex w-24 shrink-0 items-center gap-1">
+                  <input inputMode="decimal" value={nutri[row.key]}
+                    onChange={(e) => setNutri((n) => ({ ...n, [row.key]: decimal(e.target.value) }))}
+                    placeholder="0" className="field px-2 py-1 text-right" aria-label={row.label} />
+                  <span className="w-6 text-xs text-fg/45">{row.unit}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <FormError message={error} />
+        <Button type="submit" disabled={busy || !name.trim()} className="w-full">
+          {busy ? 'Saving' : editing ? 'Save changes' : 'Save food'}
+        </Button>
+
+        {editing && (
+          <Button type="button" variant="danger" disabled={busy}
+            onClick={async () => {
+              if (!armed) return setArmed(true)
+              setBusy(true)
+              try {
+                await api.deleteCustomFood(food.id!)
+                onSaved()
+              } catch (err) {
+                setError(err instanceof api.ApiError ? err.message : 'Could not delete the food.')
+                setBusy(false)
+              }
+            }}
+            className="flex items-center justify-center gap-1.5">
+            <Trash2 className="h-4 w-4" />
+            {armed ? 'Tap again to delete' : 'Delete food'}
+          </Button>
+        )}
+      </form>
+    </Sheet>
+  )
+}
+
+// The Custom Foods box: a family's own foods for anything USDA/Open Food Facts
+// lacks. They show up as pickable ingredients in the recipe builder too. Sits
+// under Recipes on the Kitchen page. Everyone browses; only parents add/edit.
+export function CustomFoodBox() {
+  const { user } = useAuth()
+  const canEdit = user?.role === 'parent'
+  const [foods, setFoods] = useState<api.Food[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [editing, setEditing] = useState<{ food: api.Food | null } | null>(null)
+  const mounted = useRef(true)
+
+  const refresh = useCallback(async () => {
+    try {
+      const list = await api.getCustomFoods()
+      if (mounted.current) {
+        setFoods(list)
+        setError(null)
+      }
+    } catch (err) {
+      if (mounted.current) setError(err instanceof api.ApiError ? err.message : 'Could not load custom foods.')
+    }
+  }, [])
+
+  useEffect(() => {
+    mounted.current = true
+    refresh()
+    return () => {
+      mounted.current = false
+    }
+  }, [refresh])
+
+  return (
+    <section className="glass p-5">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="font-bold">Custom foods</h2>
+        {canEdit && (
+          <button type="button" onClick={() => setEditing({ food: null })}
+            className="flex items-center gap-1 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-2.5 py-1 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25">
+            <Plus className="h-3.5 w-3.5" strokeWidth={2.5} /> New food
+          </button>
+        )}
+      </div>
+
+      <FormError message={error} />
+
+      {foods.length === 0 ? (
+        <p className="py-6 text-center text-sm text-fg/50">
+          {canEdit
+            ? 'Add anything the food database is missing — a homemade dish, a local brand — and use it in recipes.'
+            : 'No custom foods yet.'}
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {foods.map((f) => {
+            const summary = foodSummary(f)
+            const inner = (
+              <>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{f.name}</span>
+                  {summary && <span className="block truncate text-xs text-fg/45">{summary}</span>}
+                </span>
+                {canEdit && <Pencil className="h-4 w-4 shrink-0 text-fg/35" />}
+              </>
+            )
+            return (
+              <li key={f.id}>
+                {canEdit ? (
+                  <button type="button" onClick={() => setEditing({ food: f })}
+                    className="flex w-full items-center gap-3 rounded-xl bg-fg/5 px-3 py-2.5 text-left transition-colors hover:bg-fg/10">
+                    {inner}
+                  </button>
+                ) : (
+                  <div className="flex w-full items-center gap-3 rounded-xl bg-fg/5 px-3 py-2.5">{inner}</div>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      {editing && (
+        <FoodSheet
+          food={editing.food}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null)
+            refresh()
+          }}
+        />
+      )}
+    </section>
+  )
+}
