@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { Button, FormError } from './ui'
+import { CollapsibleCard } from './CollapsibleCard'
 
 // Mass units only: a volume like "1 cup" needs the food's density to become
 // grams, which the databases don't give us, so we don't offer it. Mirror of the
@@ -730,47 +731,52 @@ export function RecipeBox() {
   }
 
   return (
-    <section className="glass p-5">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="font-bold">Recipes</h2>
-        {canEdit && (
-          <button
-            type="button"
-            onClick={() => setView({ mode: 'edit', recipe: null })}
-            className="flex items-center gap-1 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-2.5 py-1 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
-          >
-            <Plus className="h-3.5 w-3.5" strokeWidth={2.5} /> New recipe
-          </button>
+    <>
+      <CollapsibleCard
+        title="Recipes"
+        summary={recipes.length ? String(recipes.length) : undefined}
+        storageKey="recipes"
+        defaultOpen
+        action={
+          canEdit && (
+            <button
+              type="button"
+              onClick={() => setView({ mode: 'edit', recipe: null })}
+              className="flex items-center gap-1 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-2.5 py-1 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
+            >
+              <Plus className="h-3.5 w-3.5" strokeWidth={2.5} /> New recipe
+            </button>
+          )
+        }
+      >
+        <FormError message={error} />
+
+        {recipes.length === 0 ? (
+          <p className="py-6 text-center text-sm text-fg/50">
+            {canEdit ? 'No recipes yet. Add your family favorites so planning dinner is one tap.' : 'No recipes yet.'}
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {recipes.map((r) => {
+              const summary = macroSummary(r.per_serving)
+              return (
+                <li key={r.id}>
+                  <button
+                    type="button"
+                    onClick={() => setView({ mode: 'detail', recipe: r })}
+                    className="flex w-full items-center justify-between gap-3 rounded-xl bg-fg/5 px-3 py-2.5 text-left transition-colors hover:bg-fg/10"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate font-display text-base font-semibold">{r.name}</span>
+                      {summary && <span className="block truncate text-xs text-fg/50">{summary}</span>}
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
         )}
-      </div>
-
-      <FormError message={error} />
-
-      {recipes.length === 0 ? (
-        <p className="py-6 text-center text-sm text-fg/50">
-          {canEdit ? 'No recipes yet. Add your family favorites so planning dinner is one tap.' : 'No recipes yet.'}
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {recipes.map((r) => {
-            const summary = macroSummary(r.per_serving)
-            return (
-              <li key={r.id}>
-                <button
-                  type="button"
-                  onClick={() => setView({ mode: 'detail', recipe: r })}
-                  className="flex w-full items-center justify-between gap-3 rounded-xl bg-fg/5 px-3 py-2.5 text-left transition-colors hover:bg-fg/10"
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate font-display text-base font-semibold">{r.name}</span>
-                    {summary && <span className="block truncate text-xs text-fg/50">{summary}</span>}
-                  </span>
-                </button>
-              </li>
-            )
-          })}
-        </ul>
-      )}
+      </CollapsibleCard>
 
       {view.mode === 'detail' && (
         <RecipeDetail
@@ -791,7 +797,7 @@ export function RecipeBox() {
           }}
         />
       )}
-    </section>
+    </>
   )
 }
 
@@ -1080,53 +1086,57 @@ export function CustomFoodBox() {
   }, [refresh])
 
   return (
-    <section className="glass p-5">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="font-bold">Custom foods</h2>
-        {canEdit && (
-          <button type="button" onClick={() => setEditing({ food: null })}
-            className="flex items-center gap-1 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-2.5 py-1 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25">
-            <Plus className="h-3.5 w-3.5" strokeWidth={2.5} /> New food
-          </button>
+    <>
+      <CollapsibleCard
+        title="Custom foods"
+        summary={foods.length ? String(foods.length) : undefined}
+        storageKey="custom-foods"
+        action={
+          canEdit && (
+            <button type="button" onClick={() => setEditing({ food: null })}
+              className="flex items-center gap-1 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-2.5 py-1 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25">
+              <Plus className="h-3.5 w-3.5" strokeWidth={2.5} /> New food
+            </button>
+          )
+        }
+      >
+        <FormError message={error} />
+
+        {foods.length === 0 ? (
+          <p className="py-6 text-center text-sm text-fg/50">
+            {canEdit
+              ? 'Add anything the food database is missing — a homemade dish, a local brand — and use it in recipes.'
+              : 'No custom foods yet.'}
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {foods.map((f) => {
+              const summary = foodSummary(f)
+              const inner = (
+                <>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{f.name}</span>
+                    {summary && <span className="block truncate text-xs text-fg/45">{summary}</span>}
+                  </span>
+                  {canEdit && <Pencil className="h-4 w-4 shrink-0 text-fg/35" />}
+                </>
+              )
+              return (
+                <li key={f.id}>
+                  {canEdit ? (
+                    <button type="button" onClick={() => setEditing({ food: f })}
+                      className="flex w-full items-center gap-3 rounded-xl bg-fg/5 px-3 py-2.5 text-left transition-colors hover:bg-fg/10">
+                      {inner}
+                    </button>
+                  ) : (
+                    <div className="flex w-full items-center gap-3 rounded-xl bg-fg/5 px-3 py-2.5">{inner}</div>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
         )}
-      </div>
-
-      <FormError message={error} />
-
-      {foods.length === 0 ? (
-        <p className="py-6 text-center text-sm text-fg/50">
-          {canEdit
-            ? 'Add anything the food database is missing — a homemade dish, a local brand — and use it in recipes.'
-            : 'No custom foods yet.'}
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {foods.map((f) => {
-            const summary = foodSummary(f)
-            const inner = (
-              <>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{f.name}</span>
-                  {summary && <span className="block truncate text-xs text-fg/45">{summary}</span>}
-                </span>
-                {canEdit && <Pencil className="h-4 w-4 shrink-0 text-fg/35" />}
-              </>
-            )
-            return (
-              <li key={f.id}>
-                {canEdit ? (
-                  <button type="button" onClick={() => setEditing({ food: f })}
-                    className="flex w-full items-center gap-3 rounded-xl bg-fg/5 px-3 py-2.5 text-left transition-colors hover:bg-fg/10">
-                    {inner}
-                  </button>
-                ) : (
-                  <div className="flex w-full items-center gap-3 rounded-xl bg-fg/5 px-3 py-2.5">{inner}</div>
-                )}
-              </li>
-            )
-          })}
-        </ul>
-      )}
+      </CollapsibleCard>
 
       {editing && (
         <FoodSheet
@@ -1138,6 +1148,6 @@ export function CustomFoodBox() {
           }}
         />
       )}
-    </section>
+    </>
   )
 }

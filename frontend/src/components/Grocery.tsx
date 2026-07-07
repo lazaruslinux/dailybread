@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { Button, FormError } from './ui'
+import { CollapsibleCard } from './CollapsibleCard'
 
 // The family's shared grocery lists, one per store plus a built-in General
 // list (list_id null). Everyone can read; only parents can touch (2026-07-03).
@@ -86,18 +87,14 @@ export function GroceryPanel() {
       selected ? 'bg-accent-bright/25 text-fg' : 'bg-fg/5 text-fg/55 hover:bg-fg/10'
     }`
 
-  return (
-    <section className="glass p-5">
-      <div className="mb-3 flex items-baseline justify-between">
-        <h2 className="font-bold">Grocery list</h2>
-        {visible.length > 0 && (
-          <span className="text-xs text-fg/50">
-            {visible.length - checkedCount} to grab
-            {checkedCount > 0 ? ` · ${checkedCount} checked` : ''}
-          </span>
-        )}
-      </div>
+  const toGrab = items.filter((i) => !i.checked).length
 
+  return (
+    <CollapsibleCard
+      title="Grocery list"
+      summary={toGrab > 0 ? `${toGrab} to grab` : undefined}
+      storageKey="grocery"
+    >
       {/* Store chips. General is built in; parents can add more. */}
       <div className="-mx-1 mb-4 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
         <button type="button" onClick={() => setActive(null)} className={chip(active === null)}>
@@ -252,6 +249,6 @@ export function GroceryPanel() {
           Remove {activeStore.name} (its items move to General)
         </button>
       )}
-    </section>
+    </CollapsibleCard>
   )
 }
