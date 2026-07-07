@@ -124,6 +124,29 @@ def test_custom_food_rejects_bad_basis_index(owner):
     assert bad.status_code == 422
 
 
+def test_volume_custom_food_stores_per_100ml(owner):
+    # A liquid entered by volume: a 240 mL serving with 60 cal is stored per-100mL
+    # (60 * 100 / 240 = 25), and base_unit round-trips as "ml".
+    made = owner.post(
+        "/foods",
+        json={
+            "name": "Almond milk", "base_unit": "ml",
+            "servings": [{"name": "1 cup", "grams": 240}], "basis_index": 0,
+            "calories": 60, "protein_g": 2.4,
+        },
+    )
+    assert made.status_code == 201, made.text
+    f = made.json()
+    assert f["base_unit"] == "ml"
+    assert f["calories"] == 25.0 and f["protein_g"] == 1.0  # per-100mL
+    assert f["servings"][0]["grams"] == 240.0  # the serving size, in mL
+
+
+def test_custom_food_defaults_to_mass(owner):
+    f = owner.post("/foods", json=_food("Solid", calories=100)).json()
+    assert f["base_unit"] == "g"
+
+
 def test_custom_foods_are_isolated_across_families(owner, other):
     made = owner.post("/foods", json=_food("Secret Rub", calories=10))
     fid = made.json()["id"]

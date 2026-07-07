@@ -317,23 +317,30 @@ export const clearCheckedGrocery = (listId: number | null) =>
 
 export type FoodSource = 'usda' | 'off' | 'custom'
 
-// A named portion of a food (e.g. "1 slice" = 21 g). Nutrition is per-100g;
-// servings are how a person picks a real-world amount. Custom foods carry these.
+// The measure family a food is portioned in: "g" (mass) or "ml" (volume, for a
+// liquid). Nutrition is stored per 100 of this unit; amounts never cross between
+// families (that needs a density we don't have).
+export type BaseUnit = 'g' | 'ml'
+
+// A named portion of a food (e.g. "1 slice" = 21 g, or "1 tbsp" = 15 mL). The
+// `grams` field is the size in the food's base unit — grams for a solid,
+// millilitres for a liquid. Custom foods carry these.
 export interface FoodServing {
   name: string
   grams: number
 }
 
-// A food with per-100g nutrition. `id` is null for an un-saved search/barcode
-// result (the server saves it when it's first used in a recipe); set for a
-// stored custom food. Nutrient fields are null when a source didn't supply them;
-// cholesterol/sodium are in mg (as labels print), the rest in grams.
+// A food with per-100-base-unit nutrition. `id` is null for an un-saved
+// search/barcode result (the server saves it when it's first used in a recipe);
+// set for a stored custom food. Nutrient fields are null when a source didn't
+// supply them; cholesterol/sodium are in mg (as labels print), the rest in grams.
 export interface Food {
   id: number | null
   source: FoodSource
   source_id: string | null
   name: string
   brand: string
+  base_unit: BaseUnit
   serving: string // display label for the source's serving, e.g. "1 slice (21 g)"; "" when unknown
   servings: FoodServing[]
   calories: number | null
@@ -354,6 +361,7 @@ export interface Food {
 export interface CustomFoodPayload {
   name: string
   brand?: string
+  base_unit?: BaseUnit
   servings: FoodServing[]
   basis_index: number
   calories?: number | null
@@ -386,7 +394,11 @@ export const deleteCustomFood = (id: number) =>
 
 // ---- recipes ------------------------------------------------------------------
 
+// Mass units (a solid) and volume units (a liquid). An ingredient's unit must
+// match its food's base measure; the two never mix on one line.
 export type MassUnit = 'g' | 'oz' | 'lb'
+export type VolumeUnit = 'ml' | 'floz' | 'cup' | 'tbsp' | 'tsp'
+export type AmountUnit = MassUnit | VolumeUnit
 
 // One saved ingredient line: what food, how much, and the macros that amount
 // contributes (per-100g scaled by grams), so the client totals without redoing
@@ -459,7 +471,7 @@ export interface RecipeIngredientPayload {
   fiber_g?: number | null
   sugar_g?: number | null
   amount: number
-  unit: MassUnit
+  unit: AmountUnit
 }
 
 // Create/edit payload. On edit, omitting `ingredients` leaves them; sending the

@@ -30,11 +30,13 @@ def _result_out(r: foods_api.FoodResult) -> FoodOut:
 
 def _apply_custom_food(food: Food, data: FoodIn) -> None:
     """Set a custom food's nutrition and servings from the create/edit payload.
-    Values are entered per the chosen serving (basis_index); we store per-100g
-    so the food sits alongside USDA/OFF foods and the recipe math (grams) works.
-    A serving of B grams means per-100g = entered * 100 / B."""
+    Values are entered per the chosen serving (basis_index); we store per-100 of
+    the food's base unit (grams for a solid, millilitres for a liquid) so it sits
+    alongside USDA/OFF foods and feeds the recipe math. A serving of B base units
+    means per-100 = entered * 100 / B."""
     food.name = data.name.strip()
     food.brand = data.brand.strip()
+    food.base_unit = data.base_unit
     factor = 100.0 / data.servings[data.basis_index].grams
     for n in FOOD_NUTRIENTS:
         entered = getattr(data, n)

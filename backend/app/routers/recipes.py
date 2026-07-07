@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import require_family, require_parent
-from app.models import Food, FoodSource, Recipe, RecipeIngredient, User
+from app.models import Food, FoodSource, Recipe, RecipeIngredient, User, base_unit_of
 from app.schemas import (
     FOOD_NUTRIENTS,
     RecipeIn,
@@ -99,6 +99,14 @@ def _set_ingredients(db: Session, recipe: Recipe, lines: list[RecipeIngredientIn
     recipe.ingredients.clear()
     for i, line in enumerate(lines):
         food = _resolve_food(db, recipe.family_id, line)
+        # A solid is measured by weight, a liquid by volume; the unit must match
+        # the food's measure family (we can't turn cups into grams without a
+        # density we don't have).
+        if base_unit_of(line.unit) != food.base_unit:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"'{food.name}' is measured by {'volume' if food.base_unit == 'ml' else 'weight'}",
+            )
         recipe.ingredients.append(
             RecipeIngredient(food_id=food.id, position=i, amount=line.amount, unit=line.unit)
         )

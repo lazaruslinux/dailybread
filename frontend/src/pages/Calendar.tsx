@@ -246,14 +246,13 @@ export function Calendar() {
   const countFor = (iso: string) => cal?.days.find((d) => d.date === iso)?.items.length ?? 0
   const selectedItems = selected ? cal?.days.find((d) => d.date === selected)?.items ?? [] : []
 
-  // The whole-period overview: every dated one-off across the view, in date
-  // order, each tagged with its day. Routines are left out — a daily habit
-  // would repeat on every day and bury the real schedule; you see routines when
-  // you open a specific day.
+  // The whole-period overview: every scheduled card across the view, in date
+  // order, each tagged with its day — routines included, so a habit doesn't
+  // seem to vanish when you zoom out from a single day to the whole period.
   const overview = useMemo(() => {
     const out: { date: string; item: api.FeedItem }[] = []
     for (const d of cal?.days ?? [])
-      for (const it of d.items) if (it.kind !== 'routine') out.push({ date: d.date, item: it })
+      for (const it of d.items) out.push({ date: d.date, item: it })
     return out
   }, [cal])
   const overviewShown = overview.slice(0, shown)

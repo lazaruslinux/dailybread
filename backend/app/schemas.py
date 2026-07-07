@@ -278,7 +278,13 @@ class GroceryStateOut(BaseModel):
 # ---- recipes -------------------------------------------------------------------
 
 
+# Measurement units for an ingredient amount. Mass units (a solid) and volume
+# units (a liquid) never mix within one ingredient — the unit must match its
+# food's base measure, enforced when the recipe is saved.
 MassUnit = Literal["g", "oz", "lb"]
+VolumeUnit = Literal["ml", "floz", "cup", "tbsp", "tsp"]
+AmountUnit = Literal["g", "oz", "lb", "ml", "floz", "cup", "tbsp", "tsp"]
+BaseUnit = Literal["g", "ml"]
 
 
 class RecipeIngredientIn(BaseModel):
@@ -305,7 +311,7 @@ class RecipeIngredientIn(BaseModel):
     fiber_g: float | None = Field(default=None, ge=0, le=10000)
     sugar_g: float | None = Field(default=None, ge=0, le=10000)
     amount: float = Field(gt=0, le=100000)
-    unit: MassUnit = "g"
+    unit: AmountUnit = "g"
 
 
 class RecipeIn(BaseModel):
@@ -424,6 +430,7 @@ class FoodOut(BaseModel):
     source_id: str | None = None
     name: str
     brand: str = ""
+    base_unit: BaseUnit = "g"  # measure family: "g" (mass) or "ml" (volume)
     serving: str = ""  # display label for the source's serving; "" when unknown
     servings: list[FoodServingOut] = []  # structured named portions (custom foods)
     calories: float | None = None
@@ -448,6 +455,9 @@ class FoodIn(BaseModel):
 
     name: str = Field(min_length=1, max_length=200)
     brand: str = Field(default="", max_length=120)
+    # "g" (measure servings by weight) or "ml" (by volume, for a liquid). The
+    # serving sizes below are in this unit, and nutrition is stored per 100 of it.
+    base_unit: BaseUnit = "g"
     servings: list[FoodServingIn] = Field(min_length=1, max_length=20)
     basis_index: int = Field(default=0, ge=0)  # which serving the values are per
     # Nutrition as entered, per servings[basis_index]. mg for cholesterol/sodium.

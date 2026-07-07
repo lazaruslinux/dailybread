@@ -282,16 +282,36 @@ class Recipe(Base):
     )
 
 
-# How many grams one unit of measure weighs. Kept to mass units on purpose: a
-# volume like "1 cup" only converts to grams with the food's density, which the
-# databases don't give us, so we don't pretend to know it.
-GRAMS_PER_UNIT: dict[str, float] = {"g": 1.0, "oz": 28.3495, "lb": 453.592}
+# A food is measured in one of two families: mass (base unit gram) or volume
+# (base unit millilitre). We never convert between them — that needs the food's
+# density, which the databases don't give us. Instead a food declares its base
+# unit (Food.base_unit) and its nutrition is stored per 100 of that base, so a
+# liquid labelled in mL never has to pretend it knows its weight.
+MASS_UNITS: dict[str, float] = {"g": 1.0, "oz": 28.3495, "lb": 453.592}
+VOLUME_UNITS: dict[str, float] = {
+    "ml": 1.0,
+    "floz": 29.5735,
+    "cup": 236.588,
+    "tbsp": 14.7868,
+    "tsp": 4.92892,
+}
+# How many base units (g or mL) one of each unit is. Every token is <=4 chars,
+# so the stored `unit` column stays String(4).
+UNIT_TO_BASE: dict[str, float] = {**MASS_UNITS, **VOLUME_UNITS}
+# Back-compat alias: earlier code (and mirrors) referred to GRAMS_PER_UNIT.
+GRAMS_PER_UNIT = MASS_UNITS
+
+
+def base_unit_of(unit: str) -> str:
+    """The base unit ("g" or "ml") a measurement unit belongs to."""
+    return "ml" if unit in VOLUME_UNITS else "g"
 
 
 class RecipeIngredient(Base):
     """One line of a recipe: a food and how much of it. The amount is stored in
-    the unit the cook typed (grams, ounces, pounds) for honest redisplay; grams
-    (and therefore nutrition) are derived from it via GRAMS_PER_UNIT."""
+    the unit the cook typed (g/oz/lb for a solid, mL/fl oz/cup/tbsp/tsp for a
+    liquid) for honest redisplay; the base amount (grams or millilitres) that the
+    nutrition math uses is derived from it via UNIT_TO_BASE."""
 
     __tablename__ = "recipe_ingredients"
 
@@ -308,8 +328,13 @@ class RecipeIngredient(Base):
     food: Mapped["Food"] = relationship()
 
     @property
-    def grams(self) -> float:
-        return self.amount * GRAMS_PER_UNIT.get(self.unit, 1.0)
+    def base_amount(self) -> float:
+        """Amount in the food's base unit (grams or millilitres)."""
+        return self.amount * UNIT_TO_BASE.get(self.unit, 1.0)
+
+    # Legacy name kept for callers that predate volume support; for a volume food
+    # this is millilitres, not grams. Prefer base_amount.
+    grams = base_amount
 
 
 class FoodSource(str, enum.Enum):
@@ -339,10 +364,14 @@ class Food(Base):
     source_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(200))
     brand: Mapped[str] = mapped_column(String(120), default="")
-    # Nutrition per 100 g; None when a source didn't supply a value. calories +
-    # the four base macros came with 0014; 0016 added the rest of the Nutrition
-    # Facts label. cholesterol and sodium are in mg (as labels print them); the
-    # rest are grams.
+    # Which measure family this food is portioned in: "g" (mass, the default and
+    # what every USDA/OFF food is) or "ml" (volume, for liquids a parent enters
+    # by millilitres). Nutrition below is per 100 of THIS unit.
+    base_unit: Mapped[str] = mapped_column(String(2), default="g", server_default="g")
+    # Nutrition per 100 of base_unit (100 g for a solid, 100 mL for a liquid);
+    # None when a source didn't supply a value. calories + the four base macros
+    # came with 0014; 0016 added the rest of the Nutrition Facts label. cholesterol
+    # and sodium are in mg (as labels print them); the rest are grams.
     calories: Mapped[float | None] = mapped_column(Float, nullable=True)
     protein_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     carbs_g: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -365,10 +394,11 @@ class Food(Base):
 
 
 class FoodServing(Base):
-    """One named serving for a food: a label ("1 slice", "3 tsp") and its weight
-    in grams. Custom foods carry the servings a parent enters (Cronometer-style,
-    several per food); the gram weight is what lets a serving convert to the
-    per-100g nutrition and feed the gram-based recipe math."""
+    """One named serving for a food: a label ("1 slice", "1 tbsp") and its size in
+    the food's base unit. The `grams` column holds that base amount — grams for a
+    solid, millilitres for a liquid (base_unit "ml") — which is what lets a serving
+    convert to the per-100 nutrition and feed the recipe math. Custom foods carry
+    the servings a parent enters (Cronometer-style, several per food)."""
 
     __tablename__ = "food_servings"
 

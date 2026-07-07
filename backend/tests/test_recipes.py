@@ -131,6 +131,55 @@ def test_cannot_reference_another_familys_custom_food(owner, other):
     assert res.status_code == 404
 
 
+# A liquid custom food, measured by volume (per-100mL after conversion).
+def _volume_food(client, name="Almond milk", **over):
+    body = {"name": name, "base_unit": "ml",
+            "servings": [{"name": "1 cup", "grams": 240}], "basis_index": 0,
+            "calories": 60, "protein_g": 2.4}
+    body.update(over)
+    return client.post("/foods", json=body).json()
+
+
+def test_volume_food_scales_by_millilitres(owner):
+    # 240 mL of a 25-cal/100mL food = 60 cal; also check fl oz -> mL conversion.
+    milk = _volume_food(owner)
+    made = make_recipe(owner, name="Milk", servings=1, ingredients=[
+        {"food_id": milk["id"], "source": "custom", "name": "Almond milk",
+         "amount": 240, "unit": "ml"}])
+    line = made["ingredients"][0]
+    assert line["unit"] == "ml" and line["grams"] == 240.0  # base amount is mL
+    assert made["per_serving"]["calories"] == 60.0
+
+    floz = owner.patch(f"/recipes/{made['id']}", json={"ingredients": [
+        {"food_id": milk["id"], "source": "custom", "name": "Almond milk",
+         "amount": 1, "unit": "floz"}]}).json()
+    assert floz["ingredients"][0]["grams"] == 29.57  # 1 fl oz -> 29.5735 mL
+    assert floz["per_serving"]["calories"] == 7.4  # 25 * 0.295735
+
+
+def test_ingredient_unit_must_match_food_measure(owner):
+    # A solid can't be poured by the cup; a liquid can't be weighed in grams.
+    milk = _volume_food(owner)
+    solid_by_volume = owner.post("/recipes", json={"name": "Bad1", "ingredients": [
+        usda_line(unit="cup")]})
+    assert solid_by_volume.status_code == 400
+    liquid_by_mass = owner.post("/recipes", json={"name": "Bad2", "ingredients": [
+        {"food_id": milk["id"], "source": "custom", "name": "Almond milk",
+         "amount": 100, "unit": "g"}]})
+    assert liquid_by_mass.status_code == 400
+
+
+def test_recipe_mixes_mass_and_volume_ingredients(owner):
+    # 200 g of 250-cal/100g beef (500) + 240 mL of 25-cal/100mL milk (60) = 560,
+    # over 1 serving. Different measure families total together fine.
+    milk = _volume_food(owner)
+    made = make_recipe(owner, name="Mixed", servings=1, ingredients=[
+        usda_line(amount=200, unit="g"),
+        {"food_id": milk["id"], "source": "custom", "name": "Almond milk",
+         "amount": 240, "unit": "ml"}])
+    assert made["per_serving"]["calories"] == 560.0
+
+
 def test_recipe_totals_the_full_nutrition_label(owner):
     # A recipe totals the whole label, not just the four base macros: 100 g of a
     # 20 g-sugar / 100 mg-sodium per-100g food, over 2 servings.
