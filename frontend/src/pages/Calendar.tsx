@@ -11,7 +11,7 @@ import { FormError } from '../components/ui'
 import { canCheckItem } from '../lib/items'
 import { formatTime } from '../lib/moods'
 
-const DOW = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
+const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
 function toISO(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -24,10 +24,12 @@ function addDays(d: Date, n: number): Date {
   x.setDate(x.getDate() + n)
   return x
 }
-// Monday that starts the week containing d (matches the routine day masks, 0=Mon).
-function mondayOf(d: Date): Date {
+// Sunday that starts the week containing d. The grid is laid out Sunday-first
+// (US calendar convention, S M T W T F S); routine weekday masks are date-based,
+// so the week's display start is purely a layout choice and doesn't touch them.
+function weekStartOf(d: Date): Date {
   const x = midnight(d)
-  x.setDate(x.getDate() - ((x.getDay() + 6) % 7))
+  x.setDate(x.getDate() - x.getDay()) // getDay(): Sunday == 0
   return x
 }
 function startOfMonth(d: Date): Date {
@@ -184,8 +186,8 @@ export function Calendar() {
   const isParent = user?.role === 'parent'
   const todayISO = api.localDate()
   const [mode, setMode] = useState<Mode>('fortnight')
-  // Fortnight is anchored on a Monday; month on the 1st of the shown month.
-  const [fortnightStart, setFortnightStart] = useState(() => mondayOf(new Date()))
+  // Fortnight is anchored on the week's Sunday; month on the 1st of the month.
+  const [fortnightStart, setFortnightStart] = useState(() => weekStartOf(new Date()))
   const [monthAnchor, setMonthAnchor] = useState(() => startOfMonth(new Date()))
   // No day selected = the whole-period overview (every scheduled one-off across
   // the view). Selecting a day narrows to just that day, routines included.
@@ -209,8 +211,8 @@ export function Calendar() {
     if (mode === 'fortnight') {
       for (let i = 0; i < 14; i++) days.push(addDays(fortnightStart, i))
     } else {
-      const gStart = mondayOf(startOfMonth(monthAnchor))
-      const gEnd = addDays(mondayOf(endOfMonth(monthAnchor)), 6)
+      const gStart = weekStartOf(startOfMonth(monthAnchor))
+      const gEnd = addDays(weekStartOf(endOfMonth(monthAnchor)), 6)
       for (let d = gStart; d <= gEnd; d = addDays(d, 1)) days.push(d)
     }
     return days
@@ -370,7 +372,7 @@ export function Calendar() {
   }
 
   const goToday = () => {
-    setFortnightStart(mondayOf(new Date()))
+    setFortnightStart(weekStartOf(new Date()))
     setMonthAnchor(startOfMonth(new Date()))
     setSelected(todayISO)
   }
