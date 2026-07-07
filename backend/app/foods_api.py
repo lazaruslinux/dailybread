@@ -15,11 +15,18 @@ OFF_PRODUCT_URL = "https://world.openfoodfacts.org/api/v2/product/{barcode}.json
 _UA = "dailybread/0.1 (self-hosted family app)"
 _TIMEOUT = 10.0
 
-# USDA foodNutrients are keyed by nutrientNumber; these are the four we surface.
+# USDA foodNutrients are keyed by nutrientNumber. USDA reports sodium and
+# cholesterol in mg and the rest in g — the same units our columns use.
 _N_ENERGY_KCAL = "208"
 _N_PROTEIN = "203"
 _N_FAT = "204"
 _N_CARBS = "205"
+_N_SATURATED = "606"
+_N_TRANS = "605"
+_N_CHOLESTEROL = "601"  # mg
+_N_SODIUM = "307"  # mg
+_N_FIBER = "291"
+_N_SUGAR = "269"
 
 
 class FoodApiError(Exception):
@@ -36,6 +43,12 @@ class FoodResult:
     protein_g: float | None
     carbs_g: float | None
     fat_g: float | None
+    saturated_fat_g: float | None = None
+    trans_fat_g: float | None = None
+    cholesterol_mg: float | None = None  # mg
+    sodium_mg: float | None = None  # mg
+    fiber_g: float | None = None
+    sugar_g: float | None = None
     serving: str = ""  # human label for the label serving, e.g. "1 slice (21 g)"
 
 
@@ -44,6 +57,13 @@ def _num(v) -> float | None:
         return round(float(v), 2)
     except (TypeError, ValueError):
         return None
+
+
+def _scale(v, mult: float) -> float | None:
+    """Like _num but scaled — Open Food Facts reports sodium/cholesterol in grams
+    per 100 g, so we multiply by 1000 to store milligrams like the labels do."""
+    n = _num(v)
+    return round(n * mult, 2) if n is not None else None
 
 
 def _usda_serving(f: dict) -> str:
@@ -104,6 +124,12 @@ def search_usda(query: str, api_key: str, limit: int = 25) -> list[FoodResult]:
                 protein_g=_num(by_number.get(_N_PROTEIN)),
                 carbs_g=_num(by_number.get(_N_CARBS)),
                 fat_g=_num(by_number.get(_N_FAT)),
+                saturated_fat_g=_num(by_number.get(_N_SATURATED)),
+                trans_fat_g=_num(by_number.get(_N_TRANS)),
+                cholesterol_mg=_num(by_number.get(_N_CHOLESTEROL)),
+                sodium_mg=_num(by_number.get(_N_SODIUM)),
+                fiber_g=_num(by_number.get(_N_FIBER)),
+                sugar_g=_num(by_number.get(_N_SUGAR)),
                 serving=_usda_serving(f),
             )
         )
@@ -138,5 +164,12 @@ def lookup_barcode(barcode: str) -> FoodResult | None:
         protein_g=_num(nut.get("proteins_100g")),
         carbs_g=_num(nut.get("carbohydrates_100g")),
         fat_g=_num(nut.get("fat_100g")),
+        saturated_fat_g=_num(nut.get("saturated-fat_100g")),
+        trans_fat_g=_num(nut.get("trans-fat_100g")),
+        # OFF stores these in grams per 100 g; labels (and our columns) use mg.
+        cholesterol_mg=_scale(nut.get("cholesterol_100g"), 1000),
+        sodium_mg=_scale(nut.get("sodium_100g"), 1000),
+        fiber_g=_num(nut.get("fiber_100g")),
+        sugar_g=_num(nut.get("sugars_100g")),
         serving=(p.get("serving_size") or "").strip(),
     )

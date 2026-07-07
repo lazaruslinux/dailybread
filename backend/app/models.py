@@ -339,12 +339,48 @@ class Food(Base):
     source_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(200))
     brand: Mapped[str] = mapped_column(String(120), default="")
-    # Nutrition per 100 g; None when a source didn't supply a value.
+    # Nutrition per 100 g; None when a source didn't supply a value. calories +
+    # the four base macros came with 0014; 0016 added the rest of the Nutrition
+    # Facts label. cholesterol and sodium are in mg (as labels print them); the
+    # rest are grams.
     calories: Mapped[float | None] = mapped_column(Float, nullable=True)
     protein_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     carbs_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     fat_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    saturated_fat_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    trans_fat_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cholesterol_mg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sodium_mg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fiber_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sugar_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    # Named real-world portions (e.g. "1 slice" = 21 g). Nutrition stays per-100g;
+    # servings are how a person picks a portion. Ordered by position.
+    servings: Mapped[list["FoodServing"]] = relationship(
+        back_populates="food",
+        cascade="all, delete-orphan",
+        order_by="FoodServing.position",
+    )
+
+
+class FoodServing(Base):
+    """One named serving for a food: a label ("1 slice", "3 tsp") and its weight
+    in grams. Custom foods carry the servings a parent enters (Cronometer-style,
+    several per food); the gram weight is what lets a serving convert to the
+    per-100g nutrition and feed the gram-based recipe math."""
+
+    __tablename__ = "food_servings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    food_id: Mapped[int] = mapped_column(
+        ForeignKey("foods.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(60))
+    grams: Mapped[float] = mapped_column(Float)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+    food: Mapped["Food"] = relationship(back_populates="servings")
 
 
 class MoodLevel(str, enum.Enum):

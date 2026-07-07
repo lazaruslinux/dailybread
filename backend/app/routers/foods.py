@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app import foods_api
 from app.config import settings
 from app.db import get_db
 from app.deps import require_family, require_parent
-from app.models import Food, FoodSource, User
-from app.schemas import FoodIn, FoodOut
+from app.models import Food, FoodServing, FoodSource, User
+from app.schemas import FOOD_NUTRIENTS, FoodIn, FoodOut
 
 router = APIRouter(prefix="/foods", tags=["foods"])
 
@@ -24,11 +24,25 @@ def _result_out(r: foods_api.FoodResult) -> FoodOut:
         name=r.name,
         brand=r.brand,
         serving=r.serving,
-        calories=r.calories,
-        protein_g=r.protein_g,
-        carbs_g=r.carbs_g,
-        fat_g=r.fat_g,
+        **{n: getattr(r, n) for n in FOOD_NUTRIENTS},
     )
+
+
+def _apply_custom_food(food: Food, data: FoodIn) -> None:
+    """Set a custom food's nutrition and servings from the create/edit payload.
+    Values are entered per the chosen serving (basis_index); we store per-100g
+    so the food sits alongside USDA/OFF foods and the recipe math (grams) works.
+    A serving of B grams means per-100g = entered * 100 / B."""
+    food.name = data.name.strip()
+    food.brand = data.brand.strip()
+    factor = 100.0 / data.servings[data.basis_index].grams
+    for n in FOOD_NUTRIENTS:
+        entered = getattr(data, n)
+        setattr(food, n, round(entered * factor, 2) if entered is not None else None)
+    food.servings = [
+        FoodServing(name=s.name.strip(), grams=s.grams, position=i)
+        for i, s in enumerate(data.servings)
+    ]
 
 
 @router.get("/search", response_model=list[FoodOut])
@@ -70,6 +84,7 @@ def list_custom_foods(db: Session = Depends(get_db), user: User = Depends(requir
         db.scalars(
             select(Food)
             .where(Food.family_id == user.family_id, Food.source == FoodSource.custom)
+            .options(selectinload(Food.servings))
             .order_by(func.lower(Food.name))
         )
     )
@@ -81,18 +96,38 @@ def create_custom_food(
     db: Session = Depends(get_db),
     parent: User = Depends(require_parent),
 ):
-    food = Food(
-        family_id=parent.family_id,
-        source=FoodSource.custom,
-        source_id=None,
-        name=data.name.strip(),
-        brand=data.brand.strip(),
-        calories=data.calories,
-        protein_g=data.protein_g,
-        carbs_g=data.carbs_g,
-        fat_g=data.fat_g,
-    )
+    food = Food(family_id=parent.family_id, source=FoodSource.custom, source_id=None)
+    _apply_custom_food(food, data)
     db.add(food)
+    db.commit()
+    db.refresh(food)
+    return food
+
+
+def _own_custom_food(db: Session, food_id: int, parent: User) -> Food:
+    """A custom food this family owns, or 404. The shared USDA/OFF cache and other
+    families' foods aren't this family's to edit or remove."""
+    food = db.get(Food, food_id)
+    if (
+        food is None
+        or food.source != FoodSource.custom
+        or food.family_id != parent.family_id
+    ):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such food")
+    return food
+
+
+@router.put("/{food_id}", response_model=FoodOut)
+def update_custom_food(
+    food_id: int,
+    data: FoodIn,
+    db: Session = Depends(get_db),
+    parent: User = Depends(require_parent),
+):
+    """Edit a custom food. Recipes that reference it recompute from the new
+    nutrition on their next read (they hold a food_id, not a snapshot)."""
+    food = _own_custom_food(db, food_id, parent)
+    _apply_custom_food(food, data)
     db.commit()
     db.refresh(food)
     return food
@@ -104,14 +139,6 @@ def delete_custom_food(
     db: Session = Depends(get_db),
     parent: User = Depends(require_parent),
 ):
-    """Delete a custom food. Only the family's own custom entries; the shared
-    USDA/OFF cache isn't a family's to remove."""
-    food = db.get(Food, food_id)
-    if (
-        food is None
-        or food.source != FoodSource.custom
-        or food.family_id != parent.family_id
-    ):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such food")
-    db.delete(food)
+    """Delete a custom food. Only the family's own custom entries."""
+    db.delete(_own_custom_food(db, food_id, parent))
     db.commit()

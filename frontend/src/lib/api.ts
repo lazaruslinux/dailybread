@@ -317,9 +317,17 @@ export const clearCheckedGrocery = (listId: number | null) =>
 
 export type FoodSource = 'usda' | 'off' | 'custom'
 
+// A named portion of a food (e.g. "1 slice" = 21 g). Nutrition is per-100g;
+// servings are how a person picks a real-world amount. Custom foods carry these.
+export interface FoodServing {
+  name: string
+  grams: number
+}
+
 // A food with per-100g nutrition. `id` is null for an un-saved search/barcode
 // result (the server saves it when it's first used in a recipe); set for a
-// stored custom food. macros are null when a source didn't supply them.
+// stored custom food. Nutrient fields are null when a source didn't supply them;
+// cholesterol/sodium are in mg (as labels print), the rest in grams.
 export interface Food {
   id: number | null
   source: FoodSource
@@ -327,19 +335,37 @@ export interface Food {
   name: string
   brand: string
   serving: string // display label for the source's serving, e.g. "1 slice (21 g)"; "" when unknown
+  servings: FoodServing[]
   calories: number | null
   protein_g: number | null
   carbs_g: number | null
   fat_g: number | null
+  saturated_fat_g: number | null
+  trans_fat_g: number | null
+  cholesterol_mg: number | null
+  sodium_mg: number | null
+  fiber_g: number | null
+  sugar_g: number | null
 }
 
+// Creating/editing a custom food: the parent enters one or more named servings
+// and the Nutrition Facts as printed for one chosen serving (`basis_index`); the
+// server converts to per-100g.
 export interface CustomFoodPayload {
   name: string
   brand?: string
+  servings: FoodServing[]
+  basis_index: number
   calories?: number | null
   protein_g?: number | null
   carbs_g?: number | null
   fat_g?: number | null
+  saturated_fat_g?: number | null
+  trans_fat_g?: number | null
+  cholesterol_mg?: number | null
+  sodium_mg?: number | null
+  fiber_g?: number | null
+  sugar_g?: number | null
 }
 
 export const searchFoods = (q: string) =>
@@ -351,6 +377,12 @@ export const getCustomFoods = () => request<Food[]>('/foods')
 
 export const createCustomFood = (payload: CustomFoodPayload) =>
   request<Food>('/foods', { method: 'POST', body: JSON.stringify(payload) })
+
+export const updateCustomFood = (id: number, payload: CustomFoodPayload) =>
+  request<Food>(`/foods/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+
+export const deleteCustomFood = (id: number) =>
+  request<void>(`/foods/${id}`, { method: 'DELETE' })
 
 // ---- recipes ------------------------------------------------------------------
 

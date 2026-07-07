@@ -1,7 +1,7 @@
 import datetime as dt
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.models import FoodSource, ItemKind, MoodLevel, RepeatType, Role, Visibility
 
@@ -366,6 +366,36 @@ class RecipeOut(BaseModel):
 # ---- foods (database cache + custom) -------------------------------------------
 
 
+# The full Nutrition Facts label, per 100 g. calories + the four base macros
+# came with 0014; the rest arrived with 0016. cholesterol/sodium are in mg (as
+# labels print them), everything else in grams. The router and recipe totals
+# both iterate this, so a new nutrient is added in one place.
+FOOD_NUTRIENTS = (
+    "calories",
+    "protein_g",
+    "carbs_g",
+    "fat_g",
+    "saturated_fat_g",
+    "trans_fat_g",
+    "cholesterol_mg",
+    "sodium_mg",
+    "fiber_g",
+    "sugar_g",
+)
+
+
+class FoodServingIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    grams: float = Field(gt=0, le=100000)
+
+
+class FoodServingOut(BaseModel):
+    name: str
+    grams: float
+
+    model_config = {"from_attributes": True}
+
+
 class FoodOut(BaseModel):
     """A food with per-100g nutrition. id is None for an un-saved search/barcode
     result (the client saves it when it's used in a recipe); set for a stored
@@ -377,24 +407,48 @@ class FoodOut(BaseModel):
     name: str
     brand: str = ""
     serving: str = ""  # display label for the source's serving; "" when unknown
+    servings: list[FoodServingOut] = []  # structured named portions (custom foods)
     calories: float | None = None
     protein_g: float | None = None
     carbs_g: float | None = None
     fat_g: float | None = None
+    saturated_fat_g: float | None = None
+    trans_fat_g: float | None = None
+    cholesterol_mg: float | None = None
+    sodium_mg: float | None = None
+    fiber_g: float | None = None
+    sugar_g: float | None = None
 
     model_config = {"from_attributes": True}
 
 
 class FoodIn(BaseModel):
-    """A parent adding a custom food the databases don't have. Nutrition is per
-    100 g, to match the USDA/Open Food Facts foods it sits alongside."""
+    """A parent adding a custom food the databases lack. They give one or more
+    named servings and the Nutrition Facts as printed for one chosen serving
+    (basis_index); the server converts to per-100g so it sits alongside the
+    USDA/Open Food Facts foods and feeds the gram-based recipe math."""
 
     name: str = Field(min_length=1, max_length=200)
     brand: str = Field(default="", max_length=120)
-    calories: float | None = Field(default=None, ge=0, le=100000)
-    protein_g: float | None = Field(default=None, ge=0, le=10000)
-    carbs_g: float | None = Field(default=None, ge=0, le=10000)
-    fat_g: float | None = Field(default=None, ge=0, le=10000)
+    servings: list[FoodServingIn] = Field(min_length=1, max_length=20)
+    basis_index: int = Field(default=0, ge=0)  # which serving the values are per
+    # Nutrition as entered, per servings[basis_index]. mg for cholesterol/sodium.
+    calories: float | None = Field(default=None, ge=0, le=1_000_000)
+    protein_g: float | None = Field(default=None, ge=0, le=100000)
+    carbs_g: float | None = Field(default=None, ge=0, le=100000)
+    fat_g: float | None = Field(default=None, ge=0, le=100000)
+    saturated_fat_g: float | None = Field(default=None, ge=0, le=100000)
+    trans_fat_g: float | None = Field(default=None, ge=0, le=100000)
+    cholesterol_mg: float | None = Field(default=None, ge=0, le=10_000_000)
+    sodium_mg: float | None = Field(default=None, ge=0, le=10_000_000)
+    fiber_g: float | None = Field(default=None, ge=0, le=100000)
+    sugar_g: float | None = Field(default=None, ge=0, le=100000)
+
+    @model_validator(mode="after")
+    def _basis_in_range(self) -> "FoodIn":
+        if self.basis_index >= len(self.servings):
+            raise ValueError("basis_index is out of range for the servings given")
+        return self
 
 
 # ---- profiles and moods --------------------------------------------------------

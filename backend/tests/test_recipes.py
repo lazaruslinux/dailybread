@@ -60,7 +60,9 @@ def test_food_is_cached_and_reused_across_recipes(owner):
 
 def test_reusing_a_saved_food_by_id(owner):
     # A custom food is created up front, then referenced by id in a recipe.
-    food = owner.post("/foods", json={"name": "Grandma's sauce", "calories": 90,
+    food = owner.post("/foods", json={"name": "Grandma's sauce",
+                                      "servings": [{"name": "100 g", "grams": 100}],
+                                      "basis_index": 0, "calories": 90,
                                       "protein_g": 2, "carbs_g": 12, "fat_g": 4}).json()
     made = make_recipe(owner, name="Saucy", servings=2, ingredients=[
         {"food_id": food["id"], "source": "custom", "name": "Grandma's sauce",
@@ -120,7 +122,9 @@ def test_recipes_are_isolated_across_families(owner, other):
 
 def test_cannot_reference_another_familys_custom_food(owner, other):
     # Family B makes a custom food; family A can't sneak it into a recipe by id.
-    food = other.post("/foods", json={"name": "B's rub", "calories": 10}).json()
+    food = other.post("/foods", json={"name": "B's rub",
+                                      "servings": [{"name": "100 g", "grams": 100}],
+                                      "basis_index": 0, "calories": 10}).json()
     res = owner.post("/recipes", json={"name": "Sneaky", "ingredients": [
         {"food_id": food["id"], "source": "custom", "name": "B's rub",
          "amount": 50, "unit": "g"}]})
