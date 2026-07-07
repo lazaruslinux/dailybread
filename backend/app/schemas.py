@@ -298,6 +298,12 @@ class RecipeIngredientIn(BaseModel):
     protein_g: float | None = Field(default=None, ge=0, le=10000)
     carbs_g: float | None = Field(default=None, ge=0, le=10000)
     fat_g: float | None = Field(default=None, ge=0, le=10000)
+    saturated_fat_g: float | None = Field(default=None, ge=0, le=10000)
+    trans_fat_g: float | None = Field(default=None, ge=0, le=10000)
+    cholesterol_mg: float | None = Field(default=None, ge=0, le=10_000_000)
+    sodium_mg: float | None = Field(default=None, ge=0, le=10_000_000)
+    fiber_g: float | None = Field(default=None, ge=0, le=10000)
+    sugar_g: float | None = Field(default=None, ge=0, le=10000)
     amount: float = Field(gt=0, le=100000)
     unit: MassUnit = "g"
 
@@ -341,17 +347,29 @@ class RecipeIngredientOut(BaseModel):
     protein_g: float | None
     carbs_g: float | None
     fat_g: float | None
+    saturated_fat_g: float | None
+    trans_fat_g: float | None
+    cholesterol_mg: float | None
+    sodium_mg: float | None
+    fiber_g: float | None
+    sugar_g: float | None
 
 
 class RecipeMacros(BaseModel):
     """Per-serving nutrition, computed from the ingredient lines. A field is null
-    only when no ingredient supplied that macro at all (so an empty recipe, or
+    only when no ingredient supplied that nutrient at all (so an empty recipe, or
     foods that never listed protein, reads as "—" rather than a misleading 0)."""
 
     calories: float | None
     protein_g: float | None
     carbs_g: float | None
     fat_g: float | None
+    saturated_fat_g: float | None
+    trans_fat_g: float | None
+    cholesterol_mg: float | None
+    sodium_mg: float | None
+    fiber_g: float | None
+    sugar_g: float | None
 
 
 class RecipeOut(BaseModel):

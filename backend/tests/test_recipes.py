@@ -44,9 +44,9 @@ def test_ounces_are_converted_to_grams(owner):
 def test_recipe_can_be_saved_with_no_ingredients(owner):
     made = make_recipe(owner, name="Mystery Stew", ingredients=[])
     assert made["ingredients"] == []
-    # No ingredient supplied any macro, so every total reads "unknown", not 0.
-    assert made["per_serving"] == {"calories": None, "protein_g": None,
-                                    "carbs_g": None, "fat_g": None}
+    # No ingredient supplied any nutrient, so every total reads "unknown", not 0.
+    assert all(v is None for v in made["per_serving"].values())
+    assert "sugar_g" in made["per_serving"]  # the full label is reported
 
 
 def test_food_is_cached_and_reused_across_recipes(owner):
@@ -129,3 +129,19 @@ def test_cannot_reference_another_familys_custom_food(owner, other):
         {"food_id": food["id"], "source": "custom", "name": "B's rub",
          "amount": 50, "unit": "g"}]})
     assert res.status_code == 404
+
+
+def test_recipe_totals_the_full_nutrition_label(owner):
+    # A recipe totals the whole label, not just the four base macros: 100 g of a
+    # 20 g-sugar / 100 mg-sodium per-100g food, over 2 servings.
+    food = owner.post("/foods", json={"name": "Sweet stuff",
+                                      "servings": [{"name": "100 g", "grams": 100}],
+                                      "basis_index": 0, "calories": 200,
+                                      "sugar_g": 20, "sodium_mg": 100}).json()
+    made = make_recipe(owner, name="Sweet", servings=2, ingredients=[
+        {"food_id": food["id"], "source": "custom", "name": "Sweet stuff",
+         "amount": 100, "unit": "g"}])
+    assert made["per_serving"]["sugar_g"] == 10.0
+    assert made["per_serving"]["sodium_mg"] == 50.0
+    # a nutrient no food supplied still reads unknown, not a fake 0
+    assert made["per_serving"]["cholesterol_mg"] is None

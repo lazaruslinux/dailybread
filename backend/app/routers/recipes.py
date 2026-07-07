@@ -6,6 +6,7 @@ from app.db import get_db
 from app.deps import require_family, require_parent
 from app.models import Food, FoodSource, Recipe, RecipeIngredient, User
 from app.schemas import (
+    FOOD_NUTRIENTS,
     RecipeIn,
     RecipeIngredientIn,
     RecipeIngredientOut,
@@ -20,7 +21,9 @@ router = APIRouter(prefix="/recipes", tags=["recipes"])
 # edit, or delete them (same shape as the grocery list). Nutrition is computed
 # from the ingredient lines, never stored — see _serialize.
 
-_MACROS = ("calories", "protein_g", "carbs_g", "fat_g")
+# The nutrients we total per serving: the whole Nutrition Facts label a food
+# carries. Foods store each per 100 g, so a recipe just scales and sums them.
+_MACROS = FOOD_NUTRIENTS
 
 
 def _get_recipe(db: Session, recipe_id: int, family_id: int) -> Recipe:
@@ -83,10 +86,7 @@ def _resolve_food(db: Session, family_id: int, line: RecipeIngredientIn) -> Food
         source_id=line.source_id,
         name=line.name.strip(),
         brand=line.brand.strip(),
-        calories=line.calories,
-        protein_g=line.protein_g,
-        carbs_g=line.carbs_g,
-        fat_g=line.fat_g,
+        **{n: getattr(line, n) for n in _MACROS},
     )
     db.add(food)
     db.flush()  # assign an id so the ingredient row can reference it
@@ -132,10 +132,7 @@ def _serialize(recipe: Recipe) -> RecipeOut:
                 amount=ing.amount,
                 unit=ing.unit,
                 grams=round(ing.grams, 2),
-                calories=_r(contrib["calories"]),
-                protein_g=_r(contrib["protein_g"]),
-                carbs_g=_r(contrib["carbs_g"]),
-                fat_g=_r(contrib["fat_g"]),
+                **{m: _r(contrib[m]) for m in _MACROS},
             )
         )
 

@@ -405,15 +405,28 @@ export interface RecipeIngredient {
   protein_g: number | null
   carbs_g: number | null
   fat_g: number | null
+  saturated_fat_g: number | null
+  trans_fat_g: number | null
+  cholesterol_mg: number | null
+  sodium_mg: number | null
+  fiber_g: number | null
+  sugar_g: number | null
 }
 
-// Per-serving nutrition, computed from the lines. A field is null when no
-// ingredient supplied that macro (so it reads "—", not a misleading 0).
+// Per-serving nutrition, computed from the lines — the whole Nutrition Facts
+// label. A field is null when no ingredient supplied that nutrient (so it reads
+// "—", not a misleading 0).
 export interface RecipeMacros {
   calories: number | null
   protein_g: number | null
   carbs_g: number | null
   fat_g: number | null
+  saturated_fat_g: number | null
+  trans_fat_g: number | null
+  cholesterol_mg: number | null
+  sodium_mg: number | null
+  fiber_g: number | null
+  sugar_g: number | null
 }
 
 export interface Recipe {
@@ -439,6 +452,12 @@ export interface RecipeIngredientPayload {
   protein_g?: number | null
   carbs_g?: number | null
   fat_g?: number | null
+  saturated_fat_g?: number | null
+  trans_fat_g?: number | null
+  cholesterol_mg?: number | null
+  sodium_mg?: number | null
+  fiber_g?: number | null
+  sugar_g?: number | null
   amount: number
   unit: MassUnit
 }

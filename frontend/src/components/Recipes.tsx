@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { BookOpen, ChevronLeft, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronLeft, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '../lib/api'
@@ -25,6 +25,12 @@ interface EditLine {
   protein_g: number | null
   carbs_g: number | null
   fat_g: number | null
+  saturated_fat_g: number | null
+  trans_fat_g: number | null
+  cholesterol_mg: number | null
+  sodium_mg: number | null
+  fiber_g: number | null
+  sugar_g: number | null
   amount: number
   unit: api.MassUnit
 }
@@ -44,6 +50,12 @@ function lineFromFood(food: api.Food): EditLine {
     protein_g: food.protein_g,
     carbs_g: food.carbs_g,
     fat_g: food.fat_g,
+    saturated_fat_g: food.saturated_fat_g,
+    trans_fat_g: food.trans_fat_g,
+    cholesterol_mg: food.cholesterol_mg,
+    sodium_mg: food.sodium_mg,
+    fiber_g: food.fiber_g,
+    sugar_g: food.sugar_g,
     amount: 100,
     unit: 'g',
   }
@@ -65,6 +77,12 @@ function lineFromSaved(ing: api.RecipeIngredient): EditLine {
     protein_g: per100(ing.protein_g),
     carbs_g: per100(ing.carbs_g),
     fat_g: per100(ing.fat_g),
+    saturated_fat_g: per100(ing.saturated_fat_g),
+    trans_fat_g: per100(ing.trans_fat_g),
+    cholesterol_mg: per100(ing.cholesterol_mg),
+    sodium_mg: per100(ing.sodium_mg),
+    fiber_g: per100(ing.fiber_g),
+    sugar_g: per100(ing.sugar_g),
     amount: ing.amount,
     unit: (ing.unit as api.MassUnit) in GRAMS_PER_UNIT ? (ing.unit as api.MassUnit) : 'g',
   }
@@ -72,13 +90,27 @@ function lineFromSaved(ing: api.RecipeIngredient): EditLine {
 
 const gramsOf = (l: EditLine) => l.amount * GRAMS_PER_UNIT[l.unit]
 
-const MACROS = ['calories', 'protein_g', 'carbs_g', 'fat_g'] as const
+// The whole Nutrition Facts label, mirroring the backend FOOD_NUTRIENTS so live
+// editing totals match what the server computes on save.
+const MACROS = [
+  'calories',
+  'protein_g',
+  'carbs_g',
+  'fat_g',
+  'saturated_fat_g',
+  'trans_fat_g',
+  'cholesterol_mg',
+  'sodium_mg',
+  'fiber_g',
+  'sugar_g',
+] as const
 type Macro = (typeof MACROS)[number]
 
-// Per-serving totals, live, from the editor lines. A macro stays null until some
-// food supplies it, so an empty or macro-less recipe reads "—", never a fake 0.
+// Per-serving totals, live, from the editor lines. A nutrient stays null until
+// some food supplies it, so an empty or macro-less recipe reads "—", never a
+// fake 0.
 function perServing(lines: EditLine[], servings: number): api.RecipeMacros {
-  const totals: Record<Macro, number | null> = { calories: null, protein_g: null, carbs_g: null, fat_g: null }
+  const totals = Object.fromEntries(MACROS.map((m) => [m, null])) as Record<Macro, number | null>
   for (const l of lines) {
     const factor = gramsOf(l) / 100
     for (const m of MACROS) {
@@ -88,12 +120,7 @@ function perServing(lines: EditLine[], servings: number): api.RecipeMacros {
   }
   const s = servings || 1
   const round1 = (v: number | null) => (v != null ? Math.round((v / s) * 10) / 10 : null)
-  return {
-    calories: round1(totals.calories),
-    protein_g: round1(totals.protein_g),
-    carbs_g: round1(totals.carbs_g),
-    fat_g: round1(totals.fat_g),
-  }
+  return Object.fromEntries(MACROS.map((m) => [m, round1(totals[m])])) as unknown as api.RecipeMacros
 }
 
 const fmt = (n: number | null) => (n != null ? String(Math.round(n)) : '—')
@@ -151,9 +178,56 @@ function Sheet({ children, onClose }: { children: React.ReactNode; onClose: () =
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex flex-1 flex-col items-center rounded-xl bg-fg/5 px-2 py-2">
+    <div className="flex flex-col items-center rounded-xl bg-fg/5 px-1.5 py-2">
       <span className="font-display text-lg font-semibold leading-none">{value}</span>
       <span className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-fg/45">{label}</span>
+    </div>
+  )
+}
+
+// Per-serving nutrition: the five headline numbers (calories, the macros, and
+// sugar) always shown, with the rest of the Nutrition Facts label a tap away.
+const MORE_NUTRIENTS: { key: keyof api.RecipeMacros; label: string; unit: string }[] = [
+  { key: 'saturated_fat_g', label: 'Saturated fat', unit: 'g' },
+  { key: 'trans_fat_g', label: 'Trans fat', unit: 'g' },
+  { key: 'cholesterol_mg', label: 'Cholesterol', unit: 'mg' },
+  { key: 'sodium_mg', label: 'Sodium', unit: 'mg' },
+  { key: 'fiber_g', label: 'Fiber', unit: 'g' },
+]
+
+function NutritionPanel({ m }: { m: api.RecipeMacros }) {
+  const [open, setOpen] = useState(false)
+  const hasMore = MORE_NUTRIENTS.some((r) => m[r.key] != null)
+  return (
+    <div>
+      <div className="grid grid-cols-5 gap-1.5">
+        <Stat label="Cal" value={fmt(m.calories)} />
+        <Stat label="Protein" value={fmt(m.protein_g)} />
+        <Stat label="Carbs" value={fmt(m.carbs_g)} />
+        <Stat label="Fat" value={fmt(m.fat_g)} />
+        <Stat label="Sugar" value={fmt(m.sugar_g)} />
+      </div>
+      {hasMore && (
+        <>
+          <button type="button" onClick={() => setOpen((o) => !o)}
+            className="mt-2 flex items-center gap-1 text-xs font-semibold text-accent-bright hover:opacity-80">
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+            {open ? 'Hide nutrition' : 'More nutrition'}
+          </button>
+          {open && (
+            <div className="mt-2 flex flex-col divide-y divide-fg/5 rounded-xl bg-fg/5 px-3">
+              {MORE_NUTRIENTS.map((r) => (
+                <div key={r.key} className="flex items-center justify-between py-1.5 text-sm">
+                  <span className="text-fg/65">{r.label}</span>
+                  <span className="tabular-nums text-fg/85">
+                    {m[r.key] != null ? `${Math.round(m[r.key] as number)} ${r.unit}` : '—'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }
@@ -193,11 +267,8 @@ function RecipeDetail({
         Makes {recipe.servings} {recipe.servings === 1 ? 'serving' : 'servings'} · per serving
       </p>
 
-      <div className="mt-4 flex gap-2">
-        <Stat label="Cal" value={fmt(m.calories)} />
-        <Stat label="Protein" value={fmt(m.protein_g)} />
-        <Stat label="Carbs" value={fmt(m.carbs_g)} />
-        <Stat label="Fat" value={fmt(m.fat_g)} />
+      <div className="mt-4">
+        <NutritionPanel m={m} />
       </div>
 
       {recipe.ingredients.length > 0 && (
@@ -492,6 +563,12 @@ function RecipeSheet({
           protein_g: l.protein_g,
           carbs_g: l.carbs_g,
           fat_g: l.fat_g,
+          saturated_fat_g: l.saturated_fat_g,
+          trans_fat_g: l.trans_fat_g,
+          cholesterol_mg: l.cholesterol_mg,
+          sodium_mg: l.sodium_mg,
+          fiber_g: l.fiber_g,
+          sugar_g: l.sugar_g,
           amount: l.amount,
           unit: l.unit,
         })),
@@ -587,12 +664,7 @@ function RecipeSheet({
             <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-fg/45">
               Per serving
             </span>
-            <div className="flex gap-2">
-              <Stat label="Cal" value={fmt(totals.calories)} />
-              <Stat label="Protein" value={fmt(totals.protein_g)} />
-              <Stat label="Carbs" value={fmt(totals.carbs_g)} />
-              <Stat label="Fat" value={fmt(totals.fat_g)} />
-            </div>
+            <NutritionPanel m={totals} />
           </div>
         )}
 
