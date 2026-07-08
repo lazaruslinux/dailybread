@@ -11,24 +11,24 @@ import { BarcodeScanner } from './BarcodeScanner'
 // How many base units (g for a solid, mL for a liquid) one of each unit is.
 // Mirrors the backend UNIT_TO_BASE — nutrition is computed live here as the cook
 // edits. A food is measured in only one family; the two never mix on a line.
-const UNIT_TO_BASE: Record<api.AmountUnit, number> = {
+export const UNIT_TO_BASE: Record<api.AmountUnit, number> = {
   g: 1, oz: 28.3495, lb: 453.592,
   ml: 1, floz: 29.5735, cup: 236.588, tbsp: 14.7868, tsp: 4.92892,
 }
 const MASS_UNITS: api.MassUnit[] = ['g', 'oz', 'lb']
 const VOLUME_UNITS: api.VolumeUnit[] = ['ml', 'floz', 'cup', 'tbsp', 'tsp']
-const unitsForBase = (base: api.BaseUnit): api.AmountUnit[] => (base === 'ml' ? VOLUME_UNITS : MASS_UNITS)
+export const unitsForBase = (base: api.BaseUnit): api.AmountUnit[] => (base === 'ml' ? VOLUME_UNITS : MASS_UNITS)
 const baseUnitOf = (unit: string): api.BaseUnit =>
   (VOLUME_UNITS as string[]).includes(unit) ? 'ml' : 'g'
 // How each unit reads on screen (only "floz" differs from its token).
-const UNIT_LABEL: Record<string, string> = {
+export const UNIT_LABEL: Record<string, string> = {
   g: 'g', oz: 'oz', lb: 'lb', ml: 'mL', floz: 'fl oz', cup: 'cup', tbsp: 'tbsp', tsp: 'tsp',
 }
 const r2 = (n: number) => Math.round(n * 100) / 100
 
 // A serving selection is encoded as the pseudo-unit "serving:<index>", so one
 // dropdown can offer both a food's named servings and its raw units.
-const servingIndex = (unit: string): number | null =>
+export const servingIndex = (unit: string): number | null =>
   unit.startsWith('serving:') ? Number(unit.slice(8)) : null
 
 // An ingredient line while editing: the food's per-100(base) macros travel with
@@ -183,7 +183,7 @@ function macroSummary(m: api.RecipeMacros): string {
 // modal nested under one only covers a band (and on iOS the page shows through).
 // The portal lifts it out to the top of the DOM where `fixed inset-0` fills the
 // screen. Body scroll is locked while it's open so the page can't drift behind.
-function Sheet({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+export function Sheet({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   useEffect(() => {
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -539,7 +539,7 @@ const SOURCE_LABEL: Record<api.FoodSource, string> = { usda: 'USDA', off: 'OFF',
 // own custom foods, or scan a product barcode — tap a result to add it as an
 // ingredient. An unknown barcode opens the New Food form prefilled with the
 // code, so entering it once teaches the app the product for good.
-function FoodPicker({ onPick, onBack }: { onPick: (food: api.Food) => void; onBack: () => void }) {
+export function FoodPicker({ onPick, onBack }: { onPick: (food: api.Food) => void; onBack: () => void }) {
   const [q, setQ] = useState('')
   const [results, setResults] = useState<api.Food[]>([])
   const [custom, setCustom] = useState<api.Food[]>([])

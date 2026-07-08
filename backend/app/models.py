@@ -460,6 +460,90 @@ class FoodServing(Base):
     food: Mapped["Food"] = relationship(back_populates="servings")
 
 
+class DiarySlot(str, enum.Enum):
+    """Which part of the day a diary entry belongs to. Deliberately its own
+    enum (not MealSlot): the menu plans meals for the family's evening, the
+    diary groups what one person ate, and the two lists evolve separately."""
+
+    breakfast = "breakfast"
+    lunch = "lunch"
+    dinner = "dinner"
+    snack = "snack"
+
+
+class DiaryEntry(Base):
+    """One line of a member's food diary: what they ate, when, and the
+    nutrition it amounted to.
+
+    The nutrient columns are a snapshot of the SERVED amount, computed
+    server-side at log time. That makes history honest: editing a recipe or
+    deleting a custom food later never rewrites what a past day says you ate.
+    food_id/recipe_id are soft references (SET NULL on delete) kept for
+    provenance and for recomputing when the amount is edited; once a reference
+    is gone, edits scale the snapshot linearly instead.
+
+    A diary is personal: every query filters on user_id, and no endpoint —
+    parent, admin, or otherwise — exposes another member's entries."""
+
+    __tablename__ = "diary_entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    date_for: Mapped[dt.date] = mapped_column(Date, index=True)
+    slot: Mapped[DiarySlot] = mapped_column(SAEnum(DiarySlot, name="diary_slot"))
+    # Wall-clock time the bite happened, as the client reported it (optional).
+    time_of_day: Mapped[dt.time | None] = mapped_column(Time, nullable=True)
+    # Denormalized display name/brand, so the row still reads right after its
+    # food or recipe is gone.
+    name: Mapped[str] = mapped_column(String(200))
+    brand: Mapped[str] = mapped_column(String(120), default="")
+    food_id: Mapped[int | None] = mapped_column(
+        ForeignKey("foods.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    recipe_id: Mapped[int | None] = mapped_column(
+        ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # For a food: amount in `unit` (a mass or volume unit matching the food's
+    # base). For a recipe: number of servings, unit "srv".
+    amount: Mapped[float] = mapped_column(Float)
+    unit: Mapped[str] = mapped_column(String(4), default="g")
+    # Optional human phrasing of the portion ("2 slices", "1 serving") for
+    # display; the math never reads it.
+    label: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    # Nutrition for the served amount (NOT per-100); None = source didn't know.
+    calories: Mapped[float | None] = mapped_column(Float, nullable=True)
+    protein_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    carbs_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fat_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    saturated_fat_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    trans_fat_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cholesterol_mg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sodium_mg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fiber_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sugar_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class NutritionTarget(Base):
+    """A member's own daily targets: a calorie budget and how it splits across
+    protein/carbs/fat (percentages, summing to 100). Each member sets their
+    own; no row yet means the app's starting default. Gram targets are derived
+    from these at read time (4 kcal/g protein and carbs, 9 kcal/g fat)."""
+
+    __tablename__ = "nutrition_targets"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    calories: Mapped[int] = mapped_column(Integer, default=2000)
+    protein_pct: Mapped[int] = mapped_column(Integer, default=30)
+    carbs_pct: Mapped[int] = mapped_column(Integer, default=40)
+    fat_pct: Mapped[int] = mapped_column(Integer, default=30)
+
+
 class MoodLevel(str, enum.Enum):
     """Five-step mood scale rendered as weather in the UI (sun to storm)."""
 

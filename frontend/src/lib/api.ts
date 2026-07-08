@@ -637,3 +637,93 @@ export const saveJournal = (body: string, date = localDate()) =>
     method: 'PUT',
     body: JSON.stringify({ date_for: date, body }),
   })
+
+// ---- the nutrition diary -------------------------------------------------------
+
+// A member's personal food log. Entries snapshot their nutrition at log time
+// (server-computed), so editing recipes or foods later never rewrites history.
+
+export type DiarySlot = 'breakfast' | 'lunch' | 'dinner' | 'snack'
+
+export interface DiaryEntry {
+  id: number
+  date_for: string
+  slot: DiarySlot
+  time_of_day: string | null // "HH:MM:SS"
+  name: string
+  brand: string
+  food_id: number | null
+  recipe_id: number | null
+  amount: number
+  unit: string // an AmountUnit, or "srv" for a recipe entry
+  label: string | null // human phrasing of the portion ("2 slice")
+  calories: number | null
+  protein_g: number | null
+  carbs_g: number | null
+  fat_g: number | null
+  saturated_fat_g: number | null
+  trans_fat_g: number | null
+  cholesterol_mg: number | null
+  sodium_mg: number | null
+  fiber_g: number | null
+  sugar_g: number | null
+}
+
+// Daily targets: each member sets their own calorie budget and macro split
+// (the percentages must sum to 100). The *_g fields are derived server-side.
+export interface NutritionTargets {
+  calories: number
+  protein_pct: number
+  carbs_pct: number
+  fat_pct: number
+  protein_g: number
+  carbs_g: number
+  fat_g: number
+}
+
+export interface DiaryDay {
+  date: string
+  targets: NutritionTargets
+  consumed: RecipeMacros
+  entries: DiaryEntry[]
+}
+
+// Logging something eaten: a recipe by servings (recipe_id + amount), or a
+// food carried whole like a recipe ingredient line (id when saved, else
+// source/name/nutrition to find-or-create). The server computes totals.
+export interface DiaryEntryPayload extends Partial<Omit<RecipeIngredientPayload, 'amount' | 'unit'>> {
+  date_for: string
+  slot: DiarySlot
+  time_of_day?: string | null
+  amount: number
+  unit?: AmountUnit
+  label?: string | null
+  recipe_id?: number
+}
+
+export interface DiaryEntryPatch {
+  amount?: number
+  unit?: AmountUnit
+  label?: string | null
+  slot?: DiarySlot
+  time_of_day?: string | null
+  date_for?: string
+}
+
+export const getDiary = (date: string) => request<DiaryDay>(`/diary?date=${date}`)
+
+export const createDiaryEntry = (payload: DiaryEntryPayload) =>
+  request<DiaryEntry>('/diary', { method: 'POST', body: JSON.stringify(payload) })
+
+export const updateDiaryEntry = (id: number, patch: DiaryEntryPatch) =>
+  request<DiaryEntry>(`/diary/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+
+export const deleteDiaryEntry = (id: number) =>
+  request<void>(`/diary/${id}`, { method: 'DELETE' })
+
+export const setNutritionTargets = (t: {
+  calories: number
+  protein_pct: number
+  carbs_pct: number
+  fat_pct: number
+}) => request<NutritionTargets>('/diary/targets', { method: 'PUT', body: JSON.stringify(t) })

@@ -3,7 +3,16 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.models import FoodSource, ItemKind, MealSlot, MoodLevel, RepeatType, Role, Visibility
+from app.models import (
+    DiarySlot,
+    FoodSource,
+    ItemKind,
+    MealSlot,
+    MoodLevel,
+    RepeatType,
+    Role,
+    Visibility,
+)
 
 
 # Pydantic models define the JSON shapes for requests/responses and validate
@@ -534,6 +543,121 @@ class FoodIn(BaseModel):
         if self.basis_index >= len(self.servings):
             raise ValueError("basis_index is out of range for the servings given")
         return self
+
+
+# ---- the nutrition diary ---------------------------------------------------------
+
+
+class DiaryEntryIn(BaseModel):
+    """Logging one thing you ate: a recipe by servings (recipe_id + amount), or
+    a food with the same carried-payload contract as recipe ingredient lines —
+    an id when it's already saved, otherwise source/source_id/name/nutrition to
+    find-or-create. The server computes the entry's nutrition; the client never
+    supplies totals."""
+
+    date_for: dt.date
+    slot: DiarySlot
+    time_of_day: dt.time | None = None
+    amount: float = Field(gt=0, le=100000)
+    unit: AmountUnit = "g"  # ignored for recipe entries (they're in servings)
+    label: str | None = Field(default=None, max_length=60)
+
+    recipe_id: int | None = None
+
+    # Food payload, RecipeIngredientIn-shaped (used only when recipe_id is None).
+    food_id: int | None = None
+    source: FoodSource | None = None
+    source_id: str | None = Field(default=None, max_length=64)
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    brand: str = Field(default="", max_length=120)
+    calories: float | None = Field(default=None, ge=0, le=100000)
+    protein_g: float | None = Field(default=None, ge=0, le=10000)
+    carbs_g: float | None = Field(default=None, ge=0, le=10000)
+    fat_g: float | None = Field(default=None, ge=0, le=10000)
+    saturated_fat_g: float | None = Field(default=None, ge=0, le=10000)
+    trans_fat_g: float | None = Field(default=None, ge=0, le=10000)
+    cholesterol_mg: float | None = Field(default=None, ge=0, le=10_000_000)
+    sodium_mg: float | None = Field(default=None, ge=0, le=10_000_000)
+    fiber_g: float | None = Field(default=None, ge=0, le=10000)
+    sugar_g: float | None = Field(default=None, ge=0, le=10000)
+
+    @model_validator(mode="after")
+    def _one_source(self) -> "DiaryEntryIn":
+        if self.recipe_id is None:
+            if self.food_id is None and (self.source is None or self.name is None):
+                raise ValueError("An entry needs a recipe, a saved food, or a food payload")
+        return self
+
+
+class DiaryEntryUpdate(BaseModel):
+    """Editing an entry: portion, when, or which group. Nutrition is
+    recomputed (or, when its source is gone, scaled) server-side."""
+
+    amount: float | None = Field(default=None, gt=0, le=100000)
+    unit: AmountUnit | None = None
+    label: str | None = Field(default=None, max_length=60)
+    slot: DiarySlot | None = None
+    time_of_day: dt.time | None = None
+    date_for: dt.date | None = None
+
+
+class DiaryEntryOut(BaseModel):
+    id: int
+    date_for: dt.date
+    slot: DiarySlot
+    time_of_day: dt.time | None
+    name: str
+    brand: str
+    food_id: int | None
+    recipe_id: int | None
+    amount: float
+    unit: str
+    label: str | None
+    calories: float | None
+    protein_g: float | None
+    carbs_g: float | None
+    fat_g: float | None
+    saturated_fat_g: float | None
+    trans_fat_g: float | None
+    cholesterol_mg: float | None
+    sodium_mg: float | None
+    fiber_g: float | None
+    sugar_g: float | None
+
+    model_config = {"from_attributes": True}
+
+
+class TargetsIn(BaseModel):
+    """A member setting their own daily budget and macro split. The
+    percentages must sum to 100 (checked in the endpoint so it's a friendly
+    400, not a validation-shaped 422)."""
+
+    calories: int = Field(ge=500, le=20000)
+    protein_pct: int = Field(ge=0, le=100)
+    carbs_pct: int = Field(ge=0, le=100)
+    fat_pct: int = Field(ge=0, le=100)
+
+
+class TargetsOut(BaseModel):
+    calories: int
+    protein_pct: int
+    carbs_pct: int
+    fat_pct: int
+    # Derived gram targets (4 kcal/g protein and carbs, 9 kcal/g fat), so every
+    # surface shows the same numbers.
+    protein_g: float
+    carbs_g: float
+    fat_g: float
+
+
+class DiaryDayOut(BaseModel):
+    """One member's diary for one day: their targets, what the day's entries
+    total so far, and the entries themselves (the client groups by slot)."""
+
+    date: dt.date
+    targets: TargetsOut
+    consumed: RecipeMacros
+    entries: list[DiaryEntryOut]
 
 
 # ---- profiles and moods --------------------------------------------------------

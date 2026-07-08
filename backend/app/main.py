@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.db import db_ok
-from app.routers import auth, families, foods, grocery, items, meals, recipes, users
+from app.routers import auth, diary, families, foods, grocery, items, meals, recipes, users
 
 # Schema management moved to Alembic: the container entrypoint runs
 # "alembic upgrade head" before starting the server, so by the time the app
@@ -36,6 +36,7 @@ async def block_cross_site_writes(request: Request, call_next):
 
 
 app.include_router(auth.router)
+app.include_router(diary.router)
 app.include_router(families.router)
 app.include_router(grocery.router)
 app.include_router(items.router)

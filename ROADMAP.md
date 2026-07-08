@@ -74,17 +74,21 @@ Where dailybread is headed, in order. Done items stay for history.
   admins reset a member's forgotten password to a generated one, handed
   over once, with a forced choose-your-own step at the next sign-in.
 
+- **Nutrition diary** — a personal food diary per member: entries grouped by
+  meal with consumed-vs-target bars on top; log foods by serving, weight, or
+  volume (search, barcode, custom foods) or a recipe by servings; each member
+  sets their own calorie budget and macro split. Entries snapshot their
+  nutrition at log time, so editing a recipe later never rewrites history.
+
 ## Next
 
-1. **Nutrition diary** — per-member daily food logging with targets and
-   macro breakdowns, reusing the food layer, servings, and scanner.
-2. **Calendar subscription feed** — a read-only per-member iCal feed so the
+1. **Calendar subscription feed** — a read-only per-member iCal feed so the
    phone's own calendar app can show dailybread events (one-way by design).
-3. **Push reminders** — Web Push for card reminders and a morning digest.
-4. **Family chat** — messaging, then topic channels, then photo attachments;
+2. **Push reminders** — Web Push for card reminders and a morning digest.
+3. **Family chat** — messaging, then topic channels, then photo attachments;
    channels carry explicit member lists from day one so a channel can later
    span households.
-5. **Fitness sync** — workouts flowing into the app and auto-completing
+4. **Fitness sync** — workouts flowing into the app and auto-completing
    matching board routines. Strava first (watch → Strava → server polling);
    direct Apple Health export as a self-hosted alternative path.
 
