@@ -1,3 +1,5 @@
+import time
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
@@ -47,6 +49,28 @@ def _apply_custom_food(food: Food, data: FoodIn) -> None:
     ]
 
 
+# Recent search results, kept briefly so retyping a query (or two members
+# searching the same thing) doesn't re-hit USDA — the free key covers the whole
+# install at ~3600 requests/hour. Errors are never cached; only good answers.
+_SEARCH_TTL_SECONDS = 15 * 60
+_SEARCH_CACHE_MAX = 200
+_search_cache: dict[str, tuple[float, list[foods_api.FoodResult]]] = {}
+
+
+def _searched(q: str) -> list[foods_api.FoodResult]:
+    key = q.strip().lower()
+    now = time.monotonic()
+    hit = _search_cache.get(key)
+    if hit is not None and now - hit[0] < _SEARCH_TTL_SECONDS:
+        return hit[1]
+    results = foods_api.search_usda(q, settings.usda_api_key)
+    if len(_search_cache) >= _SEARCH_CACHE_MAX:
+        # Drop the stalest entry; the cache stays small and recent.
+        del _search_cache[min(_search_cache, key=lambda k: _search_cache[k][0])]
+    _search_cache[key] = (now, results)
+    return results
+
+
 @router.get("/search", response_model=list[FoodOut])
 def search_foods(
     q: str = Query(min_length=1, max_length=100),
@@ -55,7 +79,7 @@ def search_foods(
 ):
     """Search the food database (USDA FoodData Central), server-side."""
     try:
-        results = foods_api.search_usda(q, settings.usda_api_key)
+        results = _searched(q)
     except foods_api.FoodApiError as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)) from e
     return [_result_out(r) for r in results]

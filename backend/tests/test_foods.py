@@ -154,3 +154,34 @@ def test_custom_foods_are_isolated_across_families(owner, other):
     # B can't see, edit, or delete A's custom food (looks like it doesn't exist).
     assert other.put(f"/foods/{fid}", json=_food("Hijack")).status_code == 404
     assert other.delete(f"/foods/{fid}").status_code == 404
+
+
+def test_search_results_are_cached_briefly(owner, monkeypatch):
+    calls: list[str] = []
+
+    def fake_search(query, api_key, limit=25):
+        calls.append(query)
+        return [foods_api.FoodResult("usda", "1", "Milk", "", 60.0, 3.3, 4.8, 3.2)]
+
+    monkeypatch.setattr(foods_api, "search_usda", fake_search)
+    owner.get("/foods/search?q=milk")
+    owner.get("/foods/search?q=milk")
+    owner.get("/foods/search?q=MILK")  # case-insensitive: same cached answer
+    assert calls == ["milk"]
+    owner.get("/foods/search?q=eggs")  # a different query is a real fetch
+    assert calls == ["milk", "eggs"]
+
+
+def test_search_errors_are_not_cached(owner, monkeypatch):
+    # A hiccup (USDA down, no key) must not poison 15 minutes of searches.
+    def boom(query, api_key, limit=25):
+        raise foods_api.FoodApiError("USDA is unavailable right now.")
+
+    monkeypatch.setattr(foods_api, "search_usda", boom)
+    assert owner.get("/foods/search?q=milk").status_code == 502
+
+    def ok(query, api_key, limit=25):
+        return [foods_api.FoodResult("usda", "1", "Milk", "", 60.0, 3.3, 4.8, 3.2)]
+
+    monkeypatch.setattr(foods_api, "search_usda", ok)
+    assert owner.get("/foods/search?q=milk").status_code == 200

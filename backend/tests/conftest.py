@@ -31,10 +31,13 @@ JOSH = {"username": "josh", "display_name": "Josh", "password": "josh-pass-1234"
 
 
 @pytest.fixture(autouse=True)
-def _reset_login_throttle():
-    # The throttle is process-global; without this, failed-login tests would
-    # bleed lockout state into each other.
+def _reset_process_state():
+    # The login throttle and the food-search cache are process-global; without
+    # this, one test's lockouts or cached results would bleed into the next.
+    from app.routers import foods as foods_router
+
     throttle.clear()
+    foods_router._search_cache.clear()
     yield
 
 
