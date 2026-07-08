@@ -1,4 +1,4 @@
-import { HeartPulse, Scale, X } from 'lucide-react'
+import { HeartPulse, Scale, Target, X } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import * as api from '../lib/api'
@@ -27,12 +27,29 @@ function cmToFtIn(cm: number): { ft: string; inch: string } {
   return { ft: String(ft), inch: String(inch) }
 }
 
+// Hints describe the shape of a normal day, not workouts - exercise is logged
+// separately and added on top, so counting it here would double-dip.
 const ACTIVITY: { id: api.ActivityLevel; label: string; hint: string; factor: number }[] = [
-  { id: 'sedentary', label: 'Sedentary', hint: 'Desk days, little exercise', factor: 1.2 },
-  { id: 'light', label: 'Lightly active', hint: 'Exercise 1-3 days a week', factor: 1.375 },
-  { id: 'moderate', label: 'Moderately active', hint: 'Exercise 3-5 days a week', factor: 1.5 },
-  { id: 'active', label: 'Active', hint: 'Exercise 6-7 days a week', factor: 1.725 },
-  { id: 'very_active', label: 'Very active', hint: 'Hard training or a physical job', factor: 1.9 },
+  {
+    id: 'sedentary',
+    label: 'Sedentary',
+    hint: 'Office job, little or no physical activity during the day',
+    factor: 1.2,
+  },
+  { id: 'light', label: 'Lightly active', hint: 'On your feet part of the day', factor: 1.375 },
+  {
+    id: 'moderate',
+    label: 'Moderately active',
+    hint: 'Moving around for much of the day',
+    factor: 1.5,
+  },
+  { id: 'active', label: 'Active', hint: 'On your feet nearly all day', factor: 1.725 },
+  {
+    id: 'very_active',
+    label: 'Very active',
+    hint: 'Hard physical work most of the day',
+    factor: 1.9,
+  },
 ]
 
 const GOALS: { id: api.GoalType; label: string }[] = [
@@ -108,6 +125,9 @@ export function HealthSheet({
   const [goalWeightLb, setGoalWeightLb] = useState(
     p?.goal_weight_kg ? String(Math.round(lb(p.goal_weight_kg) * 10) / 10) : '',
   )
+  const [goalBodyFat, setGoalBodyFat] = useState(
+    p?.goal_body_fat_pct ? String(p.goal_body_fat_pct) : '',
+  )
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   // The 2 lb/week rate requires reading the warning and saying so.
@@ -143,6 +163,7 @@ export function HealthSheet({
           rate_lbs_per_week: goal === 'maintain' ? null : rate,
           goal_weight_kg:
             Number(goalWeightLb) > 0 ? Math.round(kg(Number(goalWeightLb)) * 100) / 100 : null,
+          goal_body_fat_pct: Number(goalBodyFat) > 0 ? Number(goalBodyFat) : null,
         })
       }
       onSaved()
@@ -172,8 +193,12 @@ export function HealthSheet({
 
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
         <p className="text-xs leading-relaxed text-fg/50">
-          All optional, and only you can see it. Fill it in and dailybread computes a daily
-          calorie target for you.
+          Fill in this form as accurately as possible, and dailybread will automatically
+          calculate a daily calorie target for you, with default macro-nutrient goals.
+        </p>
+        <p className="-mt-2 text-xs leading-relaxed text-fg/50">
+          All optional, and stored privately: no one else can see your weight, health, or food
+          log. The only exception is that a parent can see and manage a child's.
         </p>
 
         <div className="w-44">
@@ -187,7 +212,7 @@ export function HealthSheet({
 
         <div>
           <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
-            Sex
+            Gender
           </span>
           <div className="grid grid-cols-2 gap-1.5">
             {(['male', 'female'] as const).map((s) => (
@@ -196,9 +221,6 @@ export function HealthSheet({
               </button>
             ))}
           </div>
-          <p className="mt-1.5 text-xs text-fg/40">
-            Asked because the calorie formulas differ by it; nothing else uses it.
-          </p>
         </div>
 
         <div>
@@ -226,8 +248,8 @@ export function HealthSheet({
             Activity level
           </span>
           <p className="mb-1.5 text-xs leading-relaxed text-fg/40">
-            Pick what describes your everyday life, not your workouts. Log runs and walks under
-            Exercise instead; they add onto that day's target.
+            Pick what describes your everyday life, not including your exercise. Log your
+            exercise in addition to food and it will be added to the day's target calories!
           </p>
           <div className="flex flex-col gap-1.5">
             {ACTIVITY.map((a) => (
@@ -340,15 +362,30 @@ export function HealthSheet({
                     </div>
                   )}
                 </div>
-                <div className="relative w-32">
-                  <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
-                    Goal weight
-                  </span>
-                  <div className="relative">
-                    <input aria-label="Goal weight pounds" inputMode="decimal" value={goalWeightLb}
-                      onChange={(e) => setGoalWeightLb(e.target.value.replace(/[^0-9.]/g, ''))}
-                      placeholder="optional" className="field" style={{ paddingRight: '1.9rem' }} />
-                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-fg/40">lb</span>
+                <div>
+                  <div className="flex items-end gap-2">
+                    <div className="relative w-32">
+                      <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
+                        Goal weight
+                      </span>
+                      <div className="relative">
+                        <input aria-label="Goal weight pounds" inputMode="decimal" value={goalWeightLb}
+                          onChange={(e) => setGoalWeightLb(e.target.value.replace(/[^0-9.]/g, ''))}
+                          placeholder="optional" className="field" style={{ paddingRight: '1.9rem' }} />
+                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-fg/40">lb</span>
+                      </div>
+                    </div>
+                    <div className="relative w-32">
+                      <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
+                        Goal body fat
+                      </span>
+                      <div className="relative">
+                        <input aria-label="Goal body fat percent" inputMode="decimal" value={goalBodyFat}
+                          onChange={(e) => setGoalBodyFat(e.target.value.replace(/[^0-9.]/g, ''))}
+                          placeholder="optional" className="field" style={{ paddingRight: '1.7rem' }} />
+                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-fg/40">%</span>
+                      </div>
+                    </div>
                   </div>
                   <p className="mt-1.5 text-xs text-fg/40">
                     At your goal weight the plan flips to maintaining automatically.
@@ -489,7 +526,7 @@ export function HealthCard({
           <span className="block text-sm font-semibold text-fg/85">Set up your health profile</span>
           <span className="block text-xs text-fg/50">
             Optional. Get a daily calorie target computed for you, and a plan that adjusts as you
-            weigh in.
+            weigh in. Private: only you can see it.
           </span>
         </span>
       </button>
@@ -514,18 +551,28 @@ export function HealthCard({
         </span>
         <button
           onClick={onEdit}
-          className="rounded-lg px-2 py-1 text-xs font-semibold text-fg/55 transition-colors hover:bg-fg/10 hover:text-fg"
+          className="flex shrink-0 items-center gap-1.5 rounded-xl border border-accent-bright/40 bg-accent-bright/15 px-3 py-2 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
         >
-          Edit
+          <Target className="h-3.5 w-3.5" /> Manage goals
         </button>
       </div>
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-fg/85">
             {fmtLb(w.weight_kg)}
-            {p.goal_weight_kg != null && !health.computed.at_goal && (
-              <span className="font-normal text-fg/50"> → {fmtLb(p.goal_weight_kg)}</span>
-            )}
+            {!health.computed.at_goal &&
+              (p.goal_weight_kg != null || p.goal_body_fat_pct != null) && (
+                <span className="font-normal text-fg/50">
+                  {' '}
+                  →{' '}
+                  {[
+                    p.goal_weight_kg != null ? fmtLb(p.goal_weight_kg) : null,
+                    p.goal_body_fat_pct != null ? `${p.goal_body_fat_pct}% bf` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+              )}
           </p>
           <p className="truncate text-xs text-fg/50">
             {goalText} · burn ≈ {health.computed.maintenance_calories.toLocaleString()} kcal

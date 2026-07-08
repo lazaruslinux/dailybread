@@ -123,6 +123,29 @@ def test_rate_is_capped_to_a_healthy_range(owner):
     assert res.status_code == 422
 
 
+def test_goal_body_fat_round_trips_without_touching_the_math(owner):
+    setup_profile(owner, weight_kg=90.0)
+    base = owner.get("/me/health").json()["computed"]["auto_calories"]
+    res = owner.put(
+        "/me/health/goal",
+        json={
+            "goal": "lose",
+            "rate_lbs_per_week": 1.0,
+            "goal_weight_kg": 80.0,
+            "goal_body_fat_pct": 15.0,
+        },
+    )
+    assert res.status_code == 200, res.text
+    h = owner.get("/me/health").json()
+    assert h["profile"]["goal_body_fat_pct"] == 15.0
+    # Informational only: the calorie target is the same as without it.
+    assert h["computed"]["auto_calories"] == base - 500
+
+    # And it clears like the other goal fields do.
+    owner.put("/me/health/goal", json={"goal": "maintain"})
+    assert owner.get("/me/health").json()["profile"]["goal_body_fat_pct"] is None
+
+
 # ---- diary targets integration ------------------------------------------------------
 
 

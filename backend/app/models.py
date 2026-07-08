@@ -611,6 +611,8 @@ class HealthProfile(Base):
     )
     rate_lbs_per_week: Mapped[float | None] = mapped_column(Float, nullable=True)
     goal_weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Informational second lens on the goal; the math stays weight-driven.
+    goal_body_fat_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class WeightEntry(Base):

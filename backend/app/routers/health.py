@@ -126,6 +126,7 @@ def _apply_goal(db: Session, target_user_id: int, data: GoalIn) -> None:
     profile.goal = data.goal
     profile.rate_lbs_per_week = data.rate_lbs_per_week
     profile.goal_weight_kg = data.goal_weight_kg
+    profile.goal_body_fat_pct = data.goal_body_fat_pct
     db.commit()
 
 

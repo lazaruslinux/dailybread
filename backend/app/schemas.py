@@ -684,6 +684,7 @@ class GoalIn(BaseModel):
     goal: GoalType
     rate_lbs_per_week: float | None = Field(default=None, ge=0.25, le=2.0)
     goal_weight_kg: float | None = Field(default=None, gt=20, le=500)
+    goal_body_fat_pct: float | None = Field(default=None, ge=1, le=75)
 
 
 class WeightIn(BaseModel):
@@ -708,6 +709,7 @@ class HealthProfileOut(BaseModel):
     goal: GoalType | None
     rate_lbs_per_week: float | None
     goal_weight_kg: float | None
+    goal_body_fat_pct: float | None
 
     model_config = {"from_attributes": True}
 

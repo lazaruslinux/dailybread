@@ -752,6 +752,7 @@ export interface HealthProfile {
   goal: GoalType | null
   rate_lbs_per_week: number | null
   goal_weight_kg: number | null
+  goal_body_fat_pct: number | null
 }
 
 export interface WeightEntry {
@@ -792,6 +793,7 @@ export interface GoalPayload {
   goal: GoalType
   rate_lbs_per_week?: number | null
   goal_weight_kg?: number | null
+  goal_body_fat_pct?: number | null
 }
 
 export const setHealthGoal = (g: GoalPayload) =>
