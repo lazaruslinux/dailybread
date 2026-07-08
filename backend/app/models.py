@@ -527,21 +527,108 @@ class DiaryEntry(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class TargetMode(str, enum.Enum):
+    """Where the calorie budget comes from: typed by hand, or computed from
+    the member's health profile and goal (see app.health)."""
+
+    manual = "manual"
+    auto = "auto"
+
+
 class NutritionTarget(Base):
     """A member's own daily targets: a calorie budget and how it splits across
     protein/carbs/fat (percentages, summing to 100). Each member sets their
     own; no row yet means the app's starting default. Gram targets are derived
-    from these at read time (4 kcal/g protein and carbs, 9 kcal/g fat)."""
+    from these at read time (4 kcal/g protein and carbs, 9 kcal/g fat).
+
+    In auto mode the calorie budget is computed from the health profile at
+    read time (the stored calories are kept as the fallback); the macro split
+    is always the member's own, whatever the mode."""
 
     __tablename__ = "nutrition_targets"
 
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
+    mode: Mapped[TargetMode] = mapped_column(
+        SAEnum(TargetMode, name="target_mode"),
+        default=TargetMode.manual,
+        server_default="manual",
+    )
     calories: Mapped[int] = mapped_column(Integer, default=2000)
     protein_pct: Mapped[int] = mapped_column(Integer, default=30)
     carbs_pct: Mapped[int] = mapped_column(Integer, default=40)
     fat_pct: Mapped[int] = mapped_column(Integer, default=30)
+
+
+class Sex(str, enum.Enum):
+    """Biological sex, as the BMR formulas define it. Asked for one reason
+    only: Mifflin-St Jeor's constants differ by it."""
+
+    male = "male"
+    female = "female"
+
+
+class ActivityLevel(str, enum.Enum):
+    """Overall daily activity, mapped to the standard TDEE multipliers."""
+
+    sedentary = "sedentary"  # desk day, little exercise (x1.2)
+    light = "light"  # exercise 1-3 days/week (x1.375)
+    moderate = "moderate"  # exercise 3-5 days/week (x1.55)
+    active = "active"  # exercise 6-7 days/week (x1.725)
+    very_active = "very_active"  # hard training or a physical job (x1.9)
+
+
+class GoalType(str, enum.Enum):
+    lose = "lose"
+    maintain = "maintain"
+    gain = "gain"
+
+
+class HealthProfile(Base):
+    """A member's optional health settings: the inputs the calorie math needs
+    plus their goal. Every field is nullable - the profile fills in as much
+    as the member wants to share, and the computed panel appears only once
+    it's complete enough to be honest (see app.health.compute).
+
+    Private like the diary, with one deliberate exception: a parent can see a
+    CHILD's health section and set the child's goal (children never set their
+    own; a calorie deficit for a kid is a parent-and-pediatrician decision)."""
+
+    __tablename__ = "health_profiles"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    birthdate: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    sex: Mapped[Sex | None] = mapped_column(SAEnum(Sex, name="sex"), nullable=True)
+    height_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    activity_level: Mapped[ActivityLevel | None] = mapped_column(
+        SAEnum(ActivityLevel, name="activity_level"), nullable=True
+    )
+    goal: Mapped[GoalType | None] = mapped_column(
+        SAEnum(GoalType, name="goal_type"), nullable=True
+    )
+    rate_lbs_per_week: Mapped[float | None] = mapped_column(Float, nullable=True)
+    goal_weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class WeightEntry(Base):
+    """One weigh-in: a day's weight (kg) and optionally body fat percent. One
+    row per member per day (re-weighing updates it). The latest row is what
+    the calorie math reads, so each weigh-in auto-adjusts the target."""
+
+    __tablename__ = "weight_entries"
+    __table_args__ = (UniqueConstraint("user_id", "date_for"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    date_for: Mapped[dt.date] = mapped_column(Date, index=True)
+    weight_kg: Mapped[float] = mapped_column(Float)
+    body_fat_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class MoodLevel(str, enum.Enum):

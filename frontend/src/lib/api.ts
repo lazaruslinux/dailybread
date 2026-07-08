@@ -672,6 +672,7 @@ export interface DiaryEntry {
 // Daily targets: each member sets their own calorie budget and macro split
 // (the percentages must sum to 100). The *_g fields are derived server-side.
 export interface NutritionTargets {
+  mode: TargetMode
   calories: number
   protein_pct: number
   carbs_pct: number
@@ -726,4 +727,74 @@ export const setNutritionTargets = (t: {
   protein_pct: number
   carbs_pct: number
   fat_pct: number
+  mode?: TargetMode
 }) => request<NutritionTargets>('/diary/targets', { method: 'PUT', body: JSON.stringify(t) })
+
+// ---- health profile, weigh-ins, and the computed target -------------------------
+
+// Health data is as private as the diary, with one exception: parents see and
+// manage a CHILD's health section (children never set their own goals).
+
+export type Sex = 'male' | 'female'
+export type ActivityLevel = 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active'
+export type GoalType = 'lose' | 'maintain' | 'gain'
+export type TargetMode = 'manual' | 'auto'
+
+export interface HealthProfile {
+  birthdate: string | null
+  sex: Sex | null
+  height_cm: number | null
+  activity_level: ActivityLevel | null
+  goal: GoalType | null
+  rate_lbs_per_week: number | null
+  goal_weight_kg: number | null
+}
+
+export interface WeightEntry {
+  date_for: string
+  weight_kg: number
+  body_fat_pct: number | null
+}
+
+// Estimates from the profile + latest weigh-in; null until both are complete.
+export interface ComputedHealth {
+  bmr: number
+  tdee: number
+  maintenance_calories: number
+  auto_calories: number
+  at_goal: boolean
+}
+
+export interface Health {
+  profile: HealthProfile | null
+  latest_weight: WeightEntry | null
+  weights: WeightEntry[] // recent first
+  computed: ComputedHealth | null
+}
+
+export const getHealthProfile = () => request<Health>('/me/health')
+
+export const updateHealthProfile = (
+  p: Partial<Pick<HealthProfile, 'birthdate' | 'sex' | 'height_cm' | 'activity_level'>>,
+) => request<Health>('/me/health/profile', { method: 'PUT', body: JSON.stringify(p) })
+
+export const logWeight = (date_for: string, weight_kg: number, body_fat_pct?: number | null) =>
+  request<Health>('/me/health/weight', {
+    method: 'PUT',
+    body: JSON.stringify({ date_for, weight_kg, body_fat_pct: body_fat_pct ?? null }),
+  })
+
+export interface GoalPayload {
+  goal: GoalType
+  rate_lbs_per_week?: number | null
+  goal_weight_kg?: number | null
+}
+
+export const setHealthGoal = (g: GoalPayload) =>
+  request<Health>('/me/health/goal', { method: 'PUT', body: JSON.stringify(g) })
+
+// Parent-managed: a child's health section.
+export const getMemberHealth = (id: number) => request<Health>(`/members/${id}/health`)
+
+export const setMemberGoal = (id: number, g: GoalPayload) =>
+  request<Health>(`/members/${id}/health/goal`, { method: 'PUT', body: JSON.stringify(g) })

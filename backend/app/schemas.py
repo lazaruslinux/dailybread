@@ -4,13 +4,17 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 from app.models import (
+    ActivityLevel,
     DiarySlot,
     FoodSource,
+    GoalType,
     ItemKind,
     MealSlot,
     MoodLevel,
     RepeatType,
     Role,
+    Sex,
+    TargetMode,
     Visibility,
 )
 
@@ -630,15 +634,19 @@ class DiaryEntryOut(BaseModel):
 class TargetsIn(BaseModel):
     """A member setting their own daily budget and macro split. The
     percentages must sum to 100 (checked in the endpoint so it's a friendly
-    400, not a validation-shaped 422)."""
+    400, not a validation-shaped 422). mode=auto asks the health profile for
+    the calorie budget instead of the typed one (the typed value is kept as
+    the fallback); the macro split is the member's own either way."""
 
     calories: int = Field(ge=500, le=20000)
     protein_pct: int = Field(ge=0, le=100)
     carbs_pct: int = Field(ge=0, le=100)
     fat_pct: int = Field(ge=0, le=100)
+    mode: TargetMode = TargetMode.manual
 
 
 class TargetsOut(BaseModel):
+    mode: TargetMode
     calories: int
     protein_pct: int
     carbs_pct: int
@@ -648,6 +656,73 @@ class TargetsOut(BaseModel):
     protein_g: float
     carbs_g: float
     fat_g: float
+
+
+# ---- health profile, weigh-ins, and the computed calorie target -------------------
+
+
+class HealthProfileIn(BaseModel):
+    """A member filling in (part of) their health settings; omitted fields
+    stay as they are. All optional by design - the computed panel simply
+    waits until enough is known."""
+
+    birthdate: dt.date | None = None
+    sex: Sex | None = None
+    height_cm: float | None = Field(default=None, gt=50, le=272)
+    activity_level: ActivityLevel | None = None
+
+
+class GoalIn(BaseModel):
+    """A weight goal. The rate is capped to what's considered safe without
+    medical supervision (0.25-2 lb/week)."""
+
+    goal: GoalType
+    rate_lbs_per_week: float | None = Field(default=None, ge=0.25, le=2.0)
+    goal_weight_kg: float | None = Field(default=None, gt=20, le=500)
+
+
+class WeightIn(BaseModel):
+    date_for: dt.date
+    weight_kg: float = Field(gt=20, le=500)
+    body_fat_pct: float | None = Field(default=None, ge=1, le=75)
+
+
+class WeightOut(BaseModel):
+    date_for: dt.date
+    weight_kg: float
+    body_fat_pct: float | None
+
+    model_config = {"from_attributes": True}
+
+
+class HealthProfileOut(BaseModel):
+    birthdate: dt.date | None
+    sex: Sex | None
+    height_cm: float | None
+    activity_level: ActivityLevel | None
+    goal: GoalType | None
+    rate_lbs_per_week: float | None
+    goal_weight_kg: float | None
+
+    model_config = {"from_attributes": True}
+
+
+class ComputedHealthOut(BaseModel):
+    """What the math says (see app.health): resting burn, daily burn, and the
+    goal-adjusted calorie target. Estimates, not medical advice."""
+
+    bmr: float
+    tdee: float
+    maintenance_calories: int
+    auto_calories: int
+    at_goal: bool
+
+
+class HealthOut(BaseModel):
+    profile: HealthProfileOut | None
+    latest_weight: WeightOut | None
+    weights: list[WeightOut]  # recent first
+    computed: ComputedHealthOut | None
 
 
 class DiaryDayOut(BaseModel):

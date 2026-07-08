@@ -80,15 +80,21 @@ Where dailybread is headed, in order. Done items stay for history.
   sets their own calorie budget and macro split. Entries snapshot their
   nutrition at log time, so editing a recipe later never rewrites history.
 
+- **Health profile and auto targets** — an optional per-member health
+  profile (birthdate, sex, height, activity) plus a weight log; together
+  they compute a daily calorie target (lean-mass formula when body fat is
+  known), shifted for a lose/maintain/gain goal at a capped healthy rate,
+  floored at safe minimums, flipping to maintenance at the goal weight, and
+  adjusting with every weigh-in. Diary targets gain an Auto mode; the macro
+  split stays each member's own. Children's goals are set by a parent.
+
 ## Next
 
-1. **Calendar subscription feed** — a read-only per-member iCal feed so the
-   phone's own calendar app can show dailybread events (one-way by design).
-2. **Push reminders** — Web Push for card reminders and a morning digest.
-3. **Family chat** — messaging, then topic channels, then photo attachments;
+1. **Push reminders** — Web Push for card reminders and a morning digest.
+2. **Family chat** — messaging, then topic channels, then photo attachments;
    channels carry explicit member lists from day one so a channel can later
    span households.
-4. **Fitness sync** — workouts flowing into the app and auto-completing
+3. **Fitness sync** — workouts flowing into the app and auto-completing
    matching board routines. Strava first (watch → Strava → server polling);
    direct Apple Health export as a self-hosted alternative path.
 
@@ -96,3 +102,10 @@ Where dailybread is headed, in order. Done items stay for history.
 
 - Member colors, a do-not-disturb dot, loading skeletons, pull-to-refresh,
   an in-app "How to use" / FAQ section.
+
+## Shelved
+
+- **Calendar subscription feed** — a read-only per-member iCal feed. Parked:
+  phone calendar apps refresh subscriptions lazily (hours), which reads as
+  stale on a LAN-only server; push reminders cover the real need. Cheap to
+  revive if wanted.

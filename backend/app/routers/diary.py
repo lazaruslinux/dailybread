@@ -6,12 +6,14 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import require_family
+from app.health import computed_for
 from app.models import (
     UNIT_TO_BASE,
     DiaryEntry,
     Food,
     NutritionTarget,
     Recipe,
+    TargetMode,
     User,
     base_unit_of,
 )
@@ -44,12 +46,20 @@ def _r(v: float) -> float:
     return round(v, 1)
 
 
-def _targets_out(row: NutritionTarget | None) -> TargetsOut:
-    vals = (
+def _targets_out(db: Session, user_id: int, row: NutritionTarget | None) -> TargetsOut:
+    vals = dict(
         {k: getattr(row, k) for k in _DEFAULT_TARGETS} if row is not None else _DEFAULT_TARGETS
     )
+    mode = row.mode if row is not None else TargetMode.manual
+    if mode == TargetMode.auto:
+        # The health profile owns the budget; the stored calories are only the
+        # fallback for a profile that later became incomplete.
+        computed = computed_for(db, user_id)
+        if computed is not None:
+            vals["calories"] = computed["auto_calories"]
     cal = vals["calories"]
     return TargetsOut(
+        mode=mode,
         **vals,
         protein_g=_r(cal * vals["protein_pct"] / 100 / 4),
         carbs_g=_r(cal * vals["carbs_pct"] / 100 / 4),
@@ -105,7 +115,7 @@ def _own_recipe(db: Session, recipe_id: int, family_id: int) -> Recipe:
 
 @router.get("/targets", response_model=TargetsOut)
 def get_targets(db: Session = Depends(get_db), user: User = Depends(require_family)):
-    return _targets_out(db.get(NutritionTarget, user.id))
+    return _targets_out(db, user.id, db.get(NutritionTarget, user.id))
 
 
 @router.put("/targets", response_model=TargetsOut)
@@ -119,16 +129,22 @@ def set_targets(
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "Protein, carbs, and fat should add up to 100%"
         )
+    if data.mode == TargetMode.auto and computed_for(db, user.id) is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Complete your health profile (and log a weight) to use the automatic target",
+        )
     row = db.get(NutritionTarget, user.id)
     if row is None:
         row = NutritionTarget(user_id=user.id)
         db.add(row)
+    row.mode = data.mode
     row.calories = data.calories
     row.protein_pct = data.protein_pct
     row.carbs_pct = data.carbs_pct
     row.fat_pct = data.fat_pct
     db.commit()
-    return _targets_out(row)
+    return _targets_out(db, user.id, row)
 
 
 # ---- the day view ----------------------------------------------------------------
@@ -155,7 +171,7 @@ def get_day(
 
     return DiaryDayOut(
         date=date,
-        targets=_targets_out(db.get(NutritionTarget, user.id)),
+        targets=_targets_out(db, user.id, db.get(NutritionTarget, user.id)),
         consumed=RecipeMacros(**consumed),
         entries=[DiaryEntryOut.model_validate(e) for e in entries],
     )

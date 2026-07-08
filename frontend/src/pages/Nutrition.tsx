@@ -18,6 +18,7 @@ import {
   servingIndex,
   unitsForBase,
 } from '../components/Recipes'
+import { HealthCard, HealthSheet, WeightSheet } from '../components/Health'
 import { Button, Field, FormError } from '../components/ui'
 
 // The Nutrition tab: a personal food diary, Cronometer-shaped. Targets and
@@ -144,13 +145,17 @@ function TargetsCard({ day, onEdit }: { day: api.DiaryDay; onEdit: () => void })
 
 function TargetsSheet({
   targets,
+  health,
   onClose,
   onSaved,
 }: {
   targets: api.NutritionTargets
+  health: api.Health | null
   onClose: () => void
   onSaved: () => void
 }) {
+  const [mode, setMode] = useState<api.TargetMode>(targets.mode)
+  const autoAvailable = health?.computed != null
   const [calories, setCalories] = useState(String(targets.calories))
   const [pcts, setPcts] = useState({
     protein: String(targets.protein_pct),
@@ -160,7 +165,8 @@ function TargetsSheet({
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const cal = Number(calories) || 0
+  const manualCal = Number(calories) || 0
+  const cal = mode === 'auto' && health?.computed ? health.computed.auto_calories : manualCal
   const sum = (Number(pcts.protein) || 0) + (Number(pcts.carbs) || 0) + (Number(pcts.fat) || 0)
 
   const gramsFor = (pct: string, per: number) =>
@@ -176,10 +182,11 @@ function TargetsSheet({
     setError(null)
     try {
       await api.setNutritionTargets({
-        calories: cal,
+        calories: manualCal || targets.calories,
         protein_pct: Number(pcts.protein) || 0,
         carbs_pct: Number(pcts.carbs) || 0,
         fat_pct: Number(pcts.fat) || 0,
+        mode,
       })
       onSaved()
     } catch (err) {
@@ -206,15 +213,61 @@ function TargetsSheet({
         <p className="text-xs leading-relaxed text-fg/50">
           Yours alone. Pick a daily calorie budget and how it splits across the three macros.
         </p>
-        <div className="w-36">
-          <Field
-            label="Calories / day"
-            inputMode="numeric"
-            value={calories}
-            onChange={(e) => setCalories(e.target.value.replace(/[^0-9]/g, ''))}
-            required
-          />
+        <div>
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
+            Calorie budget
+          </span>
+          <div className="grid grid-cols-2 gap-1.5" data-target-mode>
+            <button
+              type="button"
+              onClick={() => setMode('manual')}
+              className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
+                mode === 'manual'
+                  ? 'border-accent-bright/60 bg-accent-bright/20 text-fg'
+                  : 'border-fg/10 bg-fg/5 text-fg/55 hover:bg-fg/10'
+              }`}
+            >
+              Manual
+            </button>
+            <button
+              type="button"
+              onClick={() => autoAvailable && setMode('auto')}
+              disabled={!autoAvailable}
+              className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                mode === 'auto'
+                  ? 'border-accent-bright/60 bg-accent-bright/20 text-fg'
+                  : 'border-fg/10 bg-fg/5 text-fg/55 hover:bg-fg/10'
+              }`}
+            >
+              Auto from profile
+            </button>
+          </div>
+          {!autoAvailable && (
+            <p className="mt-1.5 text-xs text-fg/40">
+              Auto needs your health profile (and a weigh-in) filled in below on this tab.
+            </p>
+          )}
         </div>
+        {mode === 'auto' && health?.computed ? (
+          <div className="rounded-xl border border-fg/10 bg-fg/5 px-3.5 py-2.5">
+            <p className="text-sm font-semibold text-accent-bright">
+              {health.computed.auto_calories.toLocaleString()} kcal/day
+            </p>
+            <p className="mt-0.5 text-xs text-fg/45">
+              Computed from your profile and goal; each weigh-in adjusts it.
+            </p>
+          </div>
+        ) : (
+          <div className="w-36">
+            <Field
+              label="Calories / day"
+              inputMode="numeric"
+              value={calories}
+              onChange={(e) => setCalories(e.target.value.replace(/[^0-9]/g, ''))}
+              required
+            />
+          </div>
+        )}
         <div>
           <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
             Macro split
@@ -779,6 +832,9 @@ export function Nutrition() {
   const [flow, setFlow] = useState(0)
   const [editing, setEditing] = useState<api.DiaryEntry | null>(null)
   const [editingTargets, setEditingTargets] = useState(false)
+  const [health, setHealth] = useState<api.Health | null>(null)
+  const [editingHealth, setEditingHealth] = useState(false)
+  const [loggingWeight, setLoggingWeight] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
@@ -787,6 +843,8 @@ export function Nutrition() {
     } catch (err) {
       setLoadError(err instanceof api.ApiError ? err.message : 'Could not load the diary.')
     }
+    // Health is separate so a failure here never blanks the diary.
+    api.getHealthProfile().then(setHealth).catch(() => {})
   }, [date])
 
   useEffect(() => {
@@ -807,6 +865,8 @@ export function Nutrition() {
     setPicked(null)
     setEditing(null)
     setEditingTargets(false)
+    setEditingHealth(false)
+    setLoggingWeight(false)
   }
 
   return (
@@ -841,6 +901,12 @@ export function Nutrition() {
       ) : day !== null ? (
         <>
           <TargetsCard day={day} onEdit={() => setEditingTargets(true)} />
+          <HealthCard
+            health={health}
+            targetsMode={day.targets.mode}
+            onEdit={() => setEditingHealth(true)}
+            onLogWeight={() => setLoggingWeight(true)}
+          />
           {SLOTS.map((s) => (
             <SlotCard
               key={s.id}
@@ -888,9 +954,32 @@ export function Nutrition() {
           <TargetsSheet
             key="targets"
             targets={day.targets}
+            health={health}
             onClose={() => setEditingTargets(false)}
             onSaved={() => {
               closeAll()
+              refresh()
+            }}
+          />
+        )}
+        {editingHealth && health && (
+          <HealthSheet
+            key="health"
+            health={health}
+            onClose={() => setEditingHealth(false)}
+            onSaved={() => {
+              setEditingHealth(false)
+              refresh()
+            }}
+          />
+        )}
+        {loggingWeight && health && (
+          <WeightSheet
+            key="weight"
+            health={health}
+            onClose={() => setLoggingWeight(false)}
+            onSaved={() => {
+              setLoggingWeight(false)
               refresh()
             }}
           />
