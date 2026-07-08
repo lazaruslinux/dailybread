@@ -25,11 +25,14 @@ def verify_password(raw: str, hashed: str) -> bool:
         return False
 
 
-def create_access_token(subject: str) -> str:
-    """Issue a signed JWT whose `sub` claim is the user's id."""
+def create_access_token(subject: str, version: int = 0) -> str:
+    """Issue a signed JWT whose `sub` claim is the user's id. `ver` records the
+    account's token_version at mint time; a later password change bumps the
+    account's version, and tokens carrying the old one stop being accepted."""
     now = dt.datetime.now(dt.timezone.utc)
     payload = {
         "sub": subject,
+        "ver": version,
         "iat": now,
         "exp": now + dt.timedelta(days=settings.session_days),
     }
@@ -41,9 +44,9 @@ def decode_token(token: str) -> dict:
     return jwt.decode(token, settings.secret_key, algorithms=[_ALGORITHM])
 
 
-def set_session_cookie(response: Response, subject: str) -> None:
+def set_session_cookie(response: Response, subject: str, version: int = 0) -> None:
     """Attach a fresh signed-JWT session cookie to the response."""
-    token = create_access_token(subject)
+    token = create_access_token(subject, version)
     response.set_cookie(
         key=settings.cookie_name,
         value=token,

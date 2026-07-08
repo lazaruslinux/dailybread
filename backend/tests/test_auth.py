@@ -128,3 +128,25 @@ def test_fresh_session_is_left_alone(owner):
     res = owner.get("/auth/me")
     assert res.status_code == 200
     assert "set-cookie" not in res.headers
+
+
+def test_password_reset_ends_existing_sessions(owner, child):
+    # The kid is signed in. Resetting their password kills that session on the
+    # spot — the whole point of a reset when a phone is lost — not just the
+    # old password. (Tokens carry the version they were minted under; the
+    # reset bumps the account's version.)
+    assert child.get("/auth/me").status_code == 200
+    kid_id = user_id(child)
+    res = owner.patch(f"/auth/users/{kid_id}", json={"password": "brand-new-pass-1"})
+    assert res.status_code == 200
+    assert child.get("/auth/me").status_code == 401
+
+
+def test_admin_changing_own_password_stays_signed_in(owner):
+    # Changing your own password logs out your other sessions but not the one
+    # you did it from: the response carries a freshly minted cookie.
+    my_id = user_id(owner)
+    res = owner.patch(f"/auth/users/{my_id}", json={"password": "my-new-pass-123"})
+    assert res.status_code == 200
+    assert settings.cookie_name in res.headers.get("set-cookie", "")
+    assert owner.get("/auth/me").status_code == 200

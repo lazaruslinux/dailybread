@@ -41,7 +41,7 @@ def bootstrap(data: BootstrapIn, response: Response, db: Session = Depends(get_d
     db.add(user)
     db.commit()
     db.refresh(user)
-    set_session_cookie(response, str(user.id))
+    set_session_cookie(response, str(user.id), user.token_version)
     return user
 
 
@@ -52,7 +52,7 @@ def login(data: LoginIn, response: Response, db: Session = Depends(get_db)):
     # attacker can't tell which usernames exist.
     if user is None or not verify_password(data.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
-    set_session_cookie(response, str(user.id))
+    set_session_cookie(response, str(user.id), user.token_version)
     return user
 
 
@@ -135,6 +135,7 @@ def _managed_user(db: Session, user_id: int, admin: User) -> User:
 def update_user(
     user_id: int,
     data: UpdateUserIn,
+    response: Response,
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
@@ -167,6 +168,14 @@ def update_user(
         user.display_name = data.display_name
     if data.password is not None:
         user.password_hash = hash_password(data.password)
+        # A password change ends the account's existing sessions everywhere:
+        # tokens carry the version they were minted under, and this bump makes
+        # all of them stale. That's the point of resetting a lost phone's
+        # password. When the admin changed their own, re-issue their cookie in
+        # this same response so they stay signed in here.
+        user.token_version += 1
+        if user.id == admin.id:
+            set_session_cookie(response, str(user.id), user.token_version)
 
     db.commit()
     db.refresh(user)

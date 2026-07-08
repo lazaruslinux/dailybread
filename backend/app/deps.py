@@ -26,6 +26,12 @@ def get_current_user(
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User no longer exists")
 
+    # A token minted before the account's last password change is refused even
+    # though its signature and expiry still check out. (Tokens from before the
+    # "ver" claim existed read as version 0, matching un-bumped accounts.)
+    if payload.get("ver", 0) != user.token_version:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired session")
+
     # Sliding session: once the token is more than a day old, re-issue it so
     # the expiry keeps moving forward. Anyone who opens the app at least once
     # every session_days stays logged in; only true inactivity logs you out.
@@ -33,7 +39,7 @@ def get_current_user(
     issued = dt.datetime.fromtimestamp(payload["iat"], tz=dt.timezone.utc)
     age = dt.datetime.now(dt.timezone.utc) - issued
     if age > dt.timedelta(hours=settings.session_refresh_after_hours):
-        set_session_cookie(response, str(user.id))
+        set_session_cookie(response, str(user.id), user.token_version)
 
     return user
 

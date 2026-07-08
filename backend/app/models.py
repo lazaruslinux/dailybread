@@ -78,6 +78,11 @@ class User(Base):
     avatar_updated_at: Mapped[dt.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Bumped whenever the password changes. Session tokens record the version
+    # they were issued under and a stale one is refused, so resetting a
+    # password really does log that account out everywhere — sessions are
+    # stateless JWTs and would otherwise ride out their whole lifetime.
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
