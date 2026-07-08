@@ -1,11 +1,12 @@
 import { motion } from 'framer-motion'
-import { BookOpen, ChevronDown, ChevronLeft, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronLeft, Pencil, Plus, ScanBarcode, Search, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { Button, FormError } from './ui'
 import { CollapsibleCard } from './CollapsibleCard'
+import { BarcodeScanner } from './BarcodeScanner'
 
 // How many base units (g for a solid, mL for a liquid) one of each unit is.
 // Mirrors the backend UNIT_TO_BASE — nutrition is computed live here as the cook
@@ -454,15 +455,33 @@ function RecipeDetail({
 
 const SOURCE_LABEL: Record<api.FoodSource, string> = { usda: 'USDA', off: 'OFF', custom: 'Custom' }
 
-// The food picker: search the USDA database (server-proxied) and the family's
-// own custom foods, tap one to add it as an ingredient. Barcode scanning is a
-// later step; this covers search + custom for now.
+// The food picker: search the USDA database (server-proxied), the family's
+// own custom foods, or scan a product barcode — tap a result to add it as an
+// ingredient. An unknown barcode opens the New Food form prefilled with the
+// code, so entering it once teaches the app the product for good.
 function FoodPicker({ onPick, onBack }: { onPick: (food: api.Food) => void; onBack: () => void }) {
   const [q, setQ] = useState('')
   const [results, setResults] = useState<api.Food[]>([])
   const [custom, setCustom] = useState<api.Food[]>([])
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [scanning, setScanning] = useState(false)
+  const [looking, setLooking] = useState(false)
+  const [unknownCode, setUnknownCode] = useState<string | null>(null)
+
+  async function scanned(code: string) {
+    setScanning(false)
+    setLooking(true)
+    setError(null)
+    try {
+      onPick(await api.lookupBarcode(code))
+    } catch (err) {
+      if (err instanceof api.ApiError && err.status === 404) setUnknownCode(code)
+      else setError(err instanceof api.ApiError ? err.message : 'Barcode lookup failed.')
+    } finally {
+      setLooking(false)
+    }
+  }
 
   // The family's custom foods are always shown (they're a short list); load once.
   useEffect(() => {
@@ -527,21 +546,33 @@ function FoodPicker({ onPick, onBack }: { onPick: (food: api.Food) => void; onBa
         <span className="text-xs font-semibold uppercase tracking-wide text-accent-bright">Add ingredient</span>
       </div>
 
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40" />
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search foods (e.g. chicken breast)"
-          className="field"
-          // Inline pad-left clears the search icon; a `pl-9` utility loses to
-          // `.field`'s own padding (same specificity, .field defined later).
-          style={{ paddingLeft: '2.25rem' }}
-          autoFocus
-        />
+      <div className="flex items-center gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg/40" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search foods (e.g. chicken breast)"
+            className="field"
+            // Inline pad-left clears the search icon; a `pl-9` utility loses to
+            // `.field`'s own padding (same specificity, .field defined later).
+            style={{ paddingLeft: '2.25rem' }}
+            autoFocus
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => setScanning(true)}
+          aria-label="Scan a barcode"
+          className="shrink-0 rounded-xl border border-fg/10 bg-fg/5 p-2.5 text-fg/70 transition-colors hover:bg-fg/10 hover:text-fg"
+          data-scan
+        >
+          <ScanBarcode className="h-5 w-5" />
+        </button>
       </div>
 
       <FormError message={error} />
+      {looking && <p className="mt-2 px-1 text-sm text-fg/50">Looking up the barcode…</p>}
 
       <div className="mt-3 flex flex-col gap-3">
         {shownCustom.length > 0 && (
@@ -576,10 +607,25 @@ function FoodPicker({ onPick, onBack }: { onPick: (food: api.Food) => void; onBa
 
         {q.trim().length < 2 && shownCustom.length === 0 && (
           <p className="px-2.5 py-6 text-center text-sm text-fg/45">
-            Type to search the food database, or add custom foods first.
+            Type to search the food database, scan a barcode, or add custom foods first.
           </p>
         )}
       </div>
+
+      {scanning && <BarcodeScanner onCode={scanned} onClose={() => setScanning(false)} />}
+      {unknownCode && (
+        // Nothing knows this product yet: enter its label once (barcode kept),
+        // and it lands straight into the recipe as the picked ingredient.
+        <FoodSheet
+          food={null}
+          barcode={unknownCode}
+          onClose={() => setUnknownCode(null)}
+          onSaved={(saved) => {
+            setUnknownCode(null)
+            if (saved) onPick(saved)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -1065,14 +1111,20 @@ function foodSummary(f: api.Food): string {
 // rescales them so they describe the same food. The server stores per-100g.
 function FoodSheet({
   food,
+  barcode: barcodeProp = null,
   onClose,
   onSaved,
 }: {
   food: api.Food | null
+  // Prefilled product code when the sheet opens off an unknown barcode scan.
+  barcode?: string | null
   onClose: () => void
-  onSaved: () => void
+  onSaved: (saved?: api.Food) => void
 }) {
   const editing = food !== null
+  // A custom food's source_id is its barcode; keep it across edits so a food
+  // scanned-and-entered once stays findable by its code.
+  const barcode = food?.source_id ?? barcodeProp
   const { user } = useAuth()
   const [name, setName] = useState(food?.name ?? '')
   const [brand, setBrand] = useState(food?.brand ?? '')
@@ -1191,16 +1243,18 @@ function FoodSheet({
     const payload: api.CustomFoodPayload = {
       name: name.trim(),
       brand: brand.trim(),
+      barcode,
       base_unit: baseUnit,
       servings: cleaned,
       basis_index: basis,
       ...(Object.fromEntries(NUTRI_KEYS.map((k) => [k, numOrNull(nutri[k])])) as Record<NutriKey, number | null>),
     }
     try {
-      if (editing) await api.updateCustomFood(food.id!, payload)
-      else await api.createCustomFood(payload)
+      const saved = editing
+        ? await api.updateCustomFood(food.id!, payload)
+        : await api.createCustomFood(payload)
       clearDraft()
-      onSaved()
+      onSaved(saved)
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Could not save the food.')
     } finally {
@@ -1227,6 +1281,13 @@ function FoodSheet({
           <X className="h-5 w-5" />
         </button>
       </div>
+
+      {barcode && (
+        <p className="-mt-2 mb-3 flex items-center gap-1.5 text-xs text-fg/50" data-barcode-chip>
+          <ScanBarcode className="h-3.5 w-3.5" /> Barcode {barcode}
+          {!editing && ' · enter its label once and future scans find it instantly'}
+        </p>
+      )}
 
       {restored && (
         <div className="mb-3 flex items-center justify-between gap-2 rounded-xl bg-accent-bright/10 px-3 py-2 text-xs">

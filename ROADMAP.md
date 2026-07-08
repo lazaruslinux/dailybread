@@ -57,28 +57,30 @@ Where dailybread is headed, in order. Done items stay for history.
   existing sessions everywhere; repeated login failures throttle per
   username; feed and calendar fetch completions in one query; food searches
   cached briefly server-side.
+- **Barcode scanning** — a camera scanner in the recipe ingredient picker
+  (WASM decoder bundled locally, loaded only when it opens, with a
+  type-the-digits fallback); codes resolve against the family's own foods
+  first, then the shared cache, then Open Food Facts; an unknown code opens
+  the New Food form prefilled, so one entry teaches the app the product for
+  good. Reusable wherever a barcode is wanted next.
 
 ## Next
 
-1. **Barcode scanning in the ingredient picker** — camera scan (BarcodeDetector
-   with a WASM fallback) resolving through the existing barcode endpoint; an
-   unknown code opens the New Food form prefilled. Built as a reusable
-   scanner for the future food diary.
-2. **Dinner planner (Kitchen)** — pick a saved recipe for each night; tonight's
+1. **Dinner planner (Kitchen)** — pick a saved recipe for each night; tonight's
    dinner surfaces on Home.
-3. **Recipe → grocery** — push a recipe's ingredients onto a grocery list in
+2. **Recipe → grocery** — push a recipe's ingredients onto a grocery list in
    one tap.
-4. **Password management** — a "Preferences" section on the You tab where any
+3. **Password management** — a "Preferences" section on the You tab where any
    member changes their own password; a "Server Management" area for the
    server admin with reset-to-generated-password, and a forced password
    change on first login after a reset.
-5. **Nutrition diary** — per-member daily food logging with targets and
+4. **Nutrition diary** — per-member daily food logging with targets and
    macro breakdowns, reusing the food layer, servings, and scanner.
-6. **Calendar subscription feed** — a read-only per-member iCal feed so the
+5. **Calendar subscription feed** — a read-only per-member iCal feed so the
    phone's own calendar app can show dailybread events (one-way by design).
-7. **Push reminders** — Web Push for card reminders and a morning digest.
-8. **Family chat** — messaging, then topic channels, then photo attachments.
-9. **Fitness sync** — workouts flowing into the app and auto-completing
+6. **Push reminders** — Web Push for card reminders and a morning digest.
+7. **Family chat** — messaging, then topic channels, then photo attachments.
+8. **Fitness sync** — workouts flowing into the app and auto-completing
    matching board routines. Strava first (watch → Strava → server polling);
    direct Apple Health export as a self-hosted alternative path.
 

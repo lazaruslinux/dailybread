@@ -361,6 +361,8 @@ export interface Food {
 export interface CustomFoodPayload {
   name: string
   brand?: string
+  // Product barcode digits, so a later scan resolves straight to this food.
+  barcode?: string | null
   base_unit?: BaseUnit
   servings: FoodServing[]
   basis_index: number
