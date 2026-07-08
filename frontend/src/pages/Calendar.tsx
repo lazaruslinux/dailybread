@@ -87,10 +87,10 @@ function dayHeading(iso: string, todayISO: string): string {
   })
 }
 
-// One scheduled card in the day's agenda. When the viewer can act on it and the
-// day isn't in the future, a left circle checks it off ON THAT DAY, so a missed
-// item is marked on the day it actually was. Otherwise it's read-only, with a
-// quiet check when it's already done.
+// One scheduled card in the day's agenda. When the viewer can act on it, a
+// left circle checks it off on that day — past and present days for anything,
+// any day for a task (reminders can be finished early; the check lands on
+// today). Otherwise it's read-only, with a quiet check when already done.
 function AgendaRow({
   item,
   family,
@@ -278,8 +278,15 @@ export function Calendar() {
   const overviewDone = groupByDay(overviewShown.filter((e) => e.item.completed))
 
   // You can only mark days that have already happened (or today) — nothing is
-  // "done" in the future.
+  // "done" in the future. Tasks are the exception: they're reminders, and the
+  // board already lets you finish one ahead of its due day, so the calendar
+  // offers the same (the check is recorded on today, its actual day).
   const markable = (dayISO: string) => dayISO <= todayISO
+  const canMarkOn = (item: api.FeedItem, dayISO: string) =>
+    (markable(dayISO) || item.kind === 'task') && canCheckItem(item, user)
+  // What day a completion is recorded on: the tapped day, except that a task
+  // checked ahead of time is done *today* (the server refuses future dates).
+  const markDay = (dayISO: string) => (dayISO > todayISO ? todayISO : dayISO)
 
   // Patch a card's completion in the calendar and in an open detail sheet.
   function patch(dayISO: string, id: number, fn: (it: api.FeedItem) => api.FeedItem) {
@@ -302,8 +309,8 @@ export function Calendar() {
     const done = !item.completed
     patch(dayISO, item.id, (it) => ({ ...it, completed: done }))
     try {
-      if (done) await api.completeItem(item.id, undefined, dayISO)
-      else await api.uncompleteItem(item.id, undefined, dayISO)
+      if (done) await api.completeItem(item.id, undefined, markDay(dayISO))
+      else await api.uncompleteItem(item.id, undefined, markDay(dayISO))
       refresh()
     } catch (err) {
       patch(dayISO, item.id, (it) => ({ ...it, completed: !done }))
@@ -347,7 +354,7 @@ export function Calendar() {
   const doneItems = selectedItems.filter((i) => i.completed)
 
   const renderRow = (item: api.FeedItem, dayISO: string) => {
-    const canMark = markable(dayISO) && canCheckItem(item, user)
+    const canMark = canMarkOn(item, dayISO)
     return (
       <AgendaRow
         key={`${item.id}-${dayISO}`}
@@ -559,7 +566,7 @@ export function Calendar() {
         {detail &&
           (() => {
             const dayMarkable = markable(detail.day)
-            const canMark = dayMarkable && canCheckItem(detail.item, user)
+            const canMark = canMarkOn(detail.item, detail.day)
             return (
               <ItemDetail
                 item={detail.item}
