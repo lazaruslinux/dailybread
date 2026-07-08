@@ -1,9 +1,10 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { Plus, Undo2 } from 'lucide-react'
+import { CalendarClock, Plus, Rows3, Undo2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { canCheckItem } from '../lib/items'
+import { DayTimeline } from '../components/DayTimeline'
 import { FamilyStrip } from '../components/FamilyStrip'
 import { ItemCard, SectionDivider } from '../components/ItemCard'
 import { ItemDetail } from '../components/ItemDetail'
@@ -75,6 +76,17 @@ export function Home({
   const [clock, setClock] = useState(() => new Date())
   // Parent-only board lens: which members' cards to show. Empty means everyone's.
   const [filter, setFilter] = useState<number[]>([])
+  // How today's timed cards are drawn: stacked list, or laid on a day timeline.
+  // Remembered per member, like the theme.
+  const [view, setView] = useState<'list' | 'timeline'>('list')
+  useEffect(() => {
+    if (!user) return
+    setView(localStorage.getItem(`db_board_view_${user.id}`) === 'timeline' ? 'timeline' : 'list')
+  }, [user])
+  const pickView = (v: 'list' | 'timeline') => {
+    setView(v)
+    if (user) localStorage.setItem(`db_board_view_${user.id}`, v)
+  }
 
   const refresh = useCallback(async () => {
     try {
@@ -262,6 +274,16 @@ export function Home({
   // optimistic in-between state consistent with that.)
   const done = [...todayCards, ...next7].filter((i) => i.completed)
 
+  // The timeline draws every timed card in place - done ones faded, missed
+  // ones right where they were scheduled - so those stay off the Done and
+  // Past due lists in that view. Only carry-overs from earlier days (which
+  // have no spot on today's grid) and the untimed sections keep their lists.
+  const timed = todayCards.filter((i) => i.time_of_day && !i.all_day)
+  const allDayOpen = todayCards.filter((i) => i.all_day && !i.completed)
+  const timedIds = new Set(timed.map((i) => i.id))
+  const doneOffTimeline = done.filter((i) => !timedIds.has(i.id))
+  const pastDueOffTimeline = overdue.filter((i) => !i.completed)
+
   const openToday = todayCards.filter((i) => !i.completed)
   const pastDue = [...overdue.filter((i) => !i.completed), ...openToday.filter((i) => todaySlot(i, nowHm) === 'pastdue')]
   const nowCards = openToday.filter((i) => todaySlot(i, nowHm) === 'now')
@@ -292,6 +314,29 @@ export function Home({
       <FamilyStrip members={family} onOpen={onOpenProfile} />
 
       <TonightCard onOpenKitchen={onOpenKitchen} />
+
+      <div className="mb-4 flex justify-end" data-view-toggle>
+        <div className="flex gap-1 rounded-full border border-fg/10 bg-fg/5 p-1">
+          {(
+            [
+              { id: 'list', label: 'List', Icon: Rows3 },
+              { id: 'timeline', label: 'Timeline', Icon: CalendarClock },
+            ] as const
+          ).map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => pickView(id)}
+              aria-pressed={view === id}
+              className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                view === id ? 'bg-accent-bright/20 text-fg' : 'text-fg/50 hover:text-fg/80'
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" strokeWidth={2.5} /> {label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {isParent && family.length > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-1.5">
@@ -335,7 +380,7 @@ export function Home({
         )
       )}
 
-      {feed && !todayEmpty && (
+      {feed && !todayEmpty && view === 'list' && (
         <>
           {pastDue.length > 0 && (
             <>
@@ -369,6 +414,51 @@ export function Home({
             <>
               <SectionDivider label="Done" />
               {renderCards(done)}
+            </>
+          )}
+        </>
+      )}
+
+      {feed && !todayEmpty && view === 'timeline' && (
+        <>
+          {pastDueOffTimeline.length > 0 && (
+            <>
+              <SectionDivider label="Past due" />
+              {renderCards(pastDueOffTimeline)}
+            </>
+          )}
+
+          {allDayOpen.length > 0 && (
+            <>
+              <SectionDivider label="All day" />
+              {renderCards(allDayOpen)}
+            </>
+          )}
+
+          <SectionDivider label="Today" accent />
+          {timed.length > 0 ? (
+            <DayTimeline
+              items={timed}
+              nowMinutes={clock.getHours() * 60 + clock.getMinutes()}
+              canCheck={canCheck}
+              onToggle={toggle}
+              onOpen={(item) => setDetail({ item, checkable: canCheck(item) })}
+            />
+          ) : (
+            <p className="px-1 text-sm text-fg/40">Nothing with a time today.</p>
+          )}
+
+          {anytimeCards.length > 0 && (
+            <>
+              <SectionDivider label="Anytime" />
+              {renderCards(anytimeCards)}
+            </>
+          )}
+
+          {doneOffTimeline.length > 0 && (
+            <>
+              <SectionDivider label="Done" />
+              {renderCards(doneOffTimeline)}
             </>
           )}
         </>
