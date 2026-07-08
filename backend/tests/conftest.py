@@ -57,6 +57,9 @@ def app():
             db.close()
 
     real_app.dependency_overrides[get_db] = override_get_db
+    # Exposed so tests can hook engine events (e.g. counting queries to pin
+    # down N+1 regressions).
+    real_app.state.test_engine = engine
     yield real_app
     real_app.dependency_overrides.clear()
 

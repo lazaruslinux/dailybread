@@ -268,8 +268,34 @@ def _feed_item(
     )
 
 
-def _build_feed_item(db: Session, item: Item, user: User, date: dt.date) -> FeedItemOut:
-    """Assemble one card's completion state for the requesting member.
+# One item's completion rows, prefetched: (user_id, date_for) pairs.
+CompletionRows = list[tuple[int | None, dt.date]]
+
+
+def _completions_by_item(db: Session, items: list[Item]) -> dict[int, CompletionRows]:
+    """Every completion for these items in ONE query, keyed by item id.
+
+    The feed and calendar assemble many cards at once — and the calendar
+    assembles each card once per day it appears. Querying completions inside
+    that loop turned one month-view request into hundreds of little selects;
+    a single IN(...) fetch scales with the data instead of with the view.
+    """
+    rows: dict[int, CompletionRows] = {item.id: [] for item in items}
+    if rows:
+        for item_id, uid, day in db.execute(
+            select(Completion.item_id, Completion.user_id, Completion.date_for).where(
+                Completion.item_id.in_(rows)
+            )
+        ):
+            rows[item_id].append((uid, day))
+    return rows
+
+
+def _build_feed_item(
+    db: Session, item: Item, user: User, date: dt.date, completions: CompletionRows
+) -> FeedItemOut:
+    """Assemble one card's completion state for the requesting member, from
+    the item's prefetched completion rows (see _completions_by_item).
 
     Routines are per-person: each participant gets their own completed/streak,
     and the requesting member's own state (or, if they're not a participant,
@@ -284,26 +310,14 @@ def _build_feed_item(db: Session, item: Item, user: User, date: dt.date) -> Feed
         # due day arrives. An undated "anytime" task stays date-scoped so it
         # shows crossed out today and archives tomorrow.
         if item.date_for is not None:
-            done = (
-                db.scalar(select(Completion.id).where(Completion.item_id == item.id))
-                is not None
-            )
+            done = bool(completions)
         else:
-            done = (
-                db.scalar(
-                    select(Completion.id).where(
-                        Completion.item_id == item.id, Completion.date_for == date
-                    )
-                )
-                is not None
-            )
+            done = any(day == date for _, day in completions)
         return _feed_item(item, completed=done, streak=None, assignee_completions=None)
 
     participants = _routine_participants(db, item)
     dates_by_user: dict[int, set[dt.date]] = {}
-    for uid, day in db.execute(
-        select(Completion.user_id, Completion.date_for).where(Completion.item_id == item.id)
-    ):
+    for uid, day in completions:
         if uid is not None:
             dates_by_user.setdefault(uid, set()).add(day)
 
@@ -371,6 +385,7 @@ def feed(
         .all()
     )
     visible = [item for item in items if _visible_to(item, user)]
+    comps = _completions_by_item(db, visible)
 
     overdue: list[FeedItemOut] = []
     today: list[FeedItemOut] = []
@@ -381,35 +396,29 @@ def feed(
             # Routines are habits, not one-offs: a missed day is never "overdue"
             # (streaks already record the miss); they only ever land on today.
             if _occurs(item, date_for):
-                today.append(_build_feed_item(db, item, user, date_for))
+                today.append(_build_feed_item(db, item, user, date_for, comps[item.id]))
             continue
 
         if item.date_for == date_for:
-            today.append(_build_feed_item(db, item, user, date_for))
+            today.append(_build_feed_item(db, item, user, date_for, comps[item.id]))
         elif item.date_for is None:
-            fi = _build_feed_item(db, item, user, date_for)
+            fi = _build_feed_item(db, item, user, date_for, comps[item.id])
             # An undated task finished on an earlier day is archived off the
             # board; finished today it stays put, crossed out, until midnight.
-            if not fi.completed:
-                earlier = db.scalar(
-                    select(Completion.id).where(
-                        Completion.item_id == item.id, Completion.date_for != date_for
-                    )
-                )
-                if earlier is not None:
-                    continue
+            if not fi.completed and any(day != date_for for _, day in comps[item.id]):
+                continue
             today.append(fi)
         elif item.date_for < date_for:
             # A one-off whose day has passed carries forward until checked off.
             # Once completed it leaves the board immediately: it wasn't done
             # today, so it doesn't belong in today's Done list — its record
             # lives on its own day in the calendar.
-            fi = _build_feed_item(db, item, user, date_for)
+            fi = _build_feed_item(db, item, user, date_for, comps[item.id])
             if fi.completed:
                 continue
             overdue.append(fi)
         else:  # date_for in (today, today + 7]
-            next7.append(_build_feed_item(db, item, user, date_for))
+            next7.append(_build_feed_item(db, item, user, date_for, comps[item.id]))
 
     # All-day events first, then timed cards in day order; untimed sink to the end.
     late = dt.time(23, 59)
@@ -458,13 +467,15 @@ def calendar(
         .all()
     )
     visible = [item for item in items if _visible_to(item, user)]
+    # One completions fetch covers every card on every day of the range.
+    comps = _completions_by_item(db, visible)
 
     late = dt.time(23, 59)
     days: list[CalendarDayOut] = []
     day = start
     while day <= end:
         on_day = [
-            _build_feed_item(db, item, user, day)
+            _build_feed_item(db, item, user, day, comps[item.id])
             for item in visible
             if (_occurs(item, day) if item.repeat_type is not None else item.date_for == day)
         ]
@@ -512,7 +523,7 @@ def create_item(
     db.add(item)
     db.commit()
     db.refresh(item)
-    return _build_feed_item(db, item, parent, dt.date.today())
+    return _build_feed_item(db, item, parent, dt.date.today(), [])
 
 
 @router.patch("/{item_id}", response_model=FeedItemOut)
@@ -556,7 +567,9 @@ def update_item(
     _validate_item(item)
     db.commit()
     db.refresh(item)
-    return _build_feed_item(db, item, parent, dt.date.today())
+    return _build_feed_item(
+        db, item, parent, dt.date.today(), _completions_by_item(db, [item])[item.id]
+    )
 
 
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -610,7 +623,9 @@ def complete_item(
         db.add(Completion(item_id=item.id, user_id=target.id, date_for=date_for))
         db.commit()
 
-    return _build_feed_item(db, item, user, date_for)
+    return _build_feed_item(
+        db, item, user, date_for, _completions_by_item(db, [item])[item.id]
+    )
 
 
 @router.delete("/{item_id}/complete", response_model=FeedItemOut)
@@ -648,4 +663,6 @@ def uncomplete_item(
     if completions:
         db.commit()
 
-    return _build_feed_item(db, item, user, date_for)
+    return _build_feed_item(
+        db, item, user, date_for, _completions_by_item(db, [item])[item.id]
+    )

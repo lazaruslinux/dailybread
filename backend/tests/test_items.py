@@ -533,3 +533,37 @@ def test_shared_task_completion_is_single(owner, child):
     card = next(i for i in feed["today"] if i["id"] == task["id"])
     assert card["completed"] is True
     assert card["assignee_completions"] is None
+
+
+def test_calendar_query_count_does_not_scale_with_the_span(app, owner):
+    # The calendar assembles every card once per day of the range; completions
+    # are prefetched in ONE query, so a month must cost the same number of
+    # queries as a single day. Counting real cursor executions pins the N+1
+    # regression this guards against.
+    from sqlalchemy import event
+
+    make_item(owner, kind="routine", title="Brush teeth",
+              repeat={"type": "weekly", "days": [0, 1, 2, 3, 4, 5, 6], "interval": 1})
+    make_item(owner, kind="appointment", title="Dentist", date_for=TODAY,
+              time_of_day="09:00", end_time="09:30")
+    owner.post(f"/items/{1}/complete?date={TODAY}")
+
+    counts: list[str] = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        counts.append(statement)
+
+    engine = app.state.test_engine
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        start = dt.date.today()
+        owner.get(f"/items/calendar?start={start}&end={start}").raise_for_status()
+        one_day = len(counts)
+        counts.clear()
+        end = start + dt.timedelta(days=27)
+        owner.get(f"/items/calendar?start={start}&end={end}").raise_for_status()
+        four_weeks = len(counts)
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert four_weeks == one_day
