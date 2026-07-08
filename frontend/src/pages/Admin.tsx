@@ -204,6 +204,7 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
   const [username, setUsername] = useState(member?.username ?? '')
   const [role, setRole] = useState<api.Role>(member?.role ?? 'child')
   const [isAdmin, setIsAdmin] = useState(member?.is_admin ?? false)
+  const [birthdate, setBirthdate] = useState(member?.birthdate ?? '')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -229,12 +230,20 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
     setBusy(true)
     try {
       if (creating) {
-        await api.createUser({ username, display_name: displayName, password, role, is_admin: isAdmin })
+        await api.createUser({
+          username,
+          display_name: displayName,
+          password,
+          role,
+          is_admin: isAdmin,
+          ...(role === 'child' && birthdate ? { birthdate } : {}),
+        })
       } else {
         await api.updateUser(member.id, {
           display_name: displayName,
           role,
           is_admin: isAdmin,
+          ...(role === 'child' ? { birthdate: birthdate || null } : {}),
           ...(password ? { password } : {}),
         })
       }
@@ -318,6 +327,21 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
               ))}
             </div>
           </div>
+
+          {role === 'child' && (
+            <div>
+              <Field
+                label="Birthdate"
+                type="date"
+                value={birthdate}
+                onChange={(e) => setBirthdate(e.target.value)}
+                onClear={() => setBirthdate('')}
+              />
+              <p className="mt-1.5 text-xs text-fg/40">
+                Used to switch off kid mode at 18. Leave empty to keep kid mode on.
+              </p>
+            </div>
+          )}
 
           <label
             className={`flex items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 ${

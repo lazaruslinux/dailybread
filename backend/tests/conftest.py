@@ -6,6 +6,7 @@ from each other and from Postgres. Role fixtures return separate TestClients,
 each with its own cookie jar, exercising the real auth endpoints end to end.
 """
 
+import datetime as dt
 import os
 
 # Must happen before any app import: Settings reads the environment once.
@@ -19,6 +20,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app import throttle
+from app.config import settings
 from app.db import Base, get_db
 from app.main import app as real_app
 
@@ -26,8 +28,19 @@ from app.main import app as real_app
 OWNER = {"username": "owner", "display_name": "Owner Parent", "password": "owner-pass-123"}
 PARENT = {"username": "parent2", "display_name": "Second Parent", "password": "parent-pass-123"}
 CHILD = {"username": "kid", "display_name": "The Kid", "password": "child-pass-123"}
+# A child-role account past 18: child on the board, but not a minor.
+ADULT_CHILD = {"username": "grownkid", "display_name": "Grown Kid", "password": "grown-pass-123"}
 # A second household, for cross-family isolation checks.
 JOSH = {"username": "josh", "display_name": "Josh", "password": "josh-pass-1234"}
+
+
+@pytest.fixture(autouse=True)
+def _push_unconfigured(monkeypatch):
+    """Start every test with push OFF, even when the developer's backend/.env
+    holds real dev VAPID keys (Settings reads it at import). Tests that want
+    push on say so via the `configured` fixture, which runs after this."""
+    monkeypatch.setattr(settings, "vapid_public_key", "")
+    monkeypatch.setattr(settings, "vapid_private_key", "")
 
 
 @pytest.fixture(autouse=True)
@@ -114,9 +127,19 @@ def parent(app, owner) -> TestClient:
 
 @pytest.fixture()
 def child(app, owner) -> TestClient:
+    """A child with NO birthdate — a minor, mirroring the real household."""
     res = owner.post("/auth/users", json={**CHILD, "role": "child"})
     assert res.status_code == 201, res.text
     return login(app, CHILD)
+
+
+@pytest.fixture()
+def adult_child(app, owner) -> TestClient:
+    """Child role, 20 years old: proves restrictions key off age, not role."""
+    birthdate = (dt.date.today() - dt.timedelta(days=20 * 366)).isoformat()
+    res = owner.post("/auth/users", json={**ADULT_CHILD, "role": "child", "birthdate": birthdate})
+    assert res.status_code == 201, res.text
+    return login(app, ADULT_CHILD)
 
 
 @pytest.fixture()
@@ -137,3 +160,24 @@ def other(homeless) -> TestClient:
 
 def user_id(client: TestClient) -> int:
     return client.get("/auth/me").json()["id"]
+
+
+# ---- web push (shared by the push and approval tests) -------------------------
+
+
+@pytest.fixture()
+def configured(monkeypatch):
+    monkeypatch.setattr(settings, "vapid_public_key", "test-public-key")
+    monkeypatch.setattr(settings, "vapid_private_key", "test-private-key")
+
+
+@pytest.fixture()
+def outbox(monkeypatch):
+    """Record every webpush() call instead of hitting a push service."""
+    calls = []
+
+    def fake_webpush(subscription_info, data, **kwargs):
+        calls.append(subscription_info["endpoint"])
+
+    monkeypatch.setattr("pywebpush.webpush", fake_webpush)
+    return calls

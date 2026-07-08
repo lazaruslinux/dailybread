@@ -89,7 +89,29 @@ class User(Base):
     must_change_password: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    # Admin-set, drives kid mode (see is_minor). Deliberately independent from
+    # health_profiles.birthdate, which is a self-reported BMR input.
+    birthdate: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    @property
+    def is_minor(self) -> bool:
+        """Kid mode: child accounts under 18 get the shepherded experience —
+        no nutrition/health area, only their own slice of the board, and
+        check-offs that wait for a parent. No birthdate means minor, so a kid
+        is never accidentally unrestricted; restrictions lift by themselves on
+        the 18th birthday (role stays child). Same server-local clock as the
+        rest of the app's day math."""
+        if self.role != Role.child:
+            return False
+        if self.birthdate is None:
+            return True
+        today = dt.date.today()
+        try:
+            eighteenth = self.birthdate.replace(year=self.birthdate.year + 18)
+        except ValueError:  # born Feb 29; turns 18 on Mar 1 of a common year
+            eighteenth = self.birthdate.replace(year=self.birthdate.year + 18, month=3, day=1)
+        return today < eighteenth
 
 
 class ItemKind(str, enum.Enum):
@@ -223,6 +245,14 @@ class Completion(Base):
     )
     date_for: Mapped[dt.date] = mapped_column(Date, index=True)
     completed_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    # A minor's check-off starts pending and only counts once a parent makes it
+    # official — approval promotes this same row (pending -> False, stamp
+    # approved_by_id) rather than inserting a second one, so the unique
+    # (item, member, day) constraint keeps holding. Rejecting deletes the row.
+    pending: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    approved_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
 
 class GroceryList(Base):

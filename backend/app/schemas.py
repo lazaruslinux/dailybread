@@ -45,6 +45,11 @@ class UserOut(BaseModel):
     # frontend shows a photo when this is set and appends it as a cache-busting
     # version to the avatar image URL.
     avatar_updated_at: dt.datetime | None = None
+    # Kid mode. birthdate is admin-set; is_minor is derived (child role and
+    # under 18, or no birthdate at all) and rides along on every user payload
+    # including /auth/me, so the frontend can shape itself without extra calls.
+    birthdate: dt.date | None = None
+    is_minor: bool = False
 
     # Let Pydantic read attributes off a SQLAlchemy User object directly.
     model_config = {"from_attributes": True}
@@ -70,6 +75,8 @@ class CreateUserIn(BootstrapIn):
     role: Role = Role.child
     # None means "use the default for the role" (parent -> admin, child -> not).
     is_admin: bool | None = None
+    # Kid mode switch-off date. Leaving it empty keeps a child account a minor.
+    birthdate: dt.date | None = None
     # True creates the account with NO family: on first login they get the
     # create-your-family wizard and become head of their own household.
     new_household: bool = False
@@ -98,6 +105,9 @@ class UpdateUserIn(BaseModel):
     is_admin: bool | None = None
     # Setting this resets the account's password (same policy as creation).
     password: str | None = Field(default=None, min_length=8, max_length=128)
+    # None is ambiguous here (clear vs. omitted); update_user tells them apart
+    # via model_fields_set, so sending null really does clear the birthdate.
+    birthdate: dt.date | None = None
 
 
 class ChangePasswordIn(BaseModel):

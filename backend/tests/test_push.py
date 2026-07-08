@@ -12,7 +12,6 @@ import pytest
 from sqlalchemy.orm import sessionmaker
 
 import app.push as push_engine
-from app.config import settings
 from tests.conftest import user_id
 
 SUB = {
@@ -25,22 +24,7 @@ SUB2 = {
 }
 
 
-@pytest.fixture()
-def configured(monkeypatch):
-    monkeypatch.setattr(settings, "vapid_public_key", "test-public-key")
-    monkeypatch.setattr(settings, "vapid_private_key", "test-private-key")
-
-
-@pytest.fixture()
-def outbox(monkeypatch):
-    """Record every webpush() call instead of hitting a push service."""
-    calls = []
-
-    def fake_webpush(subscription_info, data, **kwargs):
-        calls.append(subscription_info["endpoint"])
-
-    monkeypatch.setattr("pywebpush.webpush", fake_webpush)
-    return calls
+# configured/outbox now live in conftest.py, shared with the approval tests.
 
 
 @pytest.fixture()

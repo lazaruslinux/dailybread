@@ -149,6 +149,7 @@ def create_user(
         password_hash=hash_password(data.password),
         role=data.role,
         is_admin=False if data.new_household else is_admin,
+        birthdate=data.birthdate,
     )
     db.add(user)
     db.commit()
@@ -210,6 +211,8 @@ def update_user(
     user.is_admin = new_admin
     if data.display_name is not None:
         user.display_name = data.display_name
+    if "birthdate" in data.model_fields_set:
+        user.birthdate = data.birthdate
     if data.password is not None:
         user.password_hash = hash_password(data.password)
         # A password change ends the account's existing sessions everywhere:

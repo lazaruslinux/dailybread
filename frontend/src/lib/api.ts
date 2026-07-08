@@ -74,6 +74,11 @@ export interface User {
   // routes to a choose-your-own-password screen (and the backend refuses
   // everything else) until they set one.
   must_change_password: boolean
+  // Kid mode: birthdate is admin-set ("YYYY-MM-DD" or null); is_minor is
+  // derived on the server (child role and under 18, or no birthdate). Minors
+  // get the reduced app: no Nutrition, own cards only, approval check-offs.
+  birthdate: string | null
+  is_minor: boolean
 }
 
 export interface SetupState {
@@ -109,6 +114,8 @@ export interface CreateUserPayload {
   password: string
   role: Role
   is_admin?: boolean
+  // "YYYY-MM-DD". Empty on a child account keeps kid mode on.
+  birthdate?: string | null
   // True creates a family-less parent account: whoever signs in with it
   // founds their own separate household via the create-family wizard. Used
   // only by "Invite another household", never by "Add family member".
@@ -120,6 +127,8 @@ export interface UpdateUserPayload {
   role?: Role
   is_admin?: boolean
   password?: string
+  // Omitted = unchanged; explicit null clears the birthdate (kid mode back on).
+  birthdate?: string | null
 }
 
 export const listUsers = () => request<User[]>('/auth/users')
