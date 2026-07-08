@@ -567,3 +567,75 @@ def test_calendar_query_count_does_not_scale_with_the_span(app, owner):
         event.remove(engine, "before_cursor_execute", record)
 
     assert four_weeks == one_day
+
+
+# ---- kid mode: a minor's slice of the board ----------------------------------------
+
+
+def feed_ids(client, date=TODAY):
+    res = client.get(f"/items/feed?date={date}")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    return {i["id"] for section in body.values() if isinstance(section, list) for i in section}
+
+
+def calendar_ids(client, date=TODAY):
+    res = client.get(f"/items/calendar?start={date}&end={date}")
+    assert res.status_code == 200, res.text
+    return {i["id"] for day in res.json()["days"] for i in day["items"]}
+
+
+def test_minor_sees_unassigned_family_cards_but_cannot_check_them(owner, child):
+    notice = make_item(owner, title="Grandma arrives", visibility="family", date_for=TODAY)
+
+    assert notice["id"] in feed_ids(child)
+    assert notice["id"] in calendar_ids(child)
+    # Visible is not checkable: the card is nobody's to do, least of all a
+    # minor's (same 403 any uninvolved child gets).
+    res = child.post(f"/items/{notice['id']}/complete?date={TODAY}")
+    assert res.status_code == 403
+
+
+def test_minor_cannot_see_family_cards_assigned_to_others(owner, child):
+    mom_card = make_item(
+        owner,
+        title="Pick up prescriptions",
+        visibility="family",
+        assignee_ids=[user_id(owner)],
+        date_for=TODAY,
+    )
+
+    assert mom_card["id"] not in feed_ids(child)
+    assert mom_card["id"] not in calendar_ids(child)
+    # Hidden means gone: completing it 404s like the card doesn't exist.
+    assert child.post(f"/items/{mom_card['id']}/complete?date={TODAY}").status_code == 404
+    # The parent still sees their own card, and a GROWN family member still
+    # sees any family card - the narrowing applies to minors alone.
+    assert mom_card["id"] in feed_ids(owner)
+
+
+def test_grown_child_still_sees_the_whole_family_board(owner, adult_child):
+    mom_card = make_item(
+        owner,
+        title="Family dinner",
+        visibility="family",
+        assignee_ids=[user_id(owner)],
+        date_for=TODAY,
+    )
+    assert mom_card["id"] in feed_ids(adult_child)
+
+
+def test_minor_sees_own_and_assigned_cards(owner, child):
+    kid_id = user_id(child)
+    mine = make_item(owner, title="Feed the dog", assignee_ids=[kid_id], date_for=TODAY)
+    shared = make_item(
+        owner,
+        title="Soccer practice",
+        visibility="family",
+        assignee_ids=[kid_id, user_id(owner)],
+        date_for=TODAY,
+    )
+
+    ids = feed_ids(child)
+    assert mine["id"] in ids
+    assert shared["id"] in ids

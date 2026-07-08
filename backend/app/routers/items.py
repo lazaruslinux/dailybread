@@ -46,12 +46,19 @@ def _get_item(db: Session, item_id: int, family_id: int) -> Item:
 def _visible_to(item: Item, user: User) -> bool:
     """Can this member see the card? family = the whole household; private =
     the owner plus anyone assigned (they must see it to do it). A card whose
-    owner was deleted (owner_id NULL) is treated as family so it doesn't vanish."""
-    if item.visibility == Visibility.family or item.owner_id is None:
-        return True
+    owner was deleted (owner_id NULL) is treated as family so it doesn't vanish.
+
+    Kid mode narrows "the whole household": a minor sees their own cards plus
+    UNASSIGNED family cards (notices like "Grandma arrives 6 PM"), but a family
+    card assigned to other people is none of their business. This is the single
+    choke point — feed, calendar, and _require_visible all inherit the rule."""
     if item.owner_id == user.id:
         return True
-    return any(a.id == user.id for a in item.assignees)
+    if any(a.id == user.id for a in item.assignees):
+        return True
+    if item.visibility == Visibility.family or item.owner_id is None:
+        return not user.is_minor or not item.assignees
+    return False
 
 
 def _require_visible(item: Item, user: User) -> None:
