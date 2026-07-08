@@ -1,16 +1,43 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app import push as push_engine
 from app.config import settings
 from app.db import db_ok
-from app.routers import auth, diary, families, foods, grocery, health, items, meals, recipes, users
+from app.routers import (
+    auth,
+    diary,
+    families,
+    foods,
+    grocery,
+    health,
+    items,
+    meals,
+    push,
+    recipes,
+    users,
+)
 
 # Schema management moved to Alembic: the container entrypoint runs
 # "alembic upgrade head" before starting the server, so by the time the app
 # is up the database is guaranteed to be current.
 
-app = FastAPI(title="dailybread", version="0.0.1")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # The reminder loop runs only when push is configured (VAPID keys set);
+    # without it the app behaves exactly as before.
+    task = asyncio.create_task(push_engine.reminder_loop()) if push_engine.enabled() else None
+    yield
+    if task is not None:
+        task.cancel()
+
+
+app = FastAPI(title="dailybread", version="0.0.1", lifespan=lifespan)
 
 # Allow the Vite dev server to call the API during development.
 app.add_middleware(
@@ -43,6 +70,7 @@ app.include_router(grocery.router)
 app.include_router(items.router)
 app.include_router(foods.router)
 app.include_router(meals.router)
+app.include_router(push.router)
 app.include_router(recipes.router)
 app.include_router(users.router)
 

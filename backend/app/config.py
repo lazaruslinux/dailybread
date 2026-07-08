@@ -32,5 +32,15 @@ class Settings(BaseSettings):
     # their nutrition from foods looked up here.
     usda_api_key: str = ""
 
+    # Web Push (reminders). Generate a VAPID key pair once per install (see
+    # README); both keys are base64url strings. Leaving them empty simply
+    # disables push - the app runs fine without it. The subject is a contact
+    # URI the push services may use to reach the operator about problems.
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    vapid_subject: str = "mailto:admin@example.com"
+    # How many minutes before a timed card its reminder goes out.
+    reminder_lead_minutes: int = 15
+
 
 settings = Settings()

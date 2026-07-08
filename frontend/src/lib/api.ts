@@ -836,3 +836,21 @@ export const updateExercise = (
 
 export const deleteExercise = (id: number) =>
   request<void>(`/me/exercise/${id}`, { method: 'DELETE' })
+
+// ---- web push (reminders) -------------------------------------------------------
+
+export const getPushKey = () => request<{ key: string }>('/push/key')
+
+export const subscribePush = (endpoint: string, keys: { p256dh: string; auth: string }) =>
+  request<void>('/push/subscription', {
+    method: 'PUT',
+    body: JSON.stringify({ endpoint, keys }),
+  })
+
+export const unsubscribePush = (endpoint: string) =>
+  request<void>('/push/subscription', {
+    method: 'DELETE',
+    body: JSON.stringify({ endpoint }),
+  })
+
+export const sendTestPush = () => request<{ sent: number }>('/push/test', { method: 'POST' })

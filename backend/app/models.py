@@ -708,3 +708,36 @@ class JournalEntry(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )
+
+
+class PushSubscription(Base):
+    """One browser/device that agreed to receive Web Push. A member can hold
+    several (phone, tablet); a device that changes hands re-registers its
+    endpoint under the new member. Dead endpoints (404/410 from the push
+    service) are deleted on the spot when a send bounces."""
+
+    __tablename__ = "push_subscriptions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    endpoint: Mapped[str] = mapped_column(Text, unique=True)
+    p256dh: Mapped[str] = mapped_column(String(255))
+    auth: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ReminderLog(Base):
+    """One row per card per day a reminder went out, so a restarted server
+    (or two ticks racing) never notifies the same card twice."""
+
+    __tablename__ = "reminder_log"
+    __table_args__ = (UniqueConstraint("item_id", "date_for", name="uq_reminder_item_day"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_id: Mapped[int] = mapped_column(
+        ForeignKey("items.id", ondelete="CASCADE"), index=True
+    )
+    date_for: Mapped[dt.date] = mapped_column(Date)

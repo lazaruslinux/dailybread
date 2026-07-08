@@ -105,15 +105,24 @@ Where dailybread is headed, in order. Done items stay for history.
   current hour without moving the page. Cards and calendar rows now show the
   full slot ("3:00 – 4:30 PM") rather than just the start.
 
+- **Push reminders** — real phone notifications, shortly before anything with
+  a time on the board: each member turns them on per device from the You tab
+  (with a send-a-test button), routines only nag the people who haven't done
+  theirs, and a device that revokes permission cleans itself up. Standard Web
+  Push — works in any browser on Android, and on iOS through the
+  Home-Screen-installed app — delivered outbound through the platform push
+  relays with end-to-end encrypted payloads, so the server stays
+  private-network-only with no inbound exposure.
+
 ## Next
 
-1. **Push reminders** — Web Push for card reminders and a morning digest.
-2. **Family chat** — messaging, then topic channels, then photo attachments;
+1. **Family chat** — messaging, then topic channels, then photo attachments;
    channels carry explicit member lists from day one so a channel can later
    span households.
-3. **Fitness sync** — workouts flowing into the app and auto-completing
+2. **Fitness sync** — workouts flowing into the app and auto-completing
    matching board routines. Strava first (watch → Strava → server polling);
    direct Apple Health export as a self-hosted alternative path.
+3. **Morning digest** — an optional daily push summarizing the day ahead.
 
 ## Ongoing polish
 

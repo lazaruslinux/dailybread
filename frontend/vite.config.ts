@@ -14,6 +14,10 @@ export default defineConfig({
       registerType: 'autoUpdate',
       // Static files that must be precached alongside the manifest icons.
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
+      workbox: {
+        // Web Push handlers ride inside the generated service worker.
+        importScripts: ['push-sw.js'],
+      },
       manifest: {
         name: 'dailybread',
         short_name: 'dailybread',
@@ -38,6 +42,17 @@ export default defineConfig({
       // backend, stripping the /api prefix. This keeps the browser same-origin
       // (no CORS) and mirrors how a production reverse proxy routes /api to the
       // backend. Nothing here is public-facing.
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+    },
+  },
+  preview: {
+    // `vite preview` serves the built app (with its real service worker, which
+    // the dev server doesn't run) - used to exercise PWA/push flows locally.
+    proxy: {
       '/api': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,

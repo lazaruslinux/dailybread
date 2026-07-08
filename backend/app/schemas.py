@@ -823,3 +823,31 @@ class ProfileUpdateIn(BaseModel):
 
     display_name: str | None = Field(default=None, min_length=1, max_length=100)
     bio: str | None = Field(default=None, max_length=500)
+
+
+# ---- web push -----------------------------------------------------------------
+
+
+class PushKeys(BaseModel):
+    """The browser-generated encryption keys that ride along with a
+    PushSubscription (the standard subscription JSON's "keys" object)."""
+
+    p256dh: str = Field(min_length=1, max_length=255)
+    auth: str = Field(min_length=1, max_length=255)
+
+
+class PushSubscriptionIn(BaseModel):
+    endpoint: str = Field(min_length=1, max_length=2000)
+    keys: PushKeys
+
+
+class PushUnsubscribeIn(BaseModel):
+    endpoint: str = Field(min_length=1, max_length=2000)
+
+
+class PushKeyOut(BaseModel):
+    key: str
+
+
+class PushTestOut(BaseModel):
+    sent: int

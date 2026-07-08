@@ -22,3 +22,6 @@ pillow
 
 # Outbound food-database lookups (USDA FoodData Central, Open Food Facts)
 httpx
+
+# Web Push reminders (VAPID signing + payload encryption)
+pywebpush
