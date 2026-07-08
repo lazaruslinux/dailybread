@@ -3,6 +3,8 @@ import { CalendarDays, ChevronLeft } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from './auth/AuthContext'
 import { applyTheme, getTheme } from './lib/theme'
+import { timeGreeting } from './lib/moods'
+import { DailyGreeting } from './components/Greeting'
 import { HealthBadge } from './components/HealthBadge'
 import { TabBar, type Tab } from './components/TabBar'
 import { Admin } from './pages/Admin'
@@ -16,13 +18,6 @@ import { Nutrition } from './pages/Nutrition'
 import { Profile } from './pages/Profile'
 import { Setup } from './pages/Setup'
 import { You } from './pages/You'
-
-function greeting(): string {
-  const h = new Date().getHours()
-  if (h < 12) return 'Good morning'
-  if (h < 17) return 'Good afternoon'
-  return 'Good evening'
-}
 
 function todayLabel(): string {
   return new Date().toLocaleDateString(undefined, {
@@ -93,7 +88,7 @@ function AppShell() {
 
         {tab === 'home' && !overlay && (
           <h1 className="font-display text-[2.05rem] font-semibold leading-[1.1] tracking-[-0.02em]">
-            {greeting()}, {firstName}
+            {timeGreeting()}, {firstName}
           </h1>
         )}
       </header>
@@ -120,6 +115,7 @@ function AppShell() {
 
       <footer className="mt-10 text-center text-xs text-fg/30">dailybread v0.0.1</footer>
 
+      <DailyGreeting />
       <TabBar active={tab} onChange={switchTab} />
     </div>
   )

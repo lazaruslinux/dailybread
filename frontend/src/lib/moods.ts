@@ -29,6 +29,14 @@ export function initialsOf(name: string): string {
     .join('')
 }
 
+// Time-of-day hello, shared by the Home header and the daily greeting sheet.
+export function timeGreeting(): string {
+  const h = new Date().getHours()
+  if (h < 12) return 'Good morning'
+  if (h < 17) return 'Good afternoon'
+  return 'Good evening'
+}
+
 // "07:00:00" -> "7:00 AM"
 export function formatTime(t: string | null): string | null {
   if (!t) return null

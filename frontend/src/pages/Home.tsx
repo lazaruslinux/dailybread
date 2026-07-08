@@ -93,9 +93,12 @@ export function Home({
     // Coming back to the app (phone unlock, tab focus) refetches the board.
     const onVisible = () => document.visibilityState === 'visible' && refresh()
     document.addEventListener('visibilitychange', onVisible)
+    // The daily greeting saves a mood/status over the board; show it right away.
+    window.addEventListener('db:profile-changed', refresh)
     return () => {
       clearInterval(tick)
       document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('db:profile-changed', refresh)
       window.clearTimeout(toastTimer.current)
     }
   }, [refresh])
