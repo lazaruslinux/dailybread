@@ -37,3 +37,14 @@ export function formatTime(t: string | null): string | null {
   const hour = h % 12 === 0 ? 12 : h % 12
   return `${hour}:${String(m).padStart(2, '0')} ${suffix}`
 }
+
+// The full slot: "3:00 – 4:30 PM", or "11:30 AM – 1:00 PM" across noon. The
+// start drops its AM/PM when the end shares it, so short slots stay short.
+export function formatTimeRange(start: string | null, end: string | null): string | null {
+  const from = formatTime(start)
+  if (!from) return null
+  const to = formatTime(end)
+  if (!to) return from
+  const sameHalf = from.slice(-2) === to.slice(-2)
+  return `${sameHalf ? from.slice(0, -3) : from} – ${to}`
+}

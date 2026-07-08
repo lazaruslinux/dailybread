@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion'
 import { Activity, CalendarClock, Check, Circle, Flame, Pencil, Repeat, type LucideIcon } from 'lucide-react'
 import { avatarUrl, type FamilyMember, type FeedItem, type ItemKind } from '../lib/api'
-import { formatTime } from '../lib/moods'
+import { formatTimeRange } from '../lib/moods'
 import { Avatar } from './Avatar'
 
 export const KIND_STYLE: Record<ItemKind, { Icon: LucideIcon; tint: string; label: string }> = {
@@ -77,7 +77,7 @@ export function ItemCard({
   onEdit?: () => void
 }) {
   const { Icon, tint, label } = KIND_STYLE[item.kind]
-  const timeLabel = item.all_day ? 'All day' : formatTime(item.time_of_day)
+  const timeLabel = item.all_day ? 'All day' : formatTimeRange(item.time_of_day, item.end_time)
   const dateLine = showDate && item.date_for ? shortDate(item.date_for) : null
   const showCheckbox = canCheck && onToggle
 
@@ -175,7 +175,7 @@ export function ItemCard({
           <span className="text-[11px] font-semibold text-fg/65">{dateLine}</span>
         )}
         {timeLabel && (
-          <span className={`text-[13px] font-semibold tabular-nums ${flag === 'overdue' ? 'text-rose-300' : 'text-fg/75'}`}>
+          <span className={`whitespace-nowrap text-[13px] font-semibold tabular-nums ${flag === 'overdue' ? 'text-rose-300' : 'text-fg/75'}`}>
             {timeLabel}
           </span>
         )}

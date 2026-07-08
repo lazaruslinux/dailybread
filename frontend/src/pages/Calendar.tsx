@@ -106,6 +106,7 @@ function AgendaRow({
 }) {
   const { Icon, tint, label } = KIND_STYLE[item.kind]
   const when = item.all_day ? 'All day' : formatTime(item.time_of_day)
+  const until = item.all_day ? null : formatTime(item.end_time)
   const people = item.assignees
     .map((a) => family.find((m) => m.id === a.id))
     .filter((m): m is api.FamilyMember => Boolean(m))
@@ -136,6 +137,7 @@ function AgendaRow({
       {when != null && (
         <div className="w-14 shrink-0 text-right text-[11px] font-semibold leading-tight text-fg/55">
           {when}
+          {until && <span className="block text-fg/40">– {until}</span>}
         </div>
       )}
       <div className="min-w-0 flex-1">
