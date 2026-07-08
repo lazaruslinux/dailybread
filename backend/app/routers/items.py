@@ -400,19 +400,13 @@ def feed(
                     continue
             today.append(fi)
         elif item.date_for < date_for:
-            # A one-off whose day has passed. It carries forward until checked
-            # off; completing it lands the check on today, so it stays visible
-            # (crossed out, in the client's Done section) for the rest of the
-            # day and archives tomorrow. A check from an earlier day drops off.
+            # A one-off whose day has passed carries forward until checked off.
+            # Once completed it leaves the board immediately: it wasn't done
+            # today, so it doesn't belong in today's Done list — its record
+            # lives on its own day in the calendar.
             fi = _build_feed_item(db, item, user, date_for)
             if fi.completed:
-                done_today = db.scalar(
-                    select(Completion.id).where(
-                        Completion.item_id == item.id, Completion.date_for == date_for
-                    )
-                )
-                if done_today is None:
-                    continue
+                continue
             overdue.append(fi)
         else:  # date_for in (today, today + 7]
             next7.append(_build_feed_item(db, item, user, date_for))

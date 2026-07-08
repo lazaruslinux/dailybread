@@ -244,9 +244,13 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
   const todayCards = feed ? feed.today.filter(matchesFilter) : []
   const next7 = feed ? feed.next7.filter(matchesFilter) : []
 
-  // Completing any card moves it to the bottom Done section, crossed out but
-  // still visible for the day (the "I did it" payoff).
-  const done = [...overdue, ...todayCards, ...next7].filter((i) => i.completed)
+  // Completing a card for today (or ahead of time) moves it to the bottom Done
+  // section, crossed out but still visible for the day (the "I did it" payoff).
+  // Past-due cards are the exception: they weren't done today, so checking one
+  // archives it straight to its own day in the calendar instead of lingering
+  // here. (The server drops them on refresh; filtering overdue out keeps the
+  // optimistic in-between state consistent with that.)
+  const done = [...todayCards, ...next7].filter((i) => i.completed)
 
   const openToday = todayCards.filter((i) => !i.completed)
   const pastDue = [...overdue.filter((i) => !i.completed), ...openToday.filter((i) => todaySlot(i, nowHm) === 'pastdue')]

@@ -61,6 +61,21 @@ function fullDay(iso: string): string {
   })
 }
 
+// Fold the overview's flat day-tagged card list into consecutive-day groups,
+// preserving order, so each day renders once with its cards beneath it.
+function groupByDay(entries: { date: string; item: api.FeedItem }[]) {
+  const groups: { date: string; items: api.FeedItem[] }[] = []
+  for (const { date, item } of entries) {
+    let g = groups[groups.length - 1]
+    if (!g || g.date !== date) {
+      g = { date, items: [] }
+      groups.push(g)
+    }
+    g.items.push(item)
+  }
+  return groups
+}
+
 // Short day header for the overview groups: "Today" for today, else "Mon, Jul 7".
 function dayHeading(iso: string, todayISO: string): string {
   if (iso === todayISO) return 'Today'
@@ -249,27 +264,18 @@ export function Calendar() {
   // The whole-period overview: every scheduled card across the view, in date
   // order, each tagged with its day — routines included, so a habit doesn't
   // seem to vanish when you zoom out from a single day to the whole period.
+  // Open cards come first; completed ones settle into a "Completed" section at
+  // the bottom of the whole period (matching the single-day agenda), so a
+  // fortnight that starts in the past doesn't lead with days of finished cards.
   const overview = useMemo(() => {
     const out: { date: string; item: api.FeedItem }[] = []
     for (const d of cal?.days ?? [])
       for (const it of d.items) out.push({ date: d.date, item: it })
-    return out
+    return [...out.filter((e) => !e.item.completed), ...out.filter((e) => e.item.completed)]
   }, [cal])
   const overviewShown = overview.slice(0, shown)
-  const overviewGroups = useMemo(() => {
-    const groups: { date: string; items: api.FeedItem[] }[] = []
-    for (const { date, item } of overviewShown) {
-      let g = groups[groups.length - 1]
-      if (!g || g.date !== date) {
-        g = { date, items: [] }
-        groups.push(g)
-      }
-      g.items.push(item)
-    }
-    // Done cards sink to the bottom of each day.
-    for (const g of groups) g.items.sort((a, b) => Number(a.completed) - Number(b.completed))
-    return groups
-  }, [overviewShown])
+  const overviewOpen = groupByDay(overviewShown.filter((e) => !e.item.completed))
+  const overviewDone = groupByDay(overviewShown.filter((e) => e.item.completed))
 
   // You can only mark days that have already happened (or today) — nothing is
   // "done" in the future.
@@ -512,7 +518,7 @@ export function Calendar() {
             <p className="glass p-6 text-center text-sm text-fg/50">Nothing scheduled in this period.</p>
           ) : (
             <div className="flex flex-col gap-4">
-              {overviewGroups.map((g) => (
+              {overviewOpen.map((g) => (
                 <div key={g.date}>
                   <p className="mb-1.5 pl-1 text-[11px] font-semibold text-fg/45">{dayHeading(g.date, todayISO)}</p>
                   <div className="flex flex-col gap-2.5">
@@ -520,6 +526,22 @@ export function Calendar() {
                   </div>
                 </div>
               ))}
+              {overviewOpen.length === 0 && (
+                <p className="glass p-6 text-center text-sm text-fg/55">All done in this period.</p>
+              )}
+              {overviewDone.length > 0 && (
+                <>
+                  <SectionDivider label="Completed" />
+                  {overviewDone.map((g) => (
+                    <div key={`done-${g.date}`}>
+                      <p className="mb-1.5 pl-1 text-[11px] font-semibold text-fg/45">{dayHeading(g.date, todayISO)}</p>
+                      <div className="flex flex-col gap-2.5">
+                        {g.items.map((item) => renderRow(item, g.date))}
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
               {overview.length > shown && (
                 <button
                   onClick={() => setShown((n) => n + PERIOD_PAGE)}

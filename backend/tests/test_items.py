@@ -219,24 +219,28 @@ def test_overdue_carries_past_due_oneoffs_forward(owner):
     assert old["id"] not in overdue_ids
 
 
-def test_completing_an_overdue_card_keeps_it_for_today_then_archives(owner):
-    # Checking off a past-due card records the check on today, so it stays in
-    # the feed (crossed out, for the client's Done section) until midnight.
+def test_completing_an_overdue_card_archives_it_immediately(owner):
+    # Checking off a past-due card removes it from the board at once — it
+    # wasn't done today, so it doesn't sit in today's Done list. Its record
+    # still shows, completed, on its own day in the calendar; undoing the
+    # check brings it back to overdue.
     yesterday = (dt.date.today() - dt.timedelta(days=1)).isoformat()
     appt = make_item(owner, kind="appointment", title="Late chore", date_for=yesterday,
                      time_of_day="09:00", end_time="09:30")
 
     owner.post(f"/items/{appt['id']}/complete?date={TODAY}")
     feed = owner.get(f"/items/feed?date={TODAY}").json()
-    done = [i for i in feed["overdue"] if i["id"] == appt["id"]]
-    assert done and done[0]["completed"] is True
+    assert not any(
+        i["id"] == appt["id"] for i in feed["overdue"] + feed["today"] + feed["next7"]
+    )
+    cal = owner.get(f"/items/calendar?start={yesterday}&end={yesterday}").json()
+    on_day = [i for i in cal["days"][0]["items"] if i["id"] == appt["id"]]
+    assert on_day and on_day[0]["completed"] is True
 
-    # A card checked off on an earlier day is archived off the board entirely.
-    other = make_item(owner, kind="appointment", title="Done long ago", date_for=yesterday,
-                      time_of_day="09:00", end_time="09:30")
-    owner.post(f"/items/{other['id']}/complete?date={yesterday}")
+    owner.delete(f"/items/{appt['id']}/complete?date={TODAY}")
     feed = owner.get(f"/items/feed?date={TODAY}").json()
-    assert not any(i["id"] == other["id"] for i in feed["overdue"])
+    back = [i for i in feed["overdue"] if i["id"] == appt["id"]]
+    assert back and back[0]["completed"] is False
 
 
 def _monday(d: dt.date) -> dt.date:
