@@ -70,6 +70,10 @@ export interface User {
   // photo (the UI then draws generated initials). Doubles as a cache-busting
   // version for the avatar image URL.
   avatar_updated_at: string | null
+  // True after an admin reset this account to a generated password. The app
+  // routes to a choose-your-own-password screen (and the backend refuses
+  // everything else) until they set one.
+  must_change_password: boolean
 }
 
 export interface SetupState {
@@ -90,6 +94,12 @@ export const bootstrap = (username: string, display_name: string, password: stri
   })
 
 export const logout = () => request<void>('/auth/logout', { method: 'POST' })
+
+export const changePassword = (current_password: string, new_password: string) =>
+  request<User>('/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ current_password, new_password }),
+  })
 
 // ---- admin: family member management ----------------------------------------
 
@@ -122,6 +132,16 @@ export const updateUser = (id: number, payload: UpdateUserPayload) =>
 
 export const deleteUser = (id: number) =>
   request<void>(`/auth/users/${id}`, { method: 'DELETE' })
+
+// The generated password comes back exactly once, for the admin to hand over;
+// the member's account is then locked to choosing their own until they do.
+export interface PasswordReset {
+  password: string
+  user: User
+}
+
+export const resetPassword = (id: number) =>
+  request<PasswordReset>(`/auth/users/${id}/reset-password`, { method: 'POST' })
 
 // ---- families ----------------------------------------------------------------
 

@@ -9,6 +9,10 @@ from app.db import get_db
 from app.models import Role, User
 from app.security import decode_token, set_session_cookie
 
+# The only endpoints a must-change-password session may reach. Logout is
+# cookie-side and never authenticates, so it needs no entry here.
+_ALLOWED_DURING_FORCED_CHANGE = frozenset({"/auth/me", "/auth/change-password"})
+
 
 def get_current_user(
     request: Request, response: Response, db: Session = Depends(get_db)
@@ -31,6 +35,12 @@ def get_current_user(
     # "ver" claim existed read as version 0, matching un-bumped accounts.)
     if payload.get("ver", 0) != user.token_version:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired session")
+
+    # An account an admin reset is in hand-off limbo: it may find out who it
+    # is and set its own password, and nothing else. The generated password
+    # was spoken aloud / written down, so it must never unlock real data.
+    if user.must_change_password and request.url.path not in _ALLOWED_DURING_FORCED_CHANGE:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Password change required")
 
     # Sliding session: once the token is more than a day old, re-issue it so
     # the expiry keeps moving forward. Anyone who opens the app at least once

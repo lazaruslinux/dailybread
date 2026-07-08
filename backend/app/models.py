@@ -83,6 +83,12 @@ class User(Base):
     # password really does log that account out everywhere — sessions are
     # stateless JWTs and would otherwise ride out their whole lifetime.
     token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Set when an admin resets this account to a generated password. Until its
+    # owner picks their own (which clears it), the session can reach only the
+    # change-password flow — the generated password is a hand-off, not a life.
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 

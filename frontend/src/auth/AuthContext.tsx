@@ -9,14 +9,21 @@ import * as api from '../lib/api'
 //   'login'         -> no session, show the sign-in form
 //   'create-family' -> signed in but no family yet (a fresh new-household
 //                      account): show the create-your-family wizard
+//   'change-password' -> signed in with a password an admin generated: they
+//                      must pick their own before anything else
 //   'app'           -> signed in and in a family, show the real app
 
-type Screen = 'loading' | 'setup' | 'login' | 'create-family' | 'app'
+type Screen = 'loading' | 'setup' | 'login' | 'create-family' | 'change-password' | 'app'
 
 // A signed-in user lands on the app if they have a family, or on the
-// create-family wizard if they are a fresh new-household account.
+// create-family wizard if they are a fresh new-household account. A pending
+// forced password change trumps both (the backend refuses all else anyway).
 const screenForUser = (user: api.User): Screen =>
-  user.family_id === null ? 'create-family' : 'app'
+  user.must_change_password
+    ? 'change-password'
+    : user.family_id === null
+      ? 'create-family'
+      : 'app'
 
 interface AuthState {
   screen: Screen
@@ -24,6 +31,7 @@ interface AuthState {
   login: (username: string, password: string) => Promise<void>
   bootstrap: (username: string, displayName: string, password: string) => Promise<void>
   createFamily: (name: string) => Promise<void>
+  changePassword: (current: string, next: string) => Promise<void>
   logout: () => Promise<void>
 }
 
@@ -85,6 +93,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setScreen(screenForUser(me))
   }, [])
 
+  // Used by the Preferences sheet and by the forced-change screen after an
+  // admin reset; the backend re-issues this session's cookie, so no re-login.
+  const changePassword = useCallback(async (current: string, next: string) => {
+    const me = await api.changePassword(current, next)
+    setUser(me)
+    setScreen(screenForUser(me))
+  }, [])
+
   const logout = useCallback(async () => {
     try {
       await api.logout()
@@ -96,7 +112,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ screen, user, login, bootstrap, createFamily, logout }}>
+    <AuthContext.Provider
+      value={{ screen, user, login, bootstrap, createFamily, changePassword, logout }}
+    >
       {children}
     </AuthContext.Provider>
   )

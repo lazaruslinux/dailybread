@@ -8,6 +8,7 @@ import { TabBar, type Tab } from './components/TabBar'
 import { Admin } from './pages/Admin'
 import { Calendar } from './pages/Calendar'
 import { CreateFamily } from './pages/CreateFamily'
+import { ForcedPasswordChange } from './pages/Password'
 import { Home } from './pages/Home'
 import { Kitchen } from './pages/Kitchen'
 import { Login } from './pages/Login'
@@ -144,6 +145,7 @@ function App() {
   }
   if (screen === 'setup') return <Setup />
   if (screen === 'login') return <Login />
+  if (screen === 'change-password') return <ForcedPasswordChange />
   if (screen === 'create-family') return <CreateFamily />
   return <AppShell />
 }

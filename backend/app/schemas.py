@@ -23,6 +23,10 @@ class UserOut(BaseModel):
     # None only while a new-household account hasn't created its family yet;
     # the frontend uses this to show the create-your-family wizard.
     family_id: int | None = None
+    # True after an admin reset this account to a generated password; the
+    # frontend routes to a choose-your-own-password screen (and the backend
+    # refuses everything else) until they do.
+    must_change_password: bool = False
     # When the member last set an avatar photo, or None if they have none. The
     # frontend shows a photo when this is set and appends it as a cache-busting
     # version to the avatar image URL.
@@ -80,6 +84,22 @@ class UpdateUserIn(BaseModel):
     is_admin: bool | None = None
     # Setting this resets the account's password (same policy as creation).
     password: str | None = Field(default=None, min_length=8, max_length=128)
+
+
+class ChangePasswordIn(BaseModel):
+    """A member changing their own password. Proving the current one keeps a
+    borrowed unlocked phone from silently taking over the account."""
+
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class ResetPasswordOut(BaseModel):
+    """An admin reset: the generated password, returned exactly once so the
+    admin can hand it over. It is never retrievable again — only re-generated."""
+
+    password: str
+    user: UserOut
 
 
 class SetupOut(BaseModel):

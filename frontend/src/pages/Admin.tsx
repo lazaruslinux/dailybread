@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { Home, KeyRound, Pencil, Plus, ShieldCheck, Trash2, X } from 'lucide-react'
+import { Copy, Home, KeyRound, Pencil, Plus, ShieldCheck, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
@@ -89,6 +89,103 @@ function MemberRow({
         )}
       </div>
     </motion.div>
+  )
+}
+
+// ---- reset to a generated password ---------------------------------------------
+
+// Lives inside the edit sheet, replacing the typed-password field once used.
+// Two-tap arming (the same pattern as card delete) because the reset signs the
+// member out everywhere the moment it runs.
+function ResetPasswordSection({ member }: { member: api.User }) {
+  const [armed, setArmed] = useState(false)
+  const [generated, setGenerated] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function run() {
+    if (!armed) {
+      setArmed(true)
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      const res = await api.resetPassword(member.id)
+      setGenerated(res.password)
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Something went wrong.')
+      setArmed(false)
+    }
+    setBusy(false)
+  }
+
+  async function copy() {
+    // Clipboard needs a secure context; over plain-http LAN access this can
+    // fail, and the password is still right there to read out or long-press.
+    try {
+      await navigator.clipboard.writeText(generated ?? '')
+      setCopied(true)
+    } catch {
+      /* leave the button as-is; the text itself is selectable */
+    }
+  }
+
+  if (generated) {
+    return (
+      <div className="rounded-xl border border-accent-bright/30 bg-accent-bright/10 p-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg/50">
+          Their new password
+        </p>
+        <div className="flex items-center gap-2">
+          <code className="flex-1 select-all rounded-lg bg-fg/10 px-3 py-2 font-mono text-sm font-semibold tracking-wide">
+            {generated}
+          </code>
+          <button
+            type="button"
+            onClick={copy}
+            aria-label="Copy password"
+            className="rounded-lg p-2 text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
+          >
+            <Copy className="h-4 w-4" />
+          </button>
+        </div>
+        <p className="mt-2.5 text-xs leading-relaxed text-fg/55">
+          {copied ? 'Copied. ' : ''}Give this to {member.display_name}. It's shown only once.
+          They're signed out everywhere, and at their next sign-in they'll choose their own
+          password before anything else.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={run}
+        disabled={busy}
+        className={`flex w-full items-center gap-2 rounded-xl border px-4 py-3 text-left text-sm font-semibold transition-colors disabled:opacity-50 ${
+          armed
+            ? 'border-gold/50 bg-gold/15 text-gold'
+            : 'border-fg/10 bg-fg/5 text-fg/70 hover:bg-fg/10'
+        }`}
+      >
+        <KeyRound className="h-4 w-4 shrink-0" />
+        {busy
+          ? 'Resetting'
+          : armed
+            ? 'Tap again to reset (signs them out everywhere)'
+            : 'Reset password'}
+      </button>
+      {!armed && (
+        <p className="mt-1.5 text-xs text-fg/40">
+          Forgot it? This generates a password you hand over; they pick their own at next sign-in.
+        </p>
+      )}
+      <FormError message={error} />
+    </div>
   )
 }
 
@@ -246,19 +343,43 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
             </p>
           )}
 
-          <Field
-            label={creating ? 'Password' : 'Reset password (optional)'}
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder={creating ? 'At least 8 characters' : 'Leave blank to keep current'}
-            autoComplete="new-password"
-            required={creating}
-          />
-          {!creating && password && (
-            <p className="-mt-2 flex items-center gap-1.5 text-xs text-gold/80">
-              <KeyRound className="h-3.5 w-3.5" /> This will replace their current password.
-            </p>
+          {creating || isSelf ? (
+            <>
+              {creating && (
+                <Field
+                  label="Password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="At least 8 characters"
+                  autoComplete="new-password"
+                  required
+                />
+              )}
+              {isSelf && !creating && (
+                <p className="text-xs text-fg/40">
+                  Change your own password under the You tab.
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <Field
+                label="Set a password (optional)"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Leave blank to keep current"
+                autoComplete="new-password"
+              />
+              {password ? (
+                <p className="-mt-2 flex items-center gap-1.5 text-xs text-gold/80">
+                  <KeyRound className="h-3.5 w-3.5" /> This will replace their current password.
+                </p>
+              ) : (
+                <ResetPasswordSection member={member} />
+              )}
+            </>
           )}
 
           <FormError message={error} />

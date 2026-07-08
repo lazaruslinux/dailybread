@@ -1,8 +1,10 @@
-import { LogOut, Users } from 'lucide-react'
+import { AnimatePresence } from 'framer-motion'
+import { KeyRound, LogOut, Users } from 'lucide-react'
 import { useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { JournalCard } from '../components/JournalCard'
 import { getTheme, setTheme, THEMES, type Theme } from '../lib/theme'
+import { ChangePasswordSheet } from './Password'
 import { Profile } from './Profile'
 
 // Little preview swatch per theme so the choice reads at a glance.
@@ -51,6 +53,7 @@ function ThemePicker({ userId }: { userId: number }) {
 // used to crowd the header. Admin entry lives here now.
 export function You({ onOpenAdmin }: { onOpenAdmin: () => void }) {
   const { user, logout } = useAuth()
+  const [changingPassword, setChangingPassword] = useState(false)
   if (!user) return null
 
   return (
@@ -62,6 +65,12 @@ export function You({ onOpenAdmin }: { onOpenAdmin: () => void }) {
       <ThemePicker userId={user.id} />
 
       <div className="flex flex-col gap-2">
+        <button
+          onClick={() => setChangingPassword(true)}
+          className="glass flex items-center gap-3 p-4 text-left font-semibold text-fg/80 transition-colors hover:text-fg"
+        >
+          <KeyRound className="h-4 w-4 text-accent-bright" /> Change password
+        </button>
         {user.is_admin && (
           <button
             onClick={onOpenAdmin}
@@ -77,6 +86,10 @@ export function You({ onOpenAdmin }: { onOpenAdmin: () => void }) {
           <LogOut className="text-danger h-4 w-4" /> Sign out
         </button>
       </div>
+
+      <AnimatePresence>
+        {changingPassword && <ChangePasswordSheet onClose={() => setChangingPassword(false)} />}
+      </AnimatePresence>
 
       {/* Thomas Nelson's gratis quotation policy requires this notice in any
           work that quotes the NKJV (the daily verse card). */}

@@ -6,8 +6,17 @@ from app.config import settings
 from app.db import get_db
 from app.deps import get_current_user, require_admin
 from app.models import Family, Role, User
-from app.schemas import BootstrapIn, CreateUserIn, LoginIn, SetupOut, UpdateUserIn, UserOut
-from app.security import hash_password, set_session_cookie, verify_password
+from app.schemas import (
+    BootstrapIn,
+    ChangePasswordIn,
+    CreateUserIn,
+    LoginIn,
+    ResetPasswordOut,
+    SetupOut,
+    UpdateUserIn,
+    UserOut,
+)
+from app.security import generate_password, hash_password, set_session_cookie, verify_password
 from app import throttle
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -75,6 +84,30 @@ def logout(response: Response):
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)):
     """Who am I? Used by the frontend to restore the session on page load."""
+    return user
+
+
+@router.post("/change-password", response_model=UserOut)
+def change_password(
+    data: ChangePasswordIn,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Change your own password (any member, any role). Also how an account an
+    admin reset trades its generated hand-off password for one of its own."""
+    if not verify_password(data.current_password, user.password_hash):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect")
+
+    user.password_hash = hash_password(data.new_password)
+    user.must_change_password = False
+    # End the account's sessions everywhere else (see token_version on the
+    # model), but re-issue this session's cookie so the change doesn't log out
+    # the very phone that made it.
+    user.token_version += 1
+    set_session_cookie(response, str(user.id), user.token_version)
+    db.commit()
+    db.refresh(user)
     return user
 
 
@@ -191,6 +224,35 @@ def update_user(
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.post("/users/{user_id}/reset-password", response_model=ResetPasswordOut)
+def reset_password(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Admin-only: replace a member's forgotten password with a generated one.
+
+    The response is the only time the password is ever visible — the admin
+    hands it to the member, whose account is then locked to the
+    choose-your-own-password flow until they set one (must_change_password).
+    Their existing sessions end immediately (token_version bump).
+    """
+    user = _managed_user(db, user_id, admin)
+    if user.id == admin.id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Change your own password under Preferences instead.",
+        )
+
+    password = generate_password()
+    user.password_hash = hash_password(password)
+    user.must_change_password = True
+    user.token_version += 1
+    db.commit()
+    db.refresh(user)
+    return ResetPasswordOut(password=password, user=user)
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
