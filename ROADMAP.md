@@ -92,6 +92,18 @@ Where dailybread is headed, in order. Done items stay for history.
   floored at safe minimums, flipping to maintenance at the goal weight, and
   adjusting with every weigh-in. Diary targets gain an Auto mode; the macro
   split stays each member's own. Children's goals are set by a parent.
+  An optional goal body fat % sits beside the goal weight (informational;
+  the math stays weight-driven).
+
+- **Daily greeting** — the first open of the day says good morning and offers
+  to set the day's mood and status in one small sheet; saving quiets it for
+  the day, "maybe later" only for that visit.
+- **Day timeline** — the board gains a List / Timeline toggle: an hour-gutter
+  day view with cards laid onto their time slots (height matches duration,
+  overlapping cards share the lane side by side, attendees' faces ride on
+  the card), a line marking now, and its own scroll panel that opens at the
+  current hour without moving the page. Cards and calendar rows now show the
+  full slot ("3:00 – 4:30 PM") rather than just the start.
 
 ## Next
 
