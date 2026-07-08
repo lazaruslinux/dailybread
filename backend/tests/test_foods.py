@@ -185,3 +185,82 @@ def test_search_errors_are_not_cached(owner, monkeypatch):
 
     monkeypatch.setattr(foods_api, "search_usda", ok)
     assert owner.get("/foods/search?q=milk").status_code == 200
+
+
+def _custom_food(client, name="Trail mix", barcode=None, **overrides):
+    payload = {
+        "name": name, "brand": "", "servings": [{"name": "100 g", "grams": 100}],
+        "basis_index": 0, "calories": 480.0, **overrides,
+    }
+    if barcode is not None:
+        payload["barcode"] = barcode
+    res = client.post("/foods", json=payload)
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+def test_scanned_barcode_resolves_a_custom_food_locally(owner, monkeypatch):
+    # A product entered by hand after an unknown scan is found by its barcode
+    # forever after, without asking Open Food Facts at all.
+    def must_not_be_called(code):
+        raise AssertionError("barcode lookup left the server")
+
+    monkeypatch.setattr(foods_api, "lookup_barcode", must_not_be_called)
+    made = _custom_food(owner, barcode="4099999999991")
+
+    res = owner.get("/foods/barcode/4099999999991")
+    assert res.status_code == 200, res.text
+    found = res.json()
+    assert found["id"] == made["id"] and found["source"] == "custom"
+    assert found["name"] == "Trail mix"
+
+
+def test_custom_food_barcode_is_family_private(owner, other, monkeypatch):
+    # Another household scanning the same code gets nothing from family A's
+    # entry — it falls through to Open Food Facts like any unknown code.
+    _custom_food(owner, barcode="4099999999991")
+    monkeypatch.setattr(foods_api, "lookup_barcode", lambda code: None)
+    assert other.get("/foods/barcode/4099999999991").status_code == 404
+
+
+def test_barcode_resolves_from_the_shared_cache_before_off(owner, monkeypatch):
+    # A product used in a recipe once is cached; the next scan is served from
+    # that cache without an outbound call.
+    from tests.test_recipes import make_recipe, usda_line
+
+    line = usda_line(source_id="3017620422003", name="Nutella")
+    line["source"] = "off"
+    make_recipe(owner, ingredients=[line])
+
+    def must_not_be_called(code):
+        raise AssertionError("barcode lookup left the server")
+
+    monkeypatch.setattr(foods_api, "lookup_barcode", must_not_be_called)
+    res = owner.get("/foods/barcode/3017620422003")
+    assert res.status_code == 200, res.text
+    assert res.json()["source"] == "off" and res.json()["name"] == "Nutella"
+
+
+def test_bad_barcodes_are_rejected(owner):
+    assert owner.get("/foods/barcode/12ab34").status_code == 400
+    assert owner.get("/foods/barcode/12345").status_code == 400  # too short
+    res = owner.post("/foods", json={
+        "name": "X", "servings": [{"name": "100 g", "grams": 100}],
+        "basis_index": 0, "barcode": "not-digits",
+    })
+    assert res.status_code == 422
+
+
+def test_editing_a_custom_food_keeps_or_updates_its_barcode(owner, monkeypatch):
+    monkeypatch.setattr(foods_api, "lookup_barcode", lambda code: None)
+    made = _custom_food(owner, barcode="4099999999991")
+    # An edit that sends the barcode back keeps it; sending null clears it.
+    payload = {"name": "Trail mix deluxe", "brand": "", "barcode": "4099999999991",
+               "servings": [{"name": "100 g", "grams": 100}], "basis_index": 0}
+    res = owner.put(f"/foods/{made['id']}", json=payload)
+    assert res.status_code == 200
+    assert owner.get("/foods/barcode/4099999999991").json()["name"] == "Trail mix deluxe"
+
+    payload["barcode"] = None
+    owner.put(f"/foods/{made['id']}", json=payload)
+    assert owner.get("/foods/barcode/4099999999991").status_code == 404

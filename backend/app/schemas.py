@@ -455,6 +455,11 @@ class FoodIn(BaseModel):
 
     name: str = Field(min_length=1, max_length=200)
     brand: str = Field(default="", max_length=120)
+    # A product barcode to remember this food by (digits as printed under the
+    # bars). Scanning that code later resolves to this food directly, without
+    # asking Open Food Facts — how a scanned-but-unknown product, entered once,
+    # stays known to the family forever.
+    barcode: str | None = Field(default=None, pattern=r"^[0-9]{6,14}$")
     # "g" (measure servings by weight) or "ml" (by volume, for a liquid). The
     # serving sizes below are in this unit, and nutrition is stored per 100 of it.
     base_unit: BaseUnit = "g"

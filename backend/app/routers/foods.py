@@ -38,6 +38,7 @@ def _apply_custom_food(food: Food, data: FoodIn) -> None:
     means per-100 = entered * 100 / B."""
     food.name = data.name.strip()
     food.brand = data.brand.strip()
+    food.source_id = data.barcode
     food.base_unit = data.base_unit
     factor = 100.0 / data.servings[data.basis_index].grams
     for n in FOOD_NUTRIENTS:
@@ -91,9 +92,41 @@ def lookup_barcode(
     db: Session = Depends(get_db),
     user: User = Depends(require_family),
 ):
-    """Look up a scanned barcode in Open Food Facts, server-side."""
+    """Resolve a scanned barcode, checking home before asking the internet:
+    first the family's own custom foods (a product they entered by hand after
+    an unknown scan), then foods already cached from earlier lookups, and only
+    then Open Food Facts. Scanning something you've scanned before never
+    leaves the server."""
     if not code.isdigit() or not (6 <= len(code) <= 14):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "That doesn't look like a barcode")
+
+    ours = db.scalar(
+        select(Food)
+        .where(
+            Food.family_id == user.family_id,
+            Food.source == FoodSource.custom,
+            Food.source_id == code,
+        )
+        .options(selectinload(Food.servings))
+        .order_by(Food.id.desc())
+        .limit(1)
+    )
+    if ours is not None:
+        return ours
+
+    cached = db.scalar(
+        select(Food)
+        .where(
+            Food.family_id.is_(None),
+            Food.source == FoodSource.off,
+            Food.source_id == code,
+        )
+        .order_by(Food.id.desc())
+        .limit(1)
+    )
+    if cached is not None:
+        return cached
+
     try:
         result = foods_api.lookup_barcode(code)
     except foods_api.FoodApiError as e:
