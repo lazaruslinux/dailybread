@@ -12,7 +12,17 @@ const TABS: { id: Tab; label: string; Icon: LucideIcon }[] = [
 
 // Floating bottom navigation. Thumb-reachable, always visible, one tap to
 // anywhere. The pb-safe padding keeps it above the iPhone home indicator.
-export function TabBar({ active, onChange }: { active: Tab; onChange: (tab: Tab) => void }) {
+// `tabs` narrows the set for accounts that don't get every area (kid mode).
+export function TabBar({
+  active,
+  onChange,
+  tabs,
+}: {
+  active: Tab
+  onChange: (tab: Tab) => void
+  tabs?: Tab[]
+}) {
+  const visible = tabs ? TABS.filter(({ id }) => tabs.includes(id)) : TABS
   return (
     <nav
       aria-label="Main"
@@ -20,7 +30,7 @@ export function TabBar({ active, onChange }: { active: Tab; onChange: (tab: Tab)
     >
       <div className="mx-auto mb-3 flex w-full max-w-md justify-center px-5">
         <div className="glass flex w-full items-stretch justify-around p-1.5">
-          {TABS.map(({ id, label, Icon }) => {
+          {visible.map(({ id, label, Icon }) => {
             const isActive = id === active
             return (
               <button

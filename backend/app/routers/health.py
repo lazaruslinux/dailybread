@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.deps import require_family, require_parent
+from app.deps import require_adult, require_family, require_parent
 from app.health import EXERCISES, compute, exercise_kcal
 from app.models import ExerciseEntry, HealthProfile, Role, User, WeightEntry
 from app.schemas import (
@@ -21,7 +21,9 @@ from app.schemas import (
 
 # No prefix: self endpoints live under /me/health (the app's convention for
 # personal data), and the parent-managed view under /members/{id}/health.
-router = APIRouter(tags=["health"])
+# Kid mode: the whole area is fenced off from minors in one place here —
+# weight, calories, and goals are parent machinery, never a kid's screen.
+router = APIRouter(tags=["health"], dependencies=[Depends(require_adult)])
 
 # Health data is as private as the diary, with ONE deliberate exception:
 # a parent can see a CHILD's health section and set the child's goal.
@@ -83,16 +85,39 @@ def my_health(db: Session = Depends(get_db), user: User = Depends(require_family
     return _health_out(db, user.id)
 
 
+def _apply_profile(db: Session, target_user_id: int, data: HealthProfileIn) -> None:
+    profile = _profile(db, target_user_id, create=True)
+    for field in data.model_fields_set:
+        setattr(profile, field, getattr(data, field))
+    db.commit()
+
+
+def _upsert_weight(db: Session, target_user_id: int, data: WeightIn) -> None:
+    """One weigh-in per day; weighing again the same day updates it. The
+    latest weigh-in is what the calorie math reads, so this is also how the
+    auto target adjusts itself over time."""
+    if data.date_for > dt.date.today() + dt.timedelta(days=1):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "That date hasn't happened yet")
+    entry = db.scalar(
+        select(WeightEntry).where(
+            WeightEntry.user_id == target_user_id, WeightEntry.date_for == data.date_for
+        )
+    )
+    if entry is None:
+        entry = WeightEntry(user_id=target_user_id, date_for=data.date_for)
+        db.add(entry)
+    entry.weight_kg = data.weight_kg
+    entry.body_fat_pct = data.body_fat_pct
+    db.commit()
+
+
 @router.put("/me/health/profile", response_model=HealthOut)
 def update_profile(
     data: HealthProfileIn,
     db: Session = Depends(get_db),
     user: User = Depends(require_family),
 ):
-    profile = _profile(db, user.id, create=True)
-    for field in data.model_fields_set:
-        setattr(profile, field, getattr(data, field))
-    db.commit()
+    _apply_profile(db, user.id, data)
     return _health_out(db, user.id)
 
 
@@ -102,22 +127,7 @@ def log_weight(
     db: Session = Depends(get_db),
     user: User = Depends(require_family),
 ):
-    """One weigh-in per day; weighing again the same day updates it. The
-    latest weigh-in is what the calorie math reads, so this is also how the
-    auto target adjusts itself over time."""
-    if data.date_for > dt.date.today() + dt.timedelta(days=1):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "That date hasn't happened yet")
-    entry = db.scalar(
-        select(WeightEntry).where(
-            WeightEntry.user_id == user.id, WeightEntry.date_for == data.date_for
-        )
-    )
-    if entry is None:
-        entry = WeightEntry(user_id=user.id, date_for=data.date_for)
-        db.add(entry)
-    entry.weight_kg = data.weight_kg
-    entry.body_fat_pct = data.body_fat_pct
-    db.commit()
+    _upsert_weight(db, user.id, data)
     return _health_out(db, user.id)
 
 
@@ -166,6 +176,32 @@ def set_child_goal(
 ):
     child = _managed_child(db, user_id, parent)
     _apply_goal(db, child.id, data)
+    return _health_out(db, child.id)
+
+
+@router.put("/members/{user_id}/health/profile", response_model=HealthOut)
+def set_child_profile(
+    user_id: int,
+    data: HealthProfileIn,
+    db: Session = Depends(get_db),
+    parent: User = Depends(require_parent),
+):
+    """Minors can't reach their own health section at all, so the parent
+    maintains a kid's profile from here (same child-only rule as goals)."""
+    child = _managed_child(db, user_id, parent)
+    _apply_profile(db, child.id, data)
+    return _health_out(db, child.id)
+
+
+@router.put("/members/{user_id}/health/weight", response_model=HealthOut)
+def log_child_weight(
+    user_id: int,
+    data: WeightIn,
+    db: Session = Depends(get_db),
+    parent: User = Depends(require_parent),
+):
+    child = _managed_child(db, user_id, parent)
+    _upsert_weight(db, child.id, data)
     return _health_out(db, child.id)
 
 

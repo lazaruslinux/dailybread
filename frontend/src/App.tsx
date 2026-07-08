@@ -45,6 +45,17 @@ function AppShell() {
   const [overlay, setOverlay] = useState<Overlay>(null)
   const firstName = user?.display_name.split(/\s+/)[0] ?? ''
 
+  // Kid mode: minors get Home / Kitchen / You — no nutrition area. The server
+  // 403s those APIs regardless; this keeps the door out of sight too.
+  const isMinor = user?.is_minor ?? false
+  const tabs: Tab[] = isMinor ? ['home', 'kitchen', 'you'] : ['home', 'nutrition', 'kitchen', 'you']
+
+  // If the account just became a minor (admin cleared a birthdate mid-session,
+  // say), don't leave it stranded on a tab it no longer has.
+  useEffect(() => {
+    if (isMinor && tab === 'nutrition') setTab('home')
+  }, [isMinor, tab])
+
   // Apply this member's saved theme once we know who they are.
   useEffect(() => {
     applyTheme(getTheme(user?.id))
@@ -107,7 +118,7 @@ function AppShell() {
           {!overlay && tab === 'home' && (
             <Home onOpenProfile={(id) => setOverlay({ name: 'profile', id })} onOpenKitchen={() => setTab('kitchen')} />
           )}
-          {!overlay && tab === 'nutrition' && <Nutrition />}
+          {!overlay && tab === 'nutrition' && !isMinor && <Nutrition />}
           {!overlay && tab === 'kitchen' && <Kitchen />}
           {!overlay && tab === 'you' && <You onOpenAdmin={() => setOverlay({ name: 'admin' })} />}
         </motion.div>
@@ -116,7 +127,7 @@ function AppShell() {
       <footer className="mt-10 text-center text-xs text-fg/30">dailybread v0.0.1</footer>
 
       <DailyGreeting />
-      <TabBar active={tab} onChange={switchTab} />
+      <TabBar active={tab} onChange={switchTab} tabs={tabs} />
     </div>
   )
 }

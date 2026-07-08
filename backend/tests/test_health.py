@@ -193,24 +193,86 @@ def test_health_data_is_self_only_between_adults(owner, parent):
     assert res.status_code == 404
 
 
-def test_children_cannot_set_their_own_goal(child):
-    setup_profile(child, weight_kg=45.0)
-    res = child.put("/me/health/goal", json={"goal": "lose", "rate_lbs_per_week": 1.0})
+def test_children_cannot_set_their_own_goal(adult_child):
+    setup_profile(adult_child, weight_kg=45.0)
+    res = adult_child.put("/me/health/goal", json={"goal": "lose", "rate_lbs_per_week": 1.0})
     assert res.status_code == 403
 
 
-def test_a_parent_manages_a_childs_goal(owner, child):
-    setup_profile(child, weight_kg=45.0)
-    kid = user_id(child)
+def test_a_parent_manages_a_childs_goal(owner, adult_child):
+    setup_profile(adult_child, weight_kg=45.0)
+    kid = user_id(adult_child)
     # The parent can see the child's health section and set the goal.
     assert owner.get(f"/members/{kid}/health").status_code == 200
     res = owner.put(f"/members/{kid}/health/goal", json={"goal": "maintain"})
     assert res.status_code == 200, res.text
-    assert child.get("/me/health").json()["profile"]["goal"] == "maintain"
+    assert adult_child.get("/me/health").json()["profile"]["goal"] == "maintain"
 
 
-def test_cross_family_child_is_invisible(other, child):
-    setup_profile(child, weight_kg=45.0)
-    kid = user_id(child)
+def test_cross_family_child_is_invisible(other, adult_child):
+    setup_profile(adult_child, weight_kg=45.0)
+    kid = user_id(adult_child)
     assert other.get(f"/members/{kid}/health").status_code == 404
     assert other.put(f"/members/{kid}/health/goal", json={"goal": "maintain"}).status_code == 404
+
+
+# ---- kid mode: the whole area is fenced off from minors ---------------------------
+
+
+def test_minors_get_403_across_the_health_area(child):
+    assert child.get("/me/health").status_code == 403
+    assert child.put("/me/health/profile", json={"height_cm": 130.0}).status_code == 403
+    assert (
+        child.put(
+            "/me/health/weight", json={"date_for": TODAY, "weight_kg": 40.0}
+        ).status_code
+        == 403
+    )
+    assert child.put("/me/health/goal", json={"goal": "maintain"}).status_code == 403
+
+
+def test_a_parent_manages_a_minors_profile_and_weight(owner, child):
+    kid = user_id(child)
+    res = owner.put(
+        f"/members/{kid}/health/profile",
+        json={"sex": "female", "height_cm": 132.0, "activity_level": "moderate"},
+    )
+    assert res.status_code == 200, res.text
+    res = owner.put(
+        f"/members/{kid}/health/weight", json={"date_for": TODAY, "weight_kg": 31.5}
+    )
+    assert res.status_code == 200, res.text
+
+    seen = owner.get(f"/members/{kid}/health").json()
+    assert seen["profile"]["height_cm"] == 132.0
+    assert seen["latest_weight"]["weight_kg"] == 31.5
+
+
+def test_member_profile_and_weight_are_child_targets_only(owner, parent):
+    # Another ADULT's section is untouchable even for the admin: same 404 as
+    # the existing goal/read endpoints.
+    adult = user_id(parent)
+    assert (
+        owner.put(f"/members/{adult}/health/profile", json={"height_cm": 180.0}).status_code
+        == 404
+    )
+    assert (
+        owner.put(
+            f"/members/{adult}/health/weight", json={"date_for": TODAY, "weight_kg": 80.0}
+        ).status_code
+        == 404
+    )
+
+
+def test_member_profile_and_weight_cross_family_404(other, child):
+    kid = user_id(child)
+    assert (
+        other.put(f"/members/{kid}/health/profile", json={"height_cm": 130.0}).status_code
+        == 404
+    )
+    assert (
+        other.put(
+            f"/members/{kid}/health/weight", json={"date_for": TODAY, "weight_kg": 30.0}
+        ).status_code
+        == 404
+    )

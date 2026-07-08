@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.deps import require_family
+from app.deps import require_adult, require_family
 from app.health import computed_for
 from app.models import (
     UNIT_TO_BASE,
@@ -31,11 +31,12 @@ from app.schemas import (
     TargetsOut,
 )
 
-router = APIRouter(prefix="/diary", tags=["diary"])
+# Kid mode: minors have no nutrition area at all (see require_adult).
+router = APIRouter(prefix="/diary", tags=["diary"], dependencies=[Depends(require_adult)])
 
-# The diary is personal. Any member — child included — logs their own food,
-# and nobody reads anyone else's: every query here filters on user_id, and a
-# foreign entry id 404s exactly like a nonexistent one.
+# The diary is personal. Any grown member — adult child included — logs their
+# own food, and nobody reads anyone else's: every query here filters on
+# user_id, and a foreign entry id 404s exactly like a nonexistent one.
 
 _NUTRIENTS = FOOD_NUTRIENTS
 

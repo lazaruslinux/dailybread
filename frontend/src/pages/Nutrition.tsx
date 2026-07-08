@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useAuth } from '../auth/AuthContext'
 import * as api from '../lib/api'
 import {
   FoodPicker,
@@ -1094,7 +1095,16 @@ function SlotCard({
 
 // ---- the tab ---------------------------------------------------------------------
 
+// Kid mode, second layer: App never routes a minor here and the server 403s
+// the APIs anyway, but if either slips this renders nothing rather than a
+// tab full of failed requests.
 export function Nutrition() {
+  const { user } = useAuth()
+  if (user?.is_minor) return null
+  return <NutritionTab />
+}
+
+function NutritionTab() {
   const [date, setDate] = useState(api.localDate())
   const [day, setDay] = useState<api.DiaryDay | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)

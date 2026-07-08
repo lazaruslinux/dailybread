@@ -814,6 +814,24 @@ export const getMemberHealth = (id: number) => request<Health>(`/members/${id}/h
 export const setMemberGoal = (id: number, g: GoalPayload) =>
   request<Health>(`/members/${id}/health/goal`, { method: 'PUT', body: JSON.stringify(g) })
 
+// Minors can't reach their own health section (kid mode), so a parent
+// maintains a kid's profile and weigh-ins from here.
+export const setMemberHealthProfile = (
+  id: number,
+  p: Partial<Pick<HealthProfile, 'birthdate' | 'sex' | 'height_cm' | 'activity_level'>>,
+) => request<Health>(`/members/${id}/health/profile`, { method: 'PUT', body: JSON.stringify(p) })
+
+export const logMemberWeight = (
+  id: number,
+  date_for: string,
+  weight_kg: number,
+  body_fat_pct?: number | null,
+) =>
+  request<Health>(`/members/${id}/health/weight`, {
+    method: 'PUT',
+    body: JSON.stringify({ date_for, weight_kg, body_fat_pct: body_fat_pct ?? null }),
+  })
+
 // ---- exercise log ----------------------------------------------------------------
 
 export type ExerciseActivity = 'running' | 'walking'

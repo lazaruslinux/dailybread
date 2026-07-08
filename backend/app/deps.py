@@ -75,3 +75,13 @@ def require_parent(user: User = Depends(require_family)) -> User:
     if user.role != Role.parent:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Parents only")
     return user
+
+
+def require_adult(user: User = Depends(require_family)) -> User:
+    """Kid mode's fence around the nutrition/health area. Parents and grown
+    children pass; minors get a flat 403 no matter what the client shows."""
+    if user.is_minor:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "This area isn't available on a child account"
+        )
+    return user
