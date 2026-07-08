@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { BookOpen, ChevronDown, ChevronLeft, Pencil, Plus, ScanBarcode, Search, Trash2, X } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronLeft, Pencil, Plus, ScanBarcode, Search, ShoppingBasket, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '../lib/api'
@@ -360,6 +360,84 @@ function NutritionPanel({ m }: { m: api.RecipeMacros }) {
 
 // Read-only view of one recipe: computed nutrition per serving, its ingredient
 // lines, and steps.
+// One tap from a recipe to the store: pick which list its ingredient lines
+// land on. Announces the change so the GroceryPanel refreshes in place.
+function SendToGrocery({ recipe }: { recipe: api.Recipe }) {
+  const [picking, setPicking] = useState(false)
+  const [lists, setLists] = useState<api.GroceryList[]>([])
+  const [busy, setBusy] = useState(false)
+  const [added, setAdded] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function open() {
+    setPicking(true)
+    setAdded(null)
+    try {
+      setLists((await api.getGrocery()).lists)
+    } catch {
+      // The chips just show Unsorted; the push itself will surface errors.
+    }
+  }
+
+  async function send(listId: number | null) {
+    setBusy(true)
+    setError(null)
+    try {
+      const res = await api.pushRecipeToGrocery(recipe.id, listId)
+      setAdded(res.added)
+      setPicking(false)
+      window.dispatchEvent(new Event('db:grocery-changed'))
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Could not add the ingredients.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="mt-4" data-send-grocery>
+      {added != null ? (
+        <p className="rounded-xl bg-emerald-500/10 px-3 py-2.5 text-sm font-semibold text-emerald-500">
+          Added {added} {added === 1 ? 'item' : 'items'} to the grocery list.
+        </p>
+      ) : picking ? (
+        <div className="rounded-xl bg-fg/5 px-3 py-2.5">
+          <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-fg/40">
+            Add to which list?
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => send(null)}
+              className="rounded-full border border-fg/10 bg-fg/5 px-3 py-1 text-xs font-semibold text-fg/70 hover:bg-fg/10"
+            >
+              Unsorted
+            </button>
+            {lists.map((l) => (
+              <button
+                key={l.id}
+                type="button"
+                disabled={busy}
+                onClick={() => send(l.id)}
+                className="rounded-full border border-fg/10 bg-fg/5 px-3 py-1 text-xs font-semibold text-fg/70 hover:bg-fg/10"
+              >
+                {l.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <Button type="button" variant="ghost" onClick={open} className="flex w-full items-center justify-center gap-1.5">
+          <ShoppingBasket className="h-4 w-4" /> Add ingredients to grocery list
+        </Button>
+      )}
+      <FormError message={error} />
+    </div>
+  )
+}
+
+
 function RecipeDetail({
   recipe,
   canEdit,
@@ -413,6 +491,8 @@ function RecipeDetail({
           </ul>
         </div>
       )}
+
+      {canEdit && recipe.ingredients.length > 0 && <SendToGrocery recipe={recipe} />}
 
       {recipe.steps.trim() && (
         <div className="mt-4">

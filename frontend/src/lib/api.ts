@@ -404,6 +404,7 @@ export interface Meal {
   recipe_id: number | null
   recipe_name: string | null
   custom_title: string | null
+  per_serving: RecipeMacros | null
 }
 
 export const getMeals = (start: string, end: string) =>
@@ -418,6 +419,12 @@ export const setMeal = (payload: {
 
 export const clearMeal = (date: string) =>
   request<void>(`/meals?date=${date}`, { method: 'DELETE' })
+
+export const pushRecipeToGrocery = (recipeId: number, listId: number | null) =>
+  request<{ added: number }>(`/recipes/${recipeId}/grocery`, {
+    method: 'POST',
+    body: JSON.stringify({ list_id: listId }),
+  })
 
 // ---- recipes ------------------------------------------------------------------
 

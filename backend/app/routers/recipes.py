@@ -4,8 +4,9 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import require_family, require_parent
-from app.models import Food, FoodSource, Recipe, RecipeIngredient, User, base_unit_of
+from app.models import GroceryItem, Food, FoodSource, Recipe, RecipeIngredient, User, base_unit_of
 from app.schemas import (
+    RecipeToGroceryIn,
     FOOD_NUTRIENTS,
     RecipeIn,
     RecipeIngredientIn,
@@ -110,6 +111,24 @@ def _set_ingredients(db: Session, recipe: Recipe, lines: list[RecipeIngredientIn
         recipe.ingredients.append(
             RecipeIngredient(food_id=food.id, position=i, amount=line.amount, unit=line.unit)
         )
+
+
+def per_serving_macros(recipe: Recipe) -> RecipeMacros:
+    """Total the ingredient lines and divide by servings — the same figures
+    _serialize reports, packaged for other features (the dinner planner shows
+    tonight's recipe nutrition). A macro stays None until some food supplies
+    it, so "unknown" never reads as zero."""
+    totals: dict[str, float | None] = {m: None for m in _MACROS}
+    for ing in recipe.ingredients:
+        factor = ing.grams / 100.0
+        for m in _MACROS:
+            v = getattr(ing.food, m)
+            if v is not None:
+                totals[m] = (totals[m] or 0.0) + v * factor
+    servings = recipe.servings or 1
+    return RecipeMacros(
+        **{m: _r(totals[m] / servings) if totals[m] is not None else None for m in _MACROS}
+    )
 
 
 def _serialize(recipe: Recipe) -> RecipeOut:
@@ -234,3 +253,40 @@ def delete_recipe(
 ):
     db.delete(_get_recipe(db, recipe_id, parent.family_id))
     db.commit()
+
+# One line on the grocery list per ingredient: "Ground beef, 85/15 · 200 g".
+# Titles are capped at the column's 120 chars.
+def _grocery_title(name: str, amount: float, unit: str) -> str:
+    qty = f"{amount:g} {unit}"
+    room = 120 - len(qty) - 3
+    return f"{name[:room]} · {qty}"
+
+
+@router.post("/{recipe_id}/grocery", response_model=dict)
+def send_to_grocery(
+    recipe_id: int,
+    data: RecipeToGroceryIn,
+    db: Session = Depends(get_db),
+    parent: User = Depends(require_parent),
+):
+    """Push a recipe's ingredients onto the grocery list in one tap — the
+    close of the menu loop: plan the night, send what it needs to the store
+    list. list_id picks the store; None lands them in Unsorted."""
+    recipe = _get_recipe(db, recipe_id, parent.family_id)
+    if not recipe.ingredients:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This recipe has no ingredients yet")
+    if data.list_id is not None:
+        from app.routers.grocery import _check_list
+
+        _check_list(db, data.list_id, parent.family_id)
+
+    for ing in recipe.ingredients:
+        db.add(
+            GroceryItem(
+                family_id=parent.family_id,
+                title=_grocery_title(ing.food.name, ing.amount, ing.unit),
+                list_id=data.list_id,
+            )
+        )
+    db.commit()
+    return {"added": len(recipe.ingredients)}

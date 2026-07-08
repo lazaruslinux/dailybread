@@ -194,3 +194,35 @@ def test_recipe_totals_the_full_nutrition_label(owner):
     assert made["per_serving"]["sodium_mg"] == 50.0
     # a nutrient no food supplied still reads unknown, not a fake 0
     assert made["per_serving"]["cholesterol_mg"] is None
+
+
+def test_recipe_ingredients_push_to_the_grocery_list(owner):
+    recipe = make_recipe(owner, ingredients=[
+        usda_line(),
+        usda_line(source_id="777", name="Shredded cheddar", amount=4, unit="oz"),
+    ])
+    store = owner.post("/grocery/lists", json={"name": "Costco"}).json()
+
+    res = owner.post(f"/recipes/{recipe['id']}/grocery", json={"list_id": store["id"]})
+    assert res.status_code == 200, res.text
+    assert res.json()["added"] == 2
+
+    state = owner.get("/grocery").json()
+    titles = {i["title"]: i["list_id"] for i in state["items"]}
+    assert titles["Ground beef, 85/15 · 200 g"] == store["id"]
+    assert titles["Shredded cheddar · 4 oz"] == store["id"]
+
+    # No list picked -> the items land in Unsorted (list_id NULL).
+    owner.post(f"/recipes/{recipe['id']}/grocery", json={})
+    state = owner.get("/grocery").json()
+    assert sum(1 for i in state["items"] if i["list_id"] is None) == 2
+
+
+def test_grocery_push_guards(owner, child, other):
+    recipe = make_recipe(owner)
+    empty = owner.post("/recipes", json={"name": "Empty", "servings": 1,
+                                         "steps": "", "ingredients": []}).json()
+    assert child.post(f"/recipes/{recipe['id']}/grocery", json={}).status_code == 403
+    assert other.post(f"/recipes/{recipe['id']}/grocery", json={}).status_code == 404
+    assert owner.post(f"/recipes/{empty['id']}/grocery", json={}).status_code == 400
+    assert owner.post(f"/recipes/{recipe['id']}/grocery", json={"list_id": 999}).status_code == 400

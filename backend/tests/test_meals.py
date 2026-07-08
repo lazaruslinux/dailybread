@@ -83,3 +83,17 @@ def test_range_guards(owner):
     far = (dt.date.today() + dt.timedelta(days=90)).isoformat()
     assert owner.get(f"/meals?start={TODAY}&end={far}").status_code == 400
     assert owner.get(f"/meals?start={far}&end={TODAY}").status_code == 400
+
+
+def test_a_recipe_night_reports_its_per_serving_nutrition(owner):
+    # 200 g of a 250 cal/100g food across 4 servings = 125 cal a serving; the
+    # menu carries the same figures the recipe box shows, no extra request.
+    recipe = make_recipe(owner, name="Taco Bowls")
+    owner.put("/meals", json={"date_for": TODAY, "recipe_id": recipe["id"]})
+
+    listed = owner.get(f"/meals?start={TODAY}&end={TODAY}").json()
+    ps = listed[0]["per_serving"]
+    assert ps["calories"] == 125.0 and ps["protein_g"] == 13.0
+    # A custom-title night has no recipe, so no figures.
+    owner.put("/meals", json={"date_for": TODAY, "custom_title": "Pizza out"})
+    assert owner.get(f"/meals?start={TODAY}&end={TODAY}").json()[0]["per_serving"] is None

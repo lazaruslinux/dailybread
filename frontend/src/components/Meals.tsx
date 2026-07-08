@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { Check, ChevronLeft, ChevronRight, UtensilsCrossed, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Pencil, Plus, UtensilsCrossed, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '../lib/api'
@@ -27,6 +27,31 @@ function addDays(d: Date, n: number): Date {
 }
 
 const mealTitle = (m: api.Meal | undefined) => m?.recipe_name ?? m?.custom_title ?? null
+
+// The night's per-serving figures as readable pills. Only nutrients the
+// recipe actually knows are shown — never a misleading zero.
+function MacroPills({ ps }: { ps: api.RecipeMacros }) {
+  const pills = [
+    ps.calories != null ? `${Math.round(ps.calories)} cal` : null,
+    ps.protein_g != null ? `${Math.round(ps.protein_g)}g protein` : null,
+    ps.carbs_g != null ? `${Math.round(ps.carbs_g)}g carbs` : null,
+    ps.fat_g != null ? `${Math.round(ps.fat_g)}g fat` : null,
+    ps.sugar_g != null ? `${Math.round(ps.sugar_g)}g sugar` : null,
+  ].filter((x): x is string => x !== null)
+  if (pills.length === 0) return null
+  return (
+    <div className="mt-2.5 flex flex-wrap items-center gap-1.5" data-tonight-macros>
+      <span className="text-[10px] font-semibold uppercase tracking-widest text-fg/40">
+        Per serving
+      </span>
+      {pills.map((text) => (
+        <span key={text} className="rounded-md bg-fg/5 px-1.5 py-0.5 text-xs font-semibold text-fg/75">
+          {text}
+        </span>
+      ))}
+    </div>
+  )
+}
 
 // Pick a night's dinner: one of the saved recipes, or a typed title.
 function MealSheet({
@@ -248,14 +273,18 @@ export function DinnerPlanner() {
         )}
       </div>
 
+      {tonight?.per_serving && <MacroPills ps={tonight.per_serving} />}
+
       <FormError message={error} />
 
       <button
         type="button"
         onClick={() => setShowWeek((v) => !v)}
-        className="mt-3 text-xs font-semibold text-accent-bright hover:underline"
+        aria-expanded={showWeek}
+        className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-accent-bright/30 bg-accent-bright/10 py-2 text-sm font-semibold text-accent-bright transition-colors hover:bg-accent-bright/20"
       >
-        {showWeek ? 'Hide the week' : "Plan the week"}
+        {showWeek ? 'Hide the week' : 'Plan the week'}
+        {showWeek ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
       </button>
 
       {showWeek && (
@@ -279,38 +308,60 @@ export function DinnerPlanner() {
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
-          <div className="flex flex-col">
+          <div className="flex flex-col gap-1.5">
             {days.map((d) => {
               const iso = toISO(d)
-              const title = mealTitle(dinnerOn(iso))
+              const meal = dinnerOn(iso)
+              const title = mealTitle(meal)
+              const cal = meal?.per_serving?.calories
               const isToday = iso === todayISO
-              const row = (
-                <>
-                  <span
-                    className={`w-10 shrink-0 text-xs font-semibold uppercase ${
-                      isToday ? 'text-accent-bright' : 'text-fg/45'
-                    }`}
-                  >
-                    {d.toLocaleDateString(undefined, { weekday: 'short' })}
-                  </span>
-                  <span className={`min-w-0 flex-1 truncate text-sm ${title ? 'text-fg/90' : 'text-fg/35'}`}>
-                    {title ?? '—'}
-                  </span>
-                </>
+              const dayLabel = (
+                <span
+                  className={`w-10 shrink-0 text-xs font-semibold uppercase ${
+                    isToday ? 'text-accent-bright' : 'text-fg/45'
+                  }`}
+                >
+                  {d.toLocaleDateString(undefined, { weekday: 'short' })}
+                </span>
               )
-              return isParent ? (
+              if (!isParent) {
+                return (
+                  <div key={iso} className="flex items-center gap-3 rounded-lg bg-fg/5 px-2.5 py-2">
+                    {dayLabel}
+                    <span className={`min-w-0 flex-1 truncate text-sm ${title ? 'text-fg/90' : 'text-fg/35'}`}>
+                      {title ?? '—'}
+                    </span>
+                  </div>
+                )
+              }
+              // Parents: a planned night reads as editable (pencil), an empty
+              // one invites a pick — filling the week ahead should feel easy.
+              return title ? (
                 <button
                   key={iso}
                   type="button"
                   onClick={() => setPlanning(iso)}
-                  className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-fg/10"
+                  className="flex w-full items-center gap-3 rounded-lg bg-fg/5 px-2.5 py-2 text-left transition-colors hover:bg-fg/10"
                 >
-                  {row}
+                  {dayLabel}
+                  <span className="min-w-0 flex-1 truncate text-sm text-fg/90">{title}</span>
+                  {cal != null && (
+                    <span className="shrink-0 text-xs text-fg/40">{Math.round(cal)} cal</span>
+                  )}
+                  <Pencil className="h-3.5 w-3.5 shrink-0 text-fg/40" />
                 </button>
               ) : (
-                <div key={iso} className="flex items-center gap-3 px-2 py-1.5">
-                  {row}
-                </div>
+                <button
+                  key={iso}
+                  type="button"
+                  onClick={() => setPlanning(iso)}
+                  className="flex w-full items-center gap-3 rounded-lg border border-dashed border-fg/20 px-2.5 py-2 text-left transition-colors hover:border-accent-bright/40 hover:bg-fg/5"
+                >
+                  {dayLabel}
+                  <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-sm font-semibold text-accent-bright">
+                    <Plus className="h-3.5 w-3.5" /> Add dinner
+                  </span>
+                </button>
               )
             })}
           </div>

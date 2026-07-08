@@ -406,8 +406,17 @@ class MealOut(BaseModel):
     recipe_id: int | None
     recipe_name: str | None  # joined for display; None for a custom title
     custom_title: str | None
+    # The recipe's computed per-serving nutrition, so the menu can show what a
+    # night amounts to without another request. None for custom-title nights.
+    per_serving: "RecipeMacros | None" = None
 
     model_config = {"from_attributes": True}
+
+
+class RecipeToGroceryIn(BaseModel):
+    """Where a recipe's ingredients land: a store's list, or None = Unsorted."""
+
+    list_id: int | None = None
 
 
 # ---- foods (database cache + custom) -------------------------------------------

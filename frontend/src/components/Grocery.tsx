@@ -69,8 +69,15 @@ export function GroceryPanel() {
   useEffect(() => {
     refresh()
     const onVisible = () => document.visibilityState === 'visible' && refresh()
+    // Other Kitchen features (a recipe pushing its ingredients) announce list
+    // changes with this event so the panel refreshes without a reload.
+    const onChanged = () => refresh()
     document.addEventListener('visibilitychange', onVisible)
-    return () => document.removeEventListener('visibilitychange', onVisible)
+    window.addEventListener('db:grocery-changed', onChanged)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('db:grocery-changed', onChanged)
+    }
   }, [refresh])
 
   async function run(action: () => Promise<unknown>) {

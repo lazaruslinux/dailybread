@@ -2,11 +2,12 @@ import datetime as dt
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.db import get_db
 from app.deps import require_family, require_parent
-from app.models import Meal, MealSlot, Recipe, User
+from app.models import Meal, MealSlot, Recipe, RecipeIngredient, User
+from app.routers.recipes import per_serving_macros
 from app.schemas import MealIn, MealOut
 
 router = APIRouter(prefix="/meals", tags=["meals"])
@@ -17,12 +18,14 @@ _MAX_SPAN = dt.timedelta(days=45)
 
 
 def _out(meal: Meal) -> MealOut:
+    recipe = meal.recipe
     return MealOut(
         date_for=meal.date_for,
         slot=meal.slot,
         recipe_id=meal.recipe_id,
-        recipe_name=meal.recipe.name if meal.recipe is not None else None,
+        recipe_name=recipe.name if recipe is not None else None,
         custom_title=meal.custom_title,
+        per_serving=per_serving_macros(recipe) if recipe is not None else None,
     )
 
 
@@ -41,7 +44,13 @@ def list_meals(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Meal range is too wide")
     meals = db.scalars(
         select(Meal)
-        .options(joinedload(Meal.recipe))
+        .options(
+            # The recipe rides along with its ingredient foods loaded, so the
+            # per-serving figures come out of this one round of queries.
+            joinedload(Meal.recipe)
+            .selectinload(Recipe.ingredients)
+            .joinedload(RecipeIngredient.food)
+        )
         .where(Meal.family_id == user.family_id, Meal.date_for.between(start, end))
         .order_by(Meal.date_for, Meal.slot)
     ).all()
