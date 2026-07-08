@@ -65,24 +65,24 @@ Where dailybread is headed, in order. Done items stay for history.
   good. Reusable wherever a barcode is wanted next.
 
 - **Dinner planner** — the family menu: each night takes a saved recipe or a
-  typed one-off; the week is planned in the Kitchen and tonight's pick
-  surfaces on the Home board.
+  typed one-off, with its per-serving nutrition alongside; the week is
+  planned in the Kitchen and tonight's pick surfaces on the Home board.
+- **Recipe → grocery** — one tap sends a recipe's ingredient lines onto a
+  chosen store's grocery list.
 
 ## Next
 
-1. **Recipe → grocery** — push a recipe's ingredients onto a grocery list in
-   one tap.
-2. **Password management** — a "Preferences" section on the You tab where any
+1. **Password management** — a "Preferences" section on the You tab where any
    member changes their own password; a "Server Management" area for the
    server admin with reset-to-generated-password, and a forced password
    change on first login after a reset.
-3. **Nutrition diary** — per-member daily food logging with targets and
+2. **Nutrition diary** — per-member daily food logging with targets and
    macro breakdowns, reusing the food layer, servings, and scanner.
-4. **Calendar subscription feed** — a read-only per-member iCal feed so the
+3. **Calendar subscription feed** — a read-only per-member iCal feed so the
    phone's own calendar app can show dailybread events (one-way by design).
-5. **Push reminders** — Web Push for card reminders and a morning digest.
-6. **Family chat** — messaging, then topic channels, then photo attachments.
-7. **Fitness sync** — workouts flowing into the app and auto-completing
+4. **Push reminders** — Web Push for card reminders and a morning digest.
+5. **Family chat** — messaging, then topic channels, then photo attachments.
+6. **Fitness sync** — workouts flowing into the app and auto-completing
    matching board routines. Strava first (watch → Strava → server polling);
    direct Apple Health export as a self-hosted alternative path.
 
