@@ -30,7 +30,7 @@ function cmToFtIn(cm: number): { ft: string; inch: string } {
 const ACTIVITY: { id: api.ActivityLevel; label: string; hint: string; factor: number }[] = [
   { id: 'sedentary', label: 'Sedentary', hint: 'Desk days, little exercise', factor: 1.2 },
   { id: 'light', label: 'Lightly active', hint: 'Exercise 1-3 days a week', factor: 1.375 },
-  { id: 'moderate', label: 'Moderately active', hint: 'Exercise 3-5 days a week', factor: 1.55 },
+  { id: 'moderate', label: 'Moderately active', hint: 'Exercise 3-5 days a week', factor: 1.5 },
   { id: 'active', label: 'Active', hint: 'Exercise 6-7 days a week', factor: 1.725 },
   { id: 'very_active', label: 'Very active', hint: 'Hard training or a physical job', factor: 1.9 },
 ]
@@ -69,7 +69,7 @@ function previewCalories(f: {
   const bmr = bf > 0
     ? 370 + 21.6 * (weightKg * (1 - bf / 100))
     : 10 * weightKg + 6.25 * heightCm - 5 * age + (f.sex === 'male' ? 5 : -161)
-  const tdee = bmr * (ACTIVITY.find((a) => a.id === f.activity)?.factor ?? 1.55)
+  const tdee = bmr * (ACTIVITY.find((a) => a.id === f.activity)?.factor ?? 1.5)
   const shift = f.rate * 500
   const raw = f.goal === 'lose' ? tdee - shift : f.goal === 'gain' ? tdee + shift : tdee
   const floor = f.sex === 'female' ? 1200 : 1500
@@ -110,6 +110,8 @@ export function HealthSheet({
   )
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // The 2 lb/week rate requires reading the warning and saying so.
+  const [ackRate, setAckRate] = useState(false)
 
   const preview = useMemo(
     () => previewCalories({ birthdate, sex, ft, inch, weightLb, bodyFat, activity, goal, rate }),
@@ -223,6 +225,10 @@ export function HealthSheet({
           <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
             Activity level
           </span>
+          <p className="mb-1.5 text-xs leading-relaxed text-fg/40">
+            Pick what describes your everyday life, not your workouts. Log runs and walks under
+            Exercise instead; they add onto that day's target.
+          </p>
           <div className="flex flex-col gap-1.5">
             {ACTIVITY.map((a) => (
               <button
@@ -294,11 +300,45 @@ export function HealthSheet({
                   </span>
                   <div className="grid grid-cols-4 gap-1.5">
                     {RATES.map((r) => (
-                      <button key={r} type="button" onClick={() => setRate(r)} className={chip(rate === r)}>
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => {
+                          setRate(r)
+                          setAckRate(false)
+                        }}
+                        className={chip(rate === r)}
+                      >
                         {r} lb
                       </button>
                     ))}
                   </div>
+                  {rate === 1.5 && (
+                    <p className="mt-2 rounded-xl border border-fg/10 bg-fg/5 px-3.5 py-2.5 text-xs leading-relaxed text-fg/55" data-rate-note>
+                      This is a large gap between what you eat and what you burn. It works for
+                      some people, but many find it hard to keep up. Watch your energy and
+                      recovery, and slow the pace if it stops feeling right.
+                    </p>
+                  )}
+                  {rate === 2 && (
+                    <div className="mt-2 rounded-xl border border-gold/40 bg-gold/10 px-3.5 py-2.5" data-rate-warning>
+                      <p className="text-xs leading-relaxed text-fg/70">
+                        This is a very large gap between intake and burn. At this pace many
+                        people notice low energy, more hunger, and slower recovery, and the
+                        computed calorie target can sit near the safe minimum. A slower rate is
+                        easier to sustain.
+                      </p>
+                      <label className="mt-2.5 flex cursor-pointer items-start gap-2.5 text-xs font-semibold text-fg/75">
+                        <input
+                          type="checkbox"
+                          checked={ackRate}
+                          onChange={(e) => setAckRate(e.target.checked)}
+                          className="mt-0.5 h-4 w-4 accent-accent-bright"
+                        />
+                        I've read this and want the 2 lb/week pace anyway.
+                      </label>
+                    </div>
+                  )}
                 </div>
                 <div className="relative w-32">
                   <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
@@ -329,7 +369,7 @@ export function HealthSheet({
         )}
 
         <FormError message={error} />
-        <Button type="submit" disabled={busy}>
+        <Button type="submit" disabled={busy || (!isChild && goal !== 'maintain' && rate === 2 && !ackRate)}>
           {busy ? 'Saving' : 'Save health profile'}
         </Button>
         <p className="text-center text-[10px] leading-relaxed text-fg/30">

@@ -15,7 +15,8 @@ from tests.conftest import user_id
 TODAY = dt.date.today().isoformat()
 
 # A 40-year-old male, 180 cm, moderately active. Mifflin-St Jeor at 90 kg:
-# 10*90 + 6.25*180 - 5*40 + 5 = 1830; TDEE = 1830 * 1.55 = 2836.5.
+# 10*90 + 6.25*180 - 5*40 + 5 = 1830; TDEE = 1830 * 1.5 = 2745 (moderate
+# baseline is x1.5, matching Cronometer).
 PROFILE = {
     "birthdate": (dt.date.today() - dt.timedelta(days=365 * 40 + 10)).isoformat(),
     "sex": "male",
@@ -40,7 +41,7 @@ def test_profile_and_weight_round_trip(owner):
     assert h["profile"]["sex"] == "male"
     assert h["latest_weight"]["weight_kg"] == 90.0
     assert h["computed"]["bmr"] == 1830.0
-    assert h["computed"]["tdee"] == 2836.5
+    assert h["computed"]["tdee"] == 2745.0
 
 
 def test_weigh_in_upserts_by_day(owner):
@@ -80,14 +81,14 @@ def test_lose_goal_shifts_the_target(owner):
     )
     assert res.status_code == 200, res.text
     h = owner.get("/me/health").json()
-    # 2836.5 - 500, rounded to the nearest 10.
-    assert h["computed"]["auto_calories"] == 2340
+    # 2745 - 500 = 2245, rounded to the nearest 10 (banker's: 2240).
+    assert h["computed"]["auto_calories"] == 2240
 
 
 def test_maintain_goal_targets_tdee(owner):
     setup_profile(owner, weight_kg=90.0)
     owner.put("/me/health/goal", json={"goal": "maintain"})
-    assert owner.get("/me/health").json()["computed"]["auto_calories"] == 2840
+    assert owner.get("/me/health").json()["computed"]["auto_calories"] == 2740
 
 
 def test_target_never_drops_below_the_floor(owner):
@@ -135,9 +136,9 @@ def test_auto_mode_feeds_the_diary_targets(owner):
     assert res.status_code == 200, res.text
     t = owner.get(f"/diary?date={TODAY}").json()["targets"]
     assert t["mode"] == "auto"
-    assert t["calories"] == 2340  # computed, not the manual 2000
+    assert t["calories"] == 2240  # computed, not the manual 2000
     # The macro split stays the member's own, applied to the auto budget.
-    assert t["protein_g"] == round(2340 * 0.4 / 4, 1)
+    assert t["protein_g"] == round(2240 * 0.4 / 4, 1)
 
 
 def test_auto_mode_needs_a_complete_profile(owner):

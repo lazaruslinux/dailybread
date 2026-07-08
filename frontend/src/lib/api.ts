@@ -673,7 +673,9 @@ export interface DiaryEntry {
 // (the percentages must sum to 100). The *_g fields are derived server-side.
 export interface NutritionTargets {
   mode: TargetMode
+  // Includes the day's exercise burn when served for a specific day.
   calories: number
+  exercise_kcal: number
   protein_pct: number
   carbs_pct: number
   fat_pct: number
@@ -687,6 +689,8 @@ export interface DiaryDay {
   targets: NutritionTargets
   consumed: RecipeMacros
   entries: DiaryEntry[]
+  exercise: ExerciseEntry[]
+  burned: number
 }
 
 // Logging something eaten: a recipe by servings (recipe_id + amount), or a
@@ -798,3 +802,35 @@ export const getMemberHealth = (id: number) => request<Health>(`/members/${id}/h
 
 export const setMemberGoal = (id: number, g: GoalPayload) =>
   request<Health>(`/members/${id}/health/goal`, { method: 'PUT', body: JSON.stringify(g) })
+
+// ---- exercise log ----------------------------------------------------------------
+
+export type ExerciseActivity = 'running' | 'walking'
+export type ExerciseEffort = 'light' | 'moderate' | 'vigorous'
+
+export interface ExerciseEntry {
+  id: number
+  date_for: string
+  time_of_day: string | null
+  activity: ExerciseActivity
+  label: string
+  effort: ExerciseEffort
+  minutes: number
+  kcal: number
+}
+
+export const logExercise = (payload: {
+  date_for: string
+  activity: ExerciseActivity
+  effort: ExerciseEffort
+  minutes: number
+  time_of_day?: string | null
+}) => request<ExerciseEntry>('/me/exercise', { method: 'POST', body: JSON.stringify(payload) })
+
+export const updateExercise = (
+  id: number,
+  patch: { minutes?: number; effort?: ExerciseEffort; time_of_day?: string | null },
+) => request<ExerciseEntry>(`/me/exercise/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+
+export const deleteExercise = (id: number) =>
+  request<void>(`/me/exercise/${id}`, { method: 'DELETE' })

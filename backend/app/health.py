@@ -7,16 +7,46 @@ and the health endpoints can never disagree about the numbers.
 
 import datetime as dt
 
-from app.models import ActivityLevel, GoalType, HealthProfile, Sex, WeightEntry
+from app.models import ActivityLevel, ExerciseEffort, GoalType, HealthProfile, Sex, WeightEntry
 
-# Standard multipliers over resting burn for overall daily activity.
+# Multipliers over resting burn for BASELINE daily activity (everyday life,
+# not logged workouts - those add on top; see EXERCISES). Aligned with
+# Cronometer's baseline levels, which the user calibrated against.
 ACTIVITY_FACTORS: dict[ActivityLevel, float] = {
     ActivityLevel.sedentary: 1.2,
     ActivityLevel.light: 1.375,
-    ActivityLevel.moderate: 1.55,
+    ActivityLevel.moderate: 1.5,
     ActivityLevel.active: 1.725,
     ActivityLevel.very_active: 1.9,
 }
+
+# The exercise catalog: MET per activity and effort. kcal = MET x kg x hours.
+# Running at moderate effort (6.3) reproduces Cronometer's numbers exactly
+# (verified: 220.4 lb x 40 min = 419.9 kcal); the others are Compendium of
+# Physical Activities values for slower/faster paces of the same movement.
+EXERCISES: dict[str, dict] = {
+    "running": {
+        "label": "Running",
+        "mets": {
+            ExerciseEffort.light: 4.8,
+            ExerciseEffort.moderate: 6.3,
+            ExerciseEffort.vigorous: 9.8,
+        },
+    },
+    "walking": {
+        "label": "Walking",
+        "mets": {
+            ExerciseEffort.light: 2.8,
+            ExerciseEffort.moderate: 3.5,
+            ExerciseEffort.vigorous: 5.0,
+        },
+    },
+}
+
+
+def exercise_kcal(activity: str, effort: ExerciseEffort, minutes: float, weight_kg: float) -> float:
+    met = EXERCISES[activity]["mets"][effort]
+    return round(met * weight_kg * minutes / 60.0, 1)
 
 # One pound of body fat is roughly 3500 kcal, so each lb/week of goal rate
 # shifts the daily budget by 500.

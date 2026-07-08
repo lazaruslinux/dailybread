@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, model_validator
 from app.models import (
     ActivityLevel,
     DiarySlot,
+    ExerciseEffort,
     FoodSource,
     GoalType,
     ItemKind,
@@ -656,6 +657,10 @@ class TargetsOut(BaseModel):
     protein_g: float
     carbs_g: float
     fat_g: float
+    # Calories a day's logged exercise burned, already INCLUDED in `calories`
+    # above (and the gram targets) when the targets are served for a specific
+    # day. Zero on the date-less /diary/targets endpoint.
+    exercise_kcal: float = 0.0
 
 
 # ---- health profile, weigh-ins, and the computed calorie target -------------------
@@ -725,14 +730,46 @@ class HealthOut(BaseModel):
     computed: ComputedHealthOut | None
 
 
+class ExerciseIn(BaseModel):
+    """Logging a workout. The server computes the burn from the member's
+    latest weigh-in; the client never supplies calories."""
+
+    date_for: dt.date
+    activity: Literal["running", "walking"]  # keys of app.health.EXERCISES
+    effort: ExerciseEffort
+    minutes: float = Field(gt=0, le=1440)
+    time_of_day: dt.time | None = None
+
+
+class ExerciseUpdate(BaseModel):
+    minutes: float | None = Field(default=None, gt=0, le=1440)
+    effort: ExerciseEffort | None = None
+    time_of_day: dt.time | None = None
+    date_for: dt.date | None = None
+
+
+class ExerciseOut(BaseModel):
+    id: int
+    date_for: dt.date
+    time_of_day: dt.time | None
+    activity: str
+    label: str  # display name from the catalog
+    effort: ExerciseEffort
+    minutes: float
+    kcal: float
+
+
 class DiaryDayOut(BaseModel):
     """One member's diary for one day: their targets, what the day's entries
-    total so far, and the entries themselves (the client groups by slot)."""
+    total so far, and the entries themselves (the client groups by slot).
+    Exercise rides along: the day's burn is already folded into targets."""
 
     date: dt.date
     targets: TargetsOut
     consumed: RecipeMacros
     entries: list[DiaryEntryOut]
+    exercise: list[ExerciseOut] = []
+    burned: float = 0.0
 
 
 # ---- profiles and moods --------------------------------------------------------

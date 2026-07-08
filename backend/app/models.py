@@ -631,6 +631,40 @@ class WeightEntry(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class ExerciseEffort(str, enum.Enum):
+    """How hard a logged workout felt; picks the MET the burn math uses."""
+
+    light = "light"
+    moderate = "moderate"
+    vigorous = "vigorous"
+
+
+class ExerciseEntry(Base):
+    """One logged workout: what, how hard, how long, and the calories it
+    burned. kcal is a snapshot computed at log time from the member's latest
+    weigh-in (MET x kg x hours); editing recomputes it. A day's total burn is
+    added onto that day's energy target, so exercise literally earns calories
+    back the way Cronometer does. Self-only, like the diary."""
+
+    __tablename__ = "exercise_entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    date_for: Mapped[dt.date] = mapped_column(Date, index=True)
+    time_of_day: Mapped[dt.time | None] = mapped_column(Time, nullable=True)
+    # A key into app.health.EXERCISES ("running", "walking").
+    activity: Mapped[str] = mapped_column(String(30))
+    effort: Mapped[ExerciseEffort] = mapped_column(
+        SAEnum(ExerciseEffort, name="exercise_effort")
+    )
+    minutes: Mapped[float] = mapped_column(Float)
+    kcal: Mapped[float] = mapped_column(Float)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class MoodLevel(str, enum.Enum):
     """Five-step mood scale rendered as weather in the UI (sun to storm)."""
 

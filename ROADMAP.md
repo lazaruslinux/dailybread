@@ -80,6 +80,11 @@ Where dailybread is headed, in order. Done items stay for history.
   sets their own calorie budget and macro split. Entries snapshot their
   nutrition at log time, so editing a recipe later never rewrites history.
 
+- **Exercise log** — running and walking with three effort levels; the burn
+  is MET-based off the latest weigh-in (calibrated to match Cronometer) and
+  is added onto that day's energy target, so a workout earns calories back.
+  Goal rates above 1.5 lb/week now carry a warning, with a read-and-confirm
+  step at 2 lb.
 - **Health profile and auto targets** — an optional per-member health
   profile (birthdate, sex, height, activity) plus a weight log; together
   they compute a daily calorie target (lean-mass formula when body fat is

@@ -3,6 +3,8 @@ import {
   BookOpen,
   ChevronLeft,
   ChevronRight,
+  Flame,
+  Footprints,
   Plus,
   SlidersHorizontal,
   Trash2,
@@ -133,6 +135,11 @@ function TargetsCard({ day, onEdit }: { day: api.DiaryDay; onEdit: () => void })
                   style={{ width: `${Math.min(pct, 100)}%` }}
                 />
               </div>
+              {key === 'calories' && day.targets.exercise_kcal > 0 && (
+                <p className="mt-0.5 text-[11px] text-emerald-500">
+                  includes +{Math.round(day.targets.exercise_kcal)} kcal from exercise
+                </p>
+              )}
             </div>
           )
         })}
@@ -749,6 +756,273 @@ function EditEntrySheet({
   )
 }
 
+// ---- exercise: MET mirror for the live preview --------------------------------------
+
+const EXERCISE_META: {
+  id: api.ExerciseActivity
+  label: string
+  mets: Record<api.ExerciseEffort, number>
+}[] = [
+  { id: 'running', label: 'Running', mets: { light: 4.8, moderate: 6.3, vigorous: 9.8 } },
+  { id: 'walking', label: 'Walking', mets: { light: 2.8, moderate: 3.5, vigorous: 5.0 } },
+]
+
+const EFFORTS: { id: api.ExerciseEffort; label: string; hint: string }[] = [
+  { id: 'light', label: 'Light', hint: 'Easy pace; you could chat the whole time' },
+  { id: 'moderate', label: 'Moderate', hint: 'Faster heart rate and breathing, not out of breath' },
+  { id: 'vigorous', label: 'Vigorous', hint: 'Hard effort; talking is difficult' },
+]
+
+const EFFORT_LABEL = Object.fromEntries(EFFORTS.map((e) => [e.id, e.label])) as Record<
+  api.ExerciseEffort,
+  string
+>
+
+function ExerciseSheet({
+  entry,
+  health,
+  date,
+  onClose,
+  onSaved,
+}: {
+  entry: api.ExerciseEntry | null // null = logging a new one
+  health: api.Health | null
+  date: string
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const creating = entry === null
+  const [activity, setActivity] = useState<api.ExerciseActivity>(entry?.activity ?? 'running')
+  const [effort, setEffort] = useState<api.ExerciseEffort>(entry?.effort ?? 'moderate')
+  const [minutes, setMinutes] = useState(entry ? trim(entry.minutes) : '30')
+  const [time, setTime] = useState(entry?.time_of_day ? entry.time_of_day.slice(0, 5) : nowHM())
+  const [armed, setArmed] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const weightKg = health?.latest_weight?.weight_kg ?? null
+  const mins = Number(minutes) || 0
+  const met = EXERCISE_META.find((a) => a.id === activity)!.mets[effort]
+  const preview = weightKg && mins > 0 ? Math.round(met * weightKg * (mins / 60) * 10) / 10 : null
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      if (creating) {
+        await api.logExercise({
+          date_for: date,
+          activity,
+          effort,
+          minutes: mins,
+          time_of_day: time || null,
+        })
+      } else {
+        await api.updateExercise(entry.id, { minutes: mins, effort, time_of_day: time || null })
+      }
+      onSaved()
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Something went wrong.')
+      setBusy(false)
+    }
+  }
+
+  async function remove() {
+    if (!armed) {
+      setArmed(true)
+      return
+    }
+    setBusy(true)
+    try {
+      await api.deleteExercise(entry!.id)
+      onSaved()
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Something went wrong.')
+      setBusy(false)
+    }
+  }
+
+  const chip = (active: boolean) =>
+    `rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
+      active
+        ? 'border-accent-bright/60 bg-accent-bright/20 text-fg'
+        : 'border-fg/10 bg-fg/5 text-fg/55 hover:bg-fg/10'
+    }`
+
+  return (
+    <Sheet onClose={onClose}>
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="flex items-center gap-2 text-lg font-bold">
+          <Footprints className="h-5 w-5 text-accent-bright" />
+          {creating ? 'Log exercise' : entry.label}
+        </h2>
+        <button onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-fg/50 hover:bg-fg/10 hover:text-fg">
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+        {creating && (
+          <div className="grid grid-cols-2 gap-1.5">
+            {EXERCISE_META.map((a) => (
+              <button key={a.id} type="button" onClick={() => setActivity(a.id)} className={chip(activity === a.id)}>
+                {a.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div>
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
+            Effort
+          </span>
+          <div className="flex flex-col gap-1.5">
+            {EFFORTS.map((ef) => (
+              <button
+                key={ef.id}
+                type="button"
+                onClick={() => setEffort(ef.id)}
+                className={`${chip(effort === ef.id)} text-left`}
+              >
+                {ef.label}
+                <span className="ml-2 text-xs font-normal text-fg/45">{ef.hint}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-end gap-2">
+          <div className="relative w-28">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
+              Duration
+            </span>
+            <div className="relative">
+              <input
+                aria-label="Duration minutes"
+                inputMode="numeric"
+                value={minutes}
+                onChange={(e) => setMinutes(e.target.value.replace(/[^0-9]/g, ''))}
+                className="field"
+                style={{ paddingRight: '2.4rem' }}
+                required
+              />
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-fg/40">
+                min
+              </span>
+            </div>
+          </div>
+          <div className="w-36">
+            <Field label="Time" type="time" value={time} onChange={(e) => setTime(e.target.value)} onClear={() => setTime('')} />
+          </div>
+        </div>
+
+        {weightKg === null ? (
+          <p className="rounded-xl border border-fg/10 bg-fg/5 px-3.5 py-2.5 text-xs leading-relaxed text-fg/50">
+            Log a weight in your health profile first; the burn is computed from it.
+          </p>
+        ) : preview !== null ? (
+          <div className="rounded-xl border border-fg/10 bg-fg/5 px-3.5 py-2.5">
+            <p className="flex items-center gap-1.5 text-sm font-semibold text-accent-bright">
+              <Flame className="h-4 w-4" /> ≈ {preview.toLocaleString()} kcal burned
+            </p>
+            <p className="mt-0.5 text-xs text-fg/45">
+              Based on your weight of {Math.round((weightKg * 2.20462) * 10) / 10} lb. Added onto
+              today's energy target.
+            </p>
+          </div>
+        ) : null}
+
+        <FormError message={error} />
+        <Button type="submit" disabled={busy || mins <= 0 || weightKg === null}>
+          {busy ? 'Saving' : creating ? 'Add to diary' : 'Save changes'}
+        </Button>
+        {!creating && (
+          <button
+            type="button"
+            onClick={remove}
+            disabled={busy}
+            className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50 ${
+              armed ? 'border-gold/50 bg-gold/15 text-gold' : 'border-fg/10 bg-fg/5 text-fg/60 hover:bg-fg/10'
+            }`}
+          >
+            <Trash2 className="h-4 w-4" />
+            {armed ? 'Tap again to remove' : 'Remove from diary'}
+          </button>
+        )}
+      </form>
+    </Sheet>
+  )
+}
+
+function ExerciseCard({
+  exercise,
+  burned,
+  onAdd,
+  onEdit,
+}: {
+  exercise: api.ExerciseEntry[]
+  burned: number
+  onAdd: () => void
+  onEdit: (e: api.ExerciseEntry) => void
+}) {
+  return (
+    <section className="glass p-4" data-exercise>
+      <div className="mb-1 flex items-center justify-between">
+        <div className="flex items-baseline gap-2">
+          <h3 className="font-semibold text-fg/90">Exercise</h3>
+          {burned > 0 && (
+            <span className="text-xs font-semibold text-emerald-500">+{Math.round(burned)} kcal earned</span>
+          )}
+        </div>
+        <button
+          onClick={onAdd}
+          aria-label="Log exercise"
+          className="rounded-lg p-1.5 text-accent-bright transition-colors hover:bg-accent-bright/15"
+        >
+          <Plus className="h-4.5 w-4.5" strokeWidth={2.5} />
+        </button>
+      </div>
+
+      {exercise.length === 0 ? (
+        <button
+          onClick={onAdd}
+          className="mt-1 w-full rounded-xl border border-dashed border-fg/20 px-3 py-2.5 text-left text-sm text-fg/40 transition-colors hover:border-accent-bright/40 hover:text-fg/60"
+        >
+          + Log a run or a walk
+        </button>
+      ) : (
+        <div className="flex flex-col">
+          {exercise.map((e) => {
+            const sub = [fmtTime(e.time_of_day), `${trim(e.minutes)} min`, EFFORT_LABEL[e.effort]]
+              .filter(Boolean)
+              .join(' · ')
+            return (
+              <button
+                key={e.id}
+                onClick={() => onEdit(e)}
+                className="-mx-1.5 flex items-center justify-between gap-3 rounded-lg px-1.5 py-2 text-left transition-colors hover:bg-fg/10"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5 truncate text-sm font-medium">
+                    <Footprints className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                    {e.label}
+                  </span>
+                  {sub && <span className="block truncate text-xs text-fg/45">{sub}</span>}
+                </span>
+                <span className="shrink-0 text-sm font-semibold text-emerald-500">
+                  +{Math.round(e.kcal)}
+                  <span className="ml-1 text-[10px] font-normal opacity-70">kcal</span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </section>
+  )
+}
+
 // ---- one meal group --------------------------------------------------------------
 
 function SlotCard({
@@ -835,6 +1109,8 @@ export function Nutrition() {
   const [health, setHealth] = useState<api.Health | null>(null)
   const [editingHealth, setEditingHealth] = useState(false)
   const [loggingWeight, setLoggingWeight] = useState(false)
+  // null = closed; {entry:null} = logging new; {entry:e} = editing.
+  const [exercising, setExercising] = useState<{ entry: api.ExerciseEntry | null } | null>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -867,6 +1143,7 @@ export function Nutrition() {
     setEditingTargets(false)
     setEditingHealth(false)
     setLoggingWeight(false)
+    setExercising(null)
   }
 
   return (
@@ -919,6 +1196,12 @@ export function Nutrition() {
               onEdit={setEditing}
             />
           ))}
+          <ExerciseCard
+            exercise={day.exercise}
+            burned={day.burned}
+            onAdd={() => setExercising({ entry: null })}
+            onEdit={(e) => setExercising({ entry: e })}
+          />
         </>
       ) : null}
 
@@ -969,6 +1252,19 @@ export function Nutrition() {
             onClose={() => setEditingHealth(false)}
             onSaved={() => {
               setEditingHealth(false)
+              refresh()
+            }}
+          />
+        )}
+        {exercising && (
+          <ExerciseSheet
+            key={exercising.entry ? `ex-${exercising.entry.id}` : `ex-new-${flow}`}
+            entry={exercising.entry}
+            health={health}
+            date={date}
+            onClose={() => setExercising(null)}
+            onSaved={() => {
+              closeAll()
               refresh()
             }}
           />

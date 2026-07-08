@@ -6,9 +6,18 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import require_family, require_parent
-from app.health import compute
-from app.models import HealthProfile, Role, User, WeightEntry
-from app.schemas import GoalIn, HealthOut, HealthProfileIn, WeightIn, WeightOut
+from app.health import EXERCISES, compute, exercise_kcal
+from app.models import ExerciseEntry, HealthProfile, Role, User, WeightEntry
+from app.schemas import (
+    ExerciseIn,
+    ExerciseOut,
+    ExerciseUpdate,
+    GoalIn,
+    HealthOut,
+    HealthProfileIn,
+    WeightIn,
+    WeightOut,
+)
 
 # No prefix: self endpoints live under /me/health (the app's convention for
 # personal data), and the parent-managed view under /members/{id}/health.
@@ -157,3 +166,101 @@ def set_child_goal(
     child = _managed_child(db, user_id, parent)
     _apply_goal(db, child.id, data)
     return _health_out(db, child.id)
+
+
+# ---- exercise log -------------------------------------------------------------------
+
+
+def _latest_weight_kg(db: Session, user_id: int) -> float:
+    latest = db.scalar(
+        select(WeightEntry)
+        .where(WeightEntry.user_id == user_id)
+        .order_by(WeightEntry.date_for.desc())
+        .limit(1)
+    )
+    if latest is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Log a weight first so the burn can be computed",
+        )
+    return latest.weight_kg
+
+
+def _exercise_out(entry: ExerciseEntry) -> ExerciseOut:
+    return ExerciseOut(
+        id=entry.id,
+        date_for=entry.date_for,
+        time_of_day=entry.time_of_day,
+        activity=entry.activity,
+        label=EXERCISES[entry.activity]["label"],
+        effort=entry.effort,
+        minutes=entry.minutes,
+        kcal=entry.kcal,
+    )
+
+
+def _own_exercise(db: Session, entry_id: int, user: User) -> ExerciseEntry:
+    entry = db.get(ExerciseEntry, entry_id)
+    if entry is None or entry.user_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such entry")
+    return entry
+
+
+@router.post("/me/exercise", response_model=ExerciseOut, status_code=status.HTTP_201_CREATED)
+def log_exercise(
+    data: ExerciseIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_family),
+):
+    if data.date_for > dt.date.today() + dt.timedelta(days=1):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "That date hasn't happened yet")
+    kcal = exercise_kcal(data.activity, data.effort, data.minutes, _latest_weight_kg(db, user.id))
+    entry = ExerciseEntry(
+        family_id=user.family_id,
+        user_id=user.id,
+        date_for=data.date_for,
+        time_of_day=data.time_of_day,
+        activity=data.activity,
+        effort=data.effort,
+        minutes=data.minutes,
+        kcal=kcal,
+    )
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+    return _exercise_out(entry)
+
+
+@router.patch("/me/exercise/{entry_id}", response_model=ExerciseOut)
+def update_exercise(
+    entry_id: int,
+    data: ExerciseUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_family),
+):
+    entry = _own_exercise(db, entry_id, user)
+    if data.date_for is not None:
+        if data.date_for > dt.date.today() + dt.timedelta(days=1):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "That date hasn't happened yet")
+        entry.date_for = data.date_for
+    if "time_of_day" in data.model_fields_set:
+        entry.time_of_day = data.time_of_day
+    if data.minutes is not None or data.effort is not None:
+        entry.minutes = data.minutes if data.minutes is not None else entry.minutes
+        entry.effort = data.effort if data.effort is not None else entry.effort
+        entry.kcal = exercise_kcal(
+            entry.activity, entry.effort, entry.minutes, _latest_weight_kg(db, user.id)
+        )
+    db.commit()
+    db.refresh(entry)
+    return _exercise_out(entry)
+
+
+@router.delete("/me/exercise/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_exercise(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_family),
+):
+    db.delete(_own_exercise(db, entry_id, user))
+    db.commit()

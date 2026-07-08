@@ -10,6 +10,7 @@ from app.health import computed_for
 from app.models import (
     UNIT_TO_BASE,
     DiaryEntry,
+    ExerciseEntry,
     Food,
     NutritionTarget,
     Recipe,
@@ -18,6 +19,7 @@ from app.models import (
     base_unit_of,
 )
 from app.routers.recipes import _resolve_food, per_serving_macros
+from app.routers.health import _exercise_out
 from app.schemas import (
     FOOD_NUTRIENTS,
     DiaryDayOut,
@@ -46,7 +48,9 @@ def _r(v: float) -> float:
     return round(v, 1)
 
 
-def _targets_out(db: Session, user_id: int, row: NutritionTarget | None) -> TargetsOut:
+def _targets_out(
+    db: Session, user_id: int, row: NutritionTarget | None, exercise_kcal: float = 0.0
+) -> TargetsOut:
     vals = dict(
         {k: getattr(row, k) for k in _DEFAULT_TARGETS} if row is not None else _DEFAULT_TARGETS
     )
@@ -57,10 +61,13 @@ def _targets_out(db: Session, user_id: int, row: NutritionTarget | None) -> Targ
         computed = computed_for(db, user_id)
         if computed is not None:
             vals["calories"] = computed["auto_calories"]
-    cal = vals["calories"]
+    # A day's logged exercise raises that day's budget (Cronometer's
+    # "expenditure above baseline"); gram targets scale with it.
+    cal = vals["calories"] = vals["calories"] + int(round(exercise_kcal))
     return TargetsOut(
         mode=mode,
         **vals,
+        exercise_kcal=exercise_kcal,
         protein_g=_r(cal * vals["protein_pct"] / 100 / 4),
         carbs_g=_r(cal * vals["carbs_pct"] / 100 / 4),
         fat_g=_r(cal * vals["fat_pct"] / 100 / 9),
@@ -169,11 +176,20 @@ def get_day(
             if v is not None:
                 consumed[n] = _r((consumed[n] or 0.0) + v)
 
+    workouts = db.scalars(
+        select(ExerciseEntry)
+        .where(ExerciseEntry.user_id == user.id, ExerciseEntry.date_for == date)
+        .order_by(ExerciseEntry.time_of_day.nulls_last(), ExerciseEntry.created_at)
+    ).all()
+    burned = round(sum(w.kcal for w in workouts), 1)
+
     return DiaryDayOut(
         date=date,
-        targets=_targets_out(db, user.id, db.get(NutritionTarget, user.id)),
+        targets=_targets_out(db, user.id, db.get(NutritionTarget, user.id), burned),
         consumed=RecipeMacros(**consumed),
         entries=[DiaryEntryOut.model_validate(e) for e in entries],
+        exercise=[_exercise_out(w) for w in workouts],
+        burned=burned,
     )
 
 
