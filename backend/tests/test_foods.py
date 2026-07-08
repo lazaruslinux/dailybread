@@ -264,3 +264,79 @@ def test_editing_a_custom_food_keeps_or_updates_its_barcode(owner, monkeypatch):
     payload["barcode"] = None
     owner.put(f"/foods/{made['id']}", json=payload)
     assert owner.get("/foods/barcode/4099999999991").status_code == 404
+
+
+def test_scanned_product_defaults_to_its_label_serving_and_is_cached(owner, monkeypatch):
+    # An OFF hit carries its label serving as a structured portion (so the
+    # recipe line defaults to "1 serving", not 100 g) and is cached at scan
+    # time — the second scan is answered locally, serving included.
+    def off_hit(code):
+        return foods_api.FoodResult(
+            "off", code, "Greek Style Pita", "Athens",
+            275.0, 8.0, 53.0, 5.0, sugar_g=5.0,
+            serving="1 pita (60 g)", serving_amount=60.0, base_unit="g",
+        )
+
+    monkeypatch.setattr(foods_api, "lookup_barcode", off_hit)
+    res = owner.get("/foods/barcode/4012345678901")
+    assert res.status_code == 200, res.text
+    first = res.json()
+    assert first["id"] is not None  # cached immediately
+    assert first["base_unit"] == "g"
+    assert first["servings"] == [{"name": "1 pita (60 g)", "grams": 60.0}]
+
+    def must_not_be_called(code):
+        raise AssertionError("second scan left the server")
+
+    monkeypatch.setattr(foods_api, "lookup_barcode", must_not_be_called)
+    again = owner.get("/foods/barcode/4012345678901").json()
+    assert again["id"] == first["id"]
+    assert again["servings"] == first["servings"]
+
+
+def test_liquid_scan_keeps_volume_units(owner, monkeypatch):
+    # A drink's serving is millilitres; the food lands as a volume food so
+    # recipe lines measure it in mL / fl oz, per-100mL nutrition intact.
+    def off_hit(code):
+        return foods_api.FoodResult(
+            "off", code, "Orange Juice", "Simply",
+            45.0, 0.7, 10.4, 0.1,
+            serving="8 fl oz (240 mL)", serving_amount=240.0, base_unit="ml",
+        )
+
+    monkeypatch.setattr(foods_api, "lookup_barcode", off_hit)
+    body = owner.get("/foods/barcode/4023456789012").json()
+    assert body["base_unit"] == "ml"
+    assert body["servings"][0]["grams"] == 240.0
+
+
+def test_search_results_carry_a_structured_serving(owner, monkeypatch):
+    def fake_search(query, api_key, limit=25):
+        return [
+            foods_api.FoodResult(
+                "usda", "999", "Bread, pita, white", "",
+                275.0, 9.1, 55.7, 1.2,
+                serving="1 large (60 g)", serving_amount=60.0, base_unit="g",
+            ),
+            foods_api.FoodResult(  # no measurable serving -> none offered
+                "usda", "998", "Flour, wheat", "", 364.0, 10.3, 76.3, 1.0,
+            ),
+        ]
+
+    monkeypatch.setattr(foods_api, "search_usda", fake_search)
+    body = owner.get("/foods/search?q=pita").json()
+    assert body[0]["servings"] == [{"name": "1 large (60 g)", "grams": 60.0}]
+    assert body[1]["servings"] == []
+
+
+def test_label_units_convert_to_base_measures():
+    # The g/kg/oz and mL/cL/L/fl-oz markings labels actually use all resolve;
+    # household phrases with no fixed size don't.
+    assert foods_api._serving_in_base(60, "g") == (60.0, "g")
+    assert foods_api._serving_in_base(2, "oz") == (56.7, "g")
+    assert foods_api._serving_in_base(0.5, "kg") == (500.0, "g")
+    assert foods_api._serving_in_base(8, "fl oz") == (236.59, "ml")
+    assert foods_api._serving_in_base(33, "cl") == (330.0, "ml")
+    assert foods_api._serving_in_base(1, "cup") is None
+    assert foods_api._serving_in_base(None, "g") is None
+    assert foods_api._serving_in_base(0, "g") is None

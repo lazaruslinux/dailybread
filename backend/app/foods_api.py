@@ -50,6 +50,11 @@ class FoodResult:
     fiber_g: float | None = None
     sugar_g: float | None = None
     serving: str = ""  # human label for the label serving, e.g. "1 slice (21 g)"
+    # The label serving as a measurable size: how many of the food's base unit
+    # (g for solids, mL for liquids) one serving is. None when the source only
+    # gives a household phrase ("1 cup") with no fixed size to trust.
+    serving_amount: float | None = None
+    base_unit: str = "g"  # "g" | "ml"
 
 
 def _num(v) -> float | None:
@@ -64,6 +69,27 @@ def _scale(v, mult: float) -> float | None:
     per 100 g, so we multiply by 1000 to store milligrams like the labels do."""
     n = _num(v)
     return round(n * mult, 2) if n is not None else None
+
+
+# Label units we can turn into a measurable serving. Mass lands in grams,
+# volume in millilitres — covering the g / kg / oz and mL / cL / L / fl oz
+# markings food labels actually carry. Anything else (a bare "1 cup", "2
+# cookies") has no fixed size we can trust, so it stays display-only.
+_MASS_TO_G = {"g": 1.0, "gram": 1.0, "grams": 1.0, "grm": 1.0, "kg": 1000.0, "oz": 28.3495}
+_VOLUME_TO_ML = {"ml": 1.0, "mlt": 1.0, "cl": 10.0, "l": 1000.0, "fl oz": 29.5735, "floz": 29.5735}
+
+
+def _serving_in_base(size, unit) -> tuple[float, str] | None:
+    """(amount in base units, base unit) for a label serving, or None."""
+    n = _num(size)
+    if n is None or n <= 0:
+        return None
+    u = (unit or "").strip().lower()
+    if u in _MASS_TO_G:
+        return round(n * _MASS_TO_G[u], 2), "g"
+    if u in _VOLUME_TO_ML:
+        return round(n * _VOLUME_TO_ML[u], 2), "ml"
+    return None
 
 
 def _usda_serving(f: dict) -> str:
@@ -131,9 +157,19 @@ def search_usda(query: str, api_key: str, limit: int = 25) -> list[FoodResult]:
                 fiber_g=_num(by_number.get(_N_FIBER)),
                 sugar_g=_num(by_number.get(_N_SUGAR)),
                 serving=_usda_serving(f),
+                **_serving_fields(f.get("servingSize"), f.get("servingSizeUnit")),
             )
         )
     return results
+
+
+def _serving_fields(size, unit) -> dict:
+    """FoodResult kwargs for a label serving, when it's measurable."""
+    parsed = _serving_in_base(size, unit)
+    if parsed is None:
+        return {}
+    amount, base = parsed
+    return {"serving_amount": amount, "base_unit": base}
 
 
 def lookup_barcode(barcode: str) -> FoodResult | None:
@@ -141,7 +177,10 @@ def lookup_barcode(barcode: str) -> FoodResult | None:
     try:
         r = httpx.get(
             OFF_PRODUCT_URL.format(barcode=barcode),
-            params={"fields": "product_name,brands,nutriments,serving_size"},
+            params={
+                "fields": "product_name,brands,nutriments,serving_size,"
+                "serving_quantity,serving_quantity_unit"
+            },
             headers={"User-Agent": _UA},
             timeout=_TIMEOUT,
         )
@@ -172,4 +211,7 @@ def lookup_barcode(barcode: str) -> FoodResult | None:
         fiber_g=_num(nut.get("fiber_100g")),
         sugar_g=_num(nut.get("sugars_100g")),
         serving=(p.get("serving_size") or "").strip(),
+        # serving_quantity is normalized (grams, or millilitres for drinks);
+        # older records omit the unit, which then means grams.
+        **_serving_fields(p.get("serving_quantity"), p.get("serving_quantity_unit") or "g"),
     )

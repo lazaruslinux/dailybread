@@ -9,7 +9,7 @@ from app.config import settings
 from app.db import get_db
 from app.deps import require_family, require_parent
 from app.models import Food, FoodServing, FoodSource, User
-from app.schemas import FOOD_NUTRIENTS, FoodIn, FoodOut
+from app.schemas import FOOD_NUTRIENTS, FoodIn, FoodOut, FoodServingOut
 
 router = APIRouter(prefix="/foods", tags=["foods"])
 
@@ -26,8 +26,21 @@ def _result_out(r: foods_api.FoodResult) -> FoodOut:
         name=r.name,
         brand=r.brand,
         serving=r.serving,
+        base_unit=r.base_unit,
+        servings=_result_servings(r, FoodServingOut),
         **{n: getattr(r, n) for n in FOOD_NUTRIENTS},
     )
+
+
+def _result_servings(r: foods_api.FoodResult, cls):
+    """The label serving as a structured portion, so an ingredient line can
+    default to "1 serving" the way it does for custom foods. Empty when the
+    source gave no measurable size."""
+    if r.serving_amount is None:
+        return []
+    unit = "mL" if r.base_unit == "ml" else "g"
+    name = r.serving or f"1 serving ({r.serving_amount:g} {unit})"
+    return [cls(name=name, grams=r.serving_amount)]
 
 
 def _apply_custom_food(food: Food, data: FoodIn) -> None:
@@ -121,6 +134,7 @@ def lookup_barcode(
             Food.source == FoodSource.off,
             Food.source_id == code,
         )
+        .options(selectinload(Food.servings))
         .order_by(Food.id.desc())
         .limit(1)
     )
@@ -133,7 +147,27 @@ def lookup_barcode(
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)) from e
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No product found for that barcode")
-    return _result_out(result)
+
+    # A scan is a deliberate, single product (unlike a search's 25 transient
+    # hits), so cache it right away: the next scan of this code is answered at
+    # home, and the label serving rides along for the ingredient default.
+    food = Food(
+        family_id=None,
+        source=FoodSource.off,
+        source_id=code,
+        name=result.name,
+        brand=result.brand,
+        base_unit=result.base_unit,
+        **{n: getattr(result, n) for n in FOOD_NUTRIENTS},
+    )
+    food.servings = [
+        FoodServing(name=srv.name, grams=srv.grams, position=0)
+        for srv in _result_servings(result, FoodServingOut)
+    ]
+    db.add(food)
+    db.commit()
+    db.refresh(food)
+    return food
 
 
 @router.get("", response_model=list[FoodOut])

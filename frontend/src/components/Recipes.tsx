@@ -656,59 +656,66 @@ function LineRow({
     onChange({ ...line, unit: next, amount: r2(base / per) })
   }
 
+  // Two rows: the name gets the full card width (long product names were
+  // truncated to a few letters beside the controls), and the amount + unit
+  // get room beneath — three digits and a "1 pita (60 g)" both fit.
   return (
-    <div className="flex items-center gap-2 rounded-xl bg-fg/5 px-3 py-2">
-      <div className="min-w-0 flex-1">
-        <span className="block truncate text-sm">{line.name}</span>
-        {sub && <span className="block text-xs text-fg/45">{sub}</span>}
-      </div>
-      {/* `.field` is width:100%, so size these by a fixed-width parent (like the
-          servings field does) rather than a width utility it would override. */}
-      <div className="w-14 shrink-0">
-        <input
-          inputMode="decimal"
-          value={line.amount === 0 ? '' : String(line.amount)}
-          onChange={(e) => {
-            const v = e.target.value.replace(/[^0-9.]/g, '')
-            onChange({ ...line, amount: v === '' ? 0 : Number(v) })
-          }}
-          className="field px-2 text-center"
-          aria-label={`Amount of ${line.name}`}
-        />
-      </div>
-      <div className="w-24 shrink-0">
-        <select
-          value={line.unit}
-          onChange={(e) => changeUnit(e.target.value)}
-          className="field px-2"
-          aria-label={`Unit for ${line.name}`}
+    <div className="rounded-xl bg-fg/5 px-3 py-2">
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <span className="block truncate text-sm">{line.name}</span>
+          {sub && <span className="block text-xs text-fg/45">{sub}</span>}
+        </div>
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={`Remove ${line.name}`}
+          className="shrink-0 rounded-lg p-1.5 text-fg/40 hover:bg-fg/10 hover:text-danger"
         >
-          {line.servings.length > 0 && (
-            <optgroup label="Servings">
-              {line.servings.map((s, i) => (
-                <option key={`s${i}`} value={`serving:${i}`}>
-                  {s.name}
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="mt-1.5 flex items-center gap-2">
+        {/* `.field` is width:100%, so size these by their parents (like the
+            servings field does) rather than a width utility it would override. */}
+        <div className="w-20 shrink-0">
+          <input
+            inputMode="decimal"
+            value={line.amount === 0 ? '' : String(line.amount)}
+            onChange={(e) => {
+              const v = e.target.value.replace(/[^0-9.]/g, '')
+              onChange({ ...line, amount: v === '' ? 0 : Number(v) })
+            }}
+            className="field px-2 text-center"
+            aria-label={`Amount of ${line.name}`}
+          />
+        </div>
+        <div className="min-w-0 flex-1">
+          <select
+            value={line.unit}
+            onChange={(e) => changeUnit(e.target.value)}
+            className="field px-2"
+            aria-label={`Unit for ${line.name}`}
+          >
+            {line.servings.length > 0 && (
+              <optgroup label="Servings">
+                {line.servings.map((s, i) => (
+                  <option key={`s${i}`} value={`serving:${i}`}>
+                    {s.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            <optgroup label={line.base_unit === 'ml' ? 'Volume' : 'Weight'}>
+              {unitsForBase(line.base_unit).map((u) => (
+                <option key={u} value={u}>
+                  {UNIT_LABEL[u]}
                 </option>
               ))}
             </optgroup>
-          )}
-          <optgroup label={line.base_unit === 'ml' ? 'Volume' : 'Weight'}>
-            {unitsForBase(line.base_unit).map((u) => (
-              <option key={u} value={u}>
-                {UNIT_LABEL[u]}
-              </option>
-            ))}
-          </optgroup>
-        </select>
+          </select>
+        </div>
       </div>
-      <button
-        type="button"
-        onClick={onRemove}
-        aria-label={`Remove ${line.name}`}
-        className="rounded-lg p-1.5 text-fg/40 hover:bg-fg/10 hover:text-danger"
-      >
-        <Trash2 className="h-4 w-4" />
-      </button>
     </div>
   )
 }

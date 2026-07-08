@@ -131,9 +131,13 @@ function AgendaRow({
           </span>
         </button>
       ) : null}
-      <div className="w-14 shrink-0 text-right text-[11px] font-semibold leading-tight text-fg/55">
-        {when ?? ''}
-      </div>
+      {/* Untimed cards skip the time column entirely — a blank fixed-width
+          box would push the title far from its checkbox. */}
+      {when != null && (
+        <div className="w-14 shrink-0 text-right text-[11px] font-semibold leading-tight text-fg/55">
+          {when}
+        </div>
+      )}
       <div className="min-w-0 flex-1">
         <span className={`flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide ${tint}`}>
           <Icon className="h-3 w-3" strokeWidth={2.5} /> {label}
