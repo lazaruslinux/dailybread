@@ -350,6 +350,42 @@ class FoodSource(str, enum.Enum):
     custom = "custom"  # a family's own entry for something the databases lack
 
 
+class MealSlot(str, enum.Enum):
+    breakfast = "breakfast"
+    lunch = "lunch"
+    dinner = "dinner"
+
+
+class Meal(Base):
+    """One planned meal on the family menu: a saved recipe, or a free-text
+    title for nights that aren't a recipe ("Leftovers", "Pizza out"). The UI
+    plans dinner only for now; the slot column is already here so breakfast
+    and lunch cost a UI change later, not a migration."""
+
+    __tablename__ = "meals"
+    __table_args__ = (
+        UniqueConstraint("family_id", "date_for", "slot", name="uq_meal_family_day_slot"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
+    date_for: Mapped[dt.date] = mapped_column(Date, index=True)
+    slot: Mapped[MealSlot] = mapped_column(
+        SAEnum(MealSlot, name="meal_slot"), default=MealSlot.dinner
+    )
+    # Losing a recipe shouldn't wipe the week's plan row itself: the FK goes
+    # NULL and the night simply reads unplanned again.
+    recipe_id: Mapped[int | None] = mapped_column(
+        ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True
+    )
+    custom_title: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    recipe: Mapped["Recipe | None"] = relationship()
+
+
 class Food(Base):
     """A food with per-100g nutrition, used as a recipe ingredient. Rows are
     either cached from USDA/OFF on first use (family_id NULL = shared across the

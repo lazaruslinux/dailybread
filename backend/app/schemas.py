@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.models import FoodSource, ItemKind, MoodLevel, RepeatType, Role, Visibility
+from app.models import FoodSource, ItemKind, MealSlot, MoodLevel, RepeatType, Role, Visibility
 
 
 # Pydantic models define the JSON shapes for requests/responses and validate
@@ -385,6 +385,29 @@ class RecipeOut(BaseModel):
     steps: str
     ingredients: list[RecipeIngredientOut]
     per_serving: RecipeMacros
+
+
+# ---- meals (the family menu) ----------------------------------------------------
+
+
+class MealIn(BaseModel):
+    """Plan one slot of one day: a saved recipe, or a typed title for nights
+    that aren't a recipe. Exactly one of the two."""
+
+    date_for: dt.date
+    slot: MealSlot = MealSlot.dinner
+    recipe_id: int | None = None
+    custom_title: str | None = Field(default=None, max_length=120)
+
+
+class MealOut(BaseModel):
+    date_for: dt.date
+    slot: MealSlot
+    recipe_id: int | None
+    recipe_name: str | None  # joined for display; None for a custom title
+    custom_title: str | None
+
+    model_config = {"from_attributes": True}
 
 
 # ---- foods (database cache + custom) -------------------------------------------

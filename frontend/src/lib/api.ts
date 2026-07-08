@@ -394,6 +394,31 @@ export const updateCustomFood = (id: number, payload: CustomFoodPayload) =>
 export const deleteCustomFood = (id: number) =>
   request<void>(`/foods/${id}`, { method: 'DELETE' })
 
+// ---- meals (the family menu) ----------------------------------------------------
+
+export type MealSlot = 'breakfast' | 'lunch' | 'dinner'
+
+export interface Meal {
+  date_for: string
+  slot: MealSlot
+  recipe_id: number | null
+  recipe_name: string | null
+  custom_title: string | null
+}
+
+export const getMeals = (start: string, end: string) =>
+  request<Meal[]>(`/meals?start=${start}&end=${end}`)
+
+export const setMeal = (payload: {
+  date_for: string
+  slot?: MealSlot
+  recipe_id?: number | null
+  custom_title?: string | null
+}) => request<Meal>('/meals', { method: 'PUT', body: JSON.stringify(payload) })
+
+export const clearMeal = (date: string) =>
+  request<void>(`/meals?date=${date}`, { method: 'DELETE' })
+
 // ---- recipes ------------------------------------------------------------------
 
 // Mass units (a solid) and volume units (a liquid). An ingredient's unit must

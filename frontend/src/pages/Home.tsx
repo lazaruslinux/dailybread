@@ -8,6 +8,7 @@ import { FamilyStrip } from '../components/FamilyStrip'
 import { ItemCard, SectionDivider } from '../components/ItemCard'
 import { ItemDetail } from '../components/ItemDetail'
 import { ItemSheet } from '../components/ItemSheet'
+import { TonightCard } from '../components/Meals'
 import { VerseCard } from '../components/VerseCard'
 import { FormError } from '../components/ui'
 
@@ -52,7 +53,13 @@ function todaySlot(item: api.FeedItem, nowHm: string): Slot {
   return 'coming'
 }
 
-export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void }) {
+export function Home({
+  onOpenProfile,
+  onOpenKitchen,
+}: {
+  onOpenProfile: (id: number) => void
+  onOpenKitchen: () => void
+}) {
   const { user } = useAuth()
   const isParent = user?.role === 'parent'
 
@@ -280,6 +287,8 @@ export function Home({ onOpenProfile }: { onOpenProfile: (id: number) => void })
   return (
     <div>
       <FamilyStrip members={family} onOpen={onOpenProfile} />
+
+      <TonightCard onOpenKitchen={onOpenKitchen} />
 
       {isParent && family.length > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-1.5">

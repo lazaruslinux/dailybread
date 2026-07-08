@@ -109,7 +109,7 @@ function AppShell() {
           {overlay?.name === 'admin' && <Admin />}
           {overlay?.name === 'calendar' && <Calendar />}
           {!overlay && tab === 'home' && (
-            <Home onOpenProfile={(id) => setOverlay({ name: 'profile', id })} />
+            <Home onOpenProfile={(id) => setOverlay({ name: 'profile', id })} onOpenKitchen={() => setTab('kitchen')} />
           )}
           {!overlay && tab === 'nutrition' && <Nutrition />}
           {!overlay && tab === 'kitchen' && <Kitchen />}
