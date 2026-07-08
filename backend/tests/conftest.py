@@ -18,6 +18,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app import throttle
 from app.db import Base, get_db
 from app.main import app as real_app
 
@@ -27,6 +28,14 @@ PARENT = {"username": "parent2", "display_name": "Second Parent", "password": "p
 CHILD = {"username": "kid", "display_name": "The Kid", "password": "child-pass-123"}
 # A second household, for cross-family isolation checks.
 JOSH = {"username": "josh", "display_name": "Josh", "password": "josh-pass-1234"}
+
+
+@pytest.fixture(autouse=True)
+def _reset_login_throttle():
+    # The throttle is process-global; without this, failed-login tests would
+    # bleed lockout state into each other.
+    throttle.clear()
+    yield
 
 
 @pytest.fixture()

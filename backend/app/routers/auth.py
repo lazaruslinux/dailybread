@@ -8,6 +8,7 @@ from app.deps import get_current_user, require_admin
 from app.models import Family, Role, User
 from app.schemas import BootstrapIn, CreateUserIn, LoginIn, SetupOut, UpdateUserIn, UserOut
 from app.security import hash_password, set_session_cookie, verify_password
+from app import throttle
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -47,11 +48,21 @@ def bootstrap(data: BootstrapIn, response: Response, db: Session = Depends(get_d
 
 @router.post("/login", response_model=UserOut)
 def login(data: LoginIn, response: Response, db: Session = Depends(get_db)):
+    # Too many recent failures against this username and we stop checking
+    # passwords at all until the window cools off (see app.throttle).
+    key = data.username.lower()
+    if throttle.too_many_failures(key):
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Too many attempts. Wait a while and try again.",
+        )
     user = db.scalar(select(User).where(User.username == data.username))
     # Same error whether the user is missing or the password is wrong, so an
     # attacker can't tell which usernames exist.
     if user is None or not verify_password(data.password, user.password_hash):
+        throttle.record_failure(key)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
+    throttle.clear(key)
     set_session_cookie(response, str(user.id), user.token_version)
     return user
 
