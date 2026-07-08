@@ -183,12 +183,16 @@ function macroSummary(m: api.RecipeMacros): string {
 // modal nested under one only covers a band (and on iOS the page shows through).
 // The portal lifts it out to the top of the DOM where `fixed inset-0` fills the
 // screen. Body scroll is locked while it's open so the page can't drift behind.
+// Ref-counted so stacked sheets can't strand the lock: when one sheet opens
+// while another is still exit-animating (Nutrition's AddSheet → PortionSheet),
+// a save/restore of the previous value would capture 'hidden' and re-apply it
+// after both closed, freezing the page until a reload.
+let bodyLocks = 0
 export function Sheet({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   useEffect(() => {
-    const prev = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+    if (++bodyLocks === 1) document.body.style.overflow = 'hidden'
     return () => {
-      document.body.style.overflow = prev
+      if (--bodyLocks === 0) document.body.style.overflow = ''
     }
   }, [])
   // Escape dismisses too — routed through the same onClose the backdrop uses, so
