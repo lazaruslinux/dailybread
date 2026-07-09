@@ -24,17 +24,8 @@ SUB2 = {
 }
 
 
-# configured/outbox now live in conftest.py, shared with the approval tests.
-
-
-@pytest.fixture()
-def engine_db(app, monkeypatch):
-    """Bind the reminder engine's own sessions to the test database."""
-    TestingSession = sessionmaker(
-        bind=app.state.test_engine, autoflush=False, expire_on_commit=False
-    )
-    monkeypatch.setattr(push_engine, "SessionLocal", TestingSession)
-    return TestingSession
+# configured/outbox/engine_db now live in conftest.py, shared with the
+# approval and digest tests.
 
 
 # ---- endpoints ---------------------------------------------------------------

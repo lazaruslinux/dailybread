@@ -82,7 +82,7 @@ export function NotificationsCard() {
         auth: json.keys?.auth ?? '',
       })
       setState({ kind: 'on', endpoint: sub.endpoint })
-      setNote('This device will get reminders shortly before timed cards.')
+      setNote('This device will get reminders before timed cards and the morning digest.')
     } catch (err) {
       if (err instanceof api.ApiError && err.status === 503) {
         setState({ kind: 'unconfigured' })
@@ -158,8 +158,8 @@ export function NotificationsCard() {
         <>
           <p className="mb-3 text-xs leading-relaxed text-fg/50">
             {on
-              ? 'Reminders are on for this device: a ping shortly before anything with a time on your board.'
-              : 'Get a ping on this device shortly before anything with a time on your board. Each person turns this on per device.'}
+              ? 'On for this device: a ping shortly before anything timed on your board, plus a morning summary of your day.'
+              : 'Get a ping shortly before anything timed on your board, plus a morning summary of your day. Each person turns this on per device.'}
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <button

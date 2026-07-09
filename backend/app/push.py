@@ -15,13 +15,14 @@ import datetime as dt
 import json
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import settings
 from app.db import SessionLocal
 from app.models import (
+    DigestLog,
     Item,
     ItemKind,
     PushSubscription,
@@ -172,17 +173,150 @@ def reminder_tick(now: dt.datetime) -> int:
     return sent
 
 
+# ---- the morning digest ---------------------------------------------------------
+
+
+def _is_recipient(item: Item, user: User) -> bool:
+    """Same rule as _recipients, answered for one member without a query:
+    assignees when named; otherwise the owner for a private card, the whole
+    household for a family-visible (or ownerless) one."""
+    if item.assignees:
+        return any(a.id == user.id for a in item.assignees)
+    if item.visibility == Visibility.family or item.owner_id is None:
+        return True
+    return item.owner_id == user.id
+
+
+def _claim_digest(db: Session, user_id: int, day: dt.date) -> bool:
+    """Claim the (member, day) pair; False means someone else already has."""
+    db.add(DigestLog(user_id=user_id, date_for=day))
+    try:
+        db.commit()
+        return True
+    except IntegrityError:
+        db.rollback()
+        return False
+
+
+def _todays_board(db: Session, user: User, now: dt.datetime) -> tuple[int, Item | None]:
+    """One member's OPEN items today: routines landing today, cards dated
+    today, and undated anytime tasks — completed ones excluded, exactly like
+    the board. Returns (count, the next undone timed card still ahead)."""
+    from app.routers.items import _completions_by_item, _occurs
+
+    today = now.date()
+    items = (
+        db.scalars(
+            select(Item)
+            .options(selectinload(Item.assignees))
+            .where(
+                Item.family_id == user.family_id,
+                or_(
+                    Item.repeat_type.is_not(None),
+                    Item.date_for == today,
+                    Item.date_for.is_(None),
+                ),
+            )
+        )
+        .unique()
+        .all()
+    )
+    mine = [
+        item
+        for item in items
+        if _is_recipient(item, user)
+        and (item.kind != ItemKind.routine or _occurs(item, today))
+    ]
+    comps = _completions_by_item(db, mine)
+
+    open_items: list[Item] = []
+    for item in mine:
+        rows = comps[item.id]
+        if item.kind == ItemKind.routine:
+            # Their own occurrence; a pending mark counts as already acted.
+            acted = any(uid == user.id and day == today for uid, day, _pend in rows)
+        elif item.date_for is not None:
+            # Dated one-shots are done once anyone checked them, whatever day.
+            acted = any(not pend for _uid, _day, pend in rows)
+        else:
+            # Undated tasks: any check (today = done, earlier = archived).
+            acted = any(not pend for _uid, _day, pend in rows)
+        if not acted:
+            open_items.append(item)
+
+    upcoming = [
+        item
+        for item in open_items
+        if item.time_of_day is not None and not item.all_day and item.time_of_day > now.time()
+    ]
+    next_item = min(upcoming, key=lambda i: i.time_of_day) if upcoming else None
+    return len(open_items), next_item
+
+
+def digest_tick(now: dt.datetime) -> int:
+    """Once each morning, per adult with a subscribed device: a personal
+    good-morning summary of their day. Runs from digest_hour on, so a server
+    that was down at 7 still greets people when it comes back — but never
+    after noon, when "good morning" has stopped being one. Empty boards stay
+    quiet (the claim still lands, so a card added at 9 doesn't ping at 9:01)."""
+    if not (settings.digest_hour <= now.hour < 12):
+        return 0
+
+    today = now.date()
+    sent = 0
+    with SessionLocal() as db:
+        subscribed = (
+            db.scalars(
+                select(User)
+                .join(PushSubscription, PushSubscription.user_id == User.id)
+                .distinct()
+            )
+            .unique()
+            .all()
+        )
+        handled = set(
+            db.scalars(select(DigestLog.user_id).where(DigestLog.date_for == today))
+        )
+        due = [
+            u
+            for u in subscribed
+            # Kid mode: minors get no digest — the board is the parents' to run.
+            if u.id not in handled and u.family_id is not None and not u.is_minor
+        ]
+
+        for user in due:
+            if not _claim_digest(db, user.id, today):
+                continue
+            count, next_item = _todays_board(db, user, now)
+            if count == 0:
+                continue
+            body = f"{count} item{'' if count == 1 else 's'} on today's board."
+            if next_item is not None:
+                body += f" Next up: {next_item.title} at {_fmt(next_item.time_of_day)}."
+            body += " Tap to review. Read your daily verses."
+            payload = {
+                "title": f"Good morning, {user.display_name.split()[0]}.",
+                "body": body,
+                "tag": f"digest-{today.isoformat()}",
+                "url": "/",
+            }
+            sent += send_to_user(db, user.id, payload)
+    return sent
+
+
 async def reminder_loop() -> None:
     log.info(
-        "push reminders on: checking every %ss, %s-minute lead",
+        "push reminders on: checking every %ss, %s-minute lead, digest at %s:00",
         TICK_SECONDS,
         settings.reminder_lead_minutes,
+        settings.digest_hour,
     )
     while True:
         try:
             n = await asyncio.to_thread(reminder_tick, dt.datetime.now())
+            n += await asyncio.to_thread(digest_tick, dt.datetime.now())
             if n:
-                log.info("reminders sent: %s", n)
+                log.info("pushes sent: %s", n)
         except Exception:  # never let one bad tick kill the loop
             log.exception("reminder tick failed")
         await asyncio.sleep(TICK_SECONDS)

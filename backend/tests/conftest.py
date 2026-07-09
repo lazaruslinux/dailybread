@@ -181,3 +181,31 @@ def outbox(monkeypatch):
 
     monkeypatch.setattr("pywebpush.webpush", fake_webpush)
     return calls
+
+
+@pytest.fixture()
+def push_outbox(monkeypatch):
+    """Like outbox, but keeps the decoded payload so tests can read the
+    notification's actual title and body. (endpoint, payload) tuples."""
+    import json
+
+    calls = []
+
+    def fake_webpush(subscription_info, data, **kwargs):
+        calls.append((subscription_info["endpoint"], json.loads(data)))
+
+    monkeypatch.setattr("pywebpush.webpush", fake_webpush)
+    return calls
+
+
+@pytest.fixture()
+def engine_db(app, monkeypatch):
+    """Bind the push engine's own sessions to the test database."""
+    import app.push as push_engine
+    from sqlalchemy.orm import sessionmaker
+
+    TestingSession = sessionmaker(
+        bind=app.state.test_engine, autoflush=False, expire_on_commit=False
+    )
+    monkeypatch.setattr(push_engine, "SessionLocal", TestingSession)
+    return TestingSession
