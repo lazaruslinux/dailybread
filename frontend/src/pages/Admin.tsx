@@ -241,14 +241,16 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
           password,
           role,
           is_admin: isAdmin,
-          ...(birthdate ? { birthdate } : {}),
+          ...(role === 'child' && birthdate ? { birthdate } : {}),
         })
       } else {
         await api.updateUser(member.id, {
           display_name: displayName,
           role,
           is_admin: isAdmin,
-          birthdate: birthdate || null,
+          // Adults own their birthdate (they set it in Nutrition); the admin
+          // sheet only ever writes a child's.
+          ...(role === 'child' ? { birthdate: birthdate || null } : {}),
           ...(password ? { password } : {}),
         })
       }
@@ -319,26 +321,27 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
           </div>
 
           {role === 'child' && (
-            <p className="-mt-1 text-xs leading-relaxed text-fg/45">
-              Child accounts have the Nutrition tab disabled, view-only access to the family
-              calendar except their own assigned tasks, and a mood and journal only parents
-              can see. Most families create one so parents can track a kid's routines and
-              activities, rather than for the child to use the app themselves.
-            </p>
+            <>
+              <p className="-mt-1 text-xs leading-relaxed text-fg/45">
+                Child accounts have the Nutrition tab disabled, view-only access to the family
+                calendar except their own assigned tasks, and a mood and journal only parents
+                can see. Most families create one so parents can track a kid's routines and
+                activities, rather than for the child to use the app themselves.
+              </p>
+              <div>
+                <Field
+                  label="Birthdate"
+                  type="date"
+                  value={birthdate}
+                  onChange={(e) => setBirthdate(e.target.value)}
+                  onClear={() => setBirthdate('')}
+                />
+                <p className="mt-1.5 text-xs text-fg/40">
+                  Optional. Just for the family's reference.
+                </p>
+              </div>
+            </>
           )}
-
-          <div>
-            <Field
-              label="Birthdate"
-              type="date"
-              value={birthdate}
-              onChange={(e) => setBirthdate(e.target.value)}
-              onClear={() => setBirthdate('')}
-            />
-            <p className="mt-1.5 text-xs text-fg/40">
-              Optional. Shared with their Nutrition health profile.
-            </p>
-          </div>
 
           <label
             className={`flex items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 ${

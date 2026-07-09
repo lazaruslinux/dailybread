@@ -67,6 +67,7 @@ def bootstrap(data: BootstrapIn, response: Response, db: Session = Depends(get_d
         role=Role.parent,
         is_admin=True,  # admin of the first family
         is_owner=True,  # ...and the server admin for the whole install
+        birthdate=data.birthdate,  # optional; prefills their Nutrition profile
     )
     db.add(user)
     db.commit()
@@ -227,6 +228,7 @@ def redeem_signup_invite(
         role=Role.parent,
         is_admin=False,
         is_owner=False,
+        birthdate=data.birthdate,  # optional; prefills their Nutrition profile
     )
     db.add(user)
     db.delete(invite)  # single-use: the redemption consumes it

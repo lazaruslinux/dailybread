@@ -15,6 +15,7 @@ export function Login() {
   const [invitee, setInvitee] = useState<{ display_name: string } | null>(null)
   const [newUsername, setNewUsername] = useState('')
   const [newDisplayName, setNewDisplayName] = useState('')
+  const [newBirthdate, setNewBirthdate] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -72,7 +73,7 @@ export function Login() {
     }
     setBusy(true)
     try {
-      await redeemInvite(code, newUsername.trim(), newDisplayName.trim(), newPassword)
+      await redeemInvite(code, newUsername.trim(), newDisplayName.trim(), newPassword, newBirthdate || null)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.')
       setBusy(false)
@@ -133,6 +134,18 @@ export function Login() {
             autoFocus
             required
           />
+          <div>
+            <Field
+              label="Birthdate"
+              type="date"
+              value={newBirthdate}
+              onChange={(e) => setNewBirthdate(e.target.value)}
+              onClear={() => setNewBirthdate('')}
+            />
+            <p className="mt-1.5 text-xs leading-relaxed text-fg/40">
+              Optional. Used for your calorie targets; you can add it in Nutrition later.
+            </p>
+          </div>
           <Field
             label="Password"
             type="password"

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import {
   ApiError,
+  checkVillageCode,
   createVillage,
   joinVillage,
   leaveVillage,
@@ -157,11 +158,24 @@ function CreateSheet({
 
 function JoinSheet({ onClose, onJoined }: { onClose: () => void; onJoined: () => void }) {
   const [code, setCode] = useState('')
+  const [found, setFound] = useState<{ name: string; families: string[] } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  async function submit(e: React.FormEvent) {
+  async function check(e: React.FormEvent) {
     e.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      setFound(await checkVillageCode(code))
+      setBusy(false)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong')
+      setBusy(false)
+    }
+  }
+
+  async function join() {
     setBusy(true)
     setError(null)
     try {
@@ -173,13 +187,43 @@ function JoinSheet({ onClose, onJoined }: { onClose: () => void; onJoined: () =>
     }
   }
 
+  if (found) {
+    return (
+      <Sheet onClose={onClose}>
+        <h3 className="mb-1 text-lg font-bold">Join {found.name}?</h3>
+        <p className="mb-3 text-sm text-fg/60">
+          They won't be able to see anything of yours unless you share.
+        </p>
+        <div className="mb-4 flex flex-wrap gap-1.5">
+          {found.families.map((name) => (
+            <span
+              key={name}
+              className="rounded-full border border-fg/10 bg-fg/10 px-2.5 py-0.5 text-xs font-semibold text-fg/70"
+            >
+              {name}
+            </span>
+          ))}
+        </div>
+        <FormError message={error} />
+        <div className="flex gap-2">
+          <Button type="button" variant="ghost" className="flex-1" onClick={() => setFound(null)}>
+            Back
+          </Button>
+          <Button type="button" className="flex-1" disabled={busy} onClick={join}>
+            {busy ? 'Joining…' : 'Join'}
+          </Button>
+        </div>
+      </Sheet>
+    )
+  }
+
   return (
     <Sheet onClose={onClose}>
       <h3 className="mb-1 text-lg font-bold">Join a village</h3>
       <p className="mb-4 text-sm text-fg/60">
         Enter the invite code given to you by another family to join their village.
       </p>
-      <form onSubmit={submit} className="flex flex-col gap-4">
+      <form onSubmit={check} className="flex flex-col gap-4">
         <Field
           label="Invite code"
           value={code}
@@ -191,7 +235,7 @@ function JoinSheet({ onClose, onJoined }: { onClose: () => void; onJoined: () =>
         />
         <FormError message={error} />
         <Button type="submit" disabled={busy || !code.trim()}>
-          {busy ? 'Joining…' : 'Join'}
+          {busy ? 'Checking…' : 'Continue'}
         </Button>
       </form>
     </Sheet>
@@ -277,14 +321,29 @@ export function VillagesCard() {
               <VillageIcon className="h-4 w-4 shrink-0 text-accent-bright" />
               <span className="min-w-0 truncate font-semibold text-fg/90">{v.name}</span>
             </div>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-col gap-2.5">
               {v.families.map((f) => (
-                <span
-                  key={f.id}
-                  className="rounded-full border border-fg/10 bg-fg/10 px-2.5 py-0.5 text-xs font-semibold text-fg/70"
-                >
-                  {f.name}
-                </span>
+                <div key={f.id}>
+                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg/45">
+                    {f.name}
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    {f.parents.map((p) => (
+                      <span key={p.id} className="flex w-12 flex-col items-center gap-1">
+                        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-accent-bright/60 to-accent-strong/60 text-xs font-bold text-fg">
+                          {p.display_name
+                            .split(/\s+/)
+                            .slice(0, 2)
+                            .map((w) => w[0]?.toUpperCase() ?? '')
+                            .join('')}
+                        </span>
+                        <span className="w-full truncate text-center text-[10px] text-fg/55">
+                          {p.display_name.split(/\s+/)[0]}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
             {isAdmin && (
@@ -315,7 +374,7 @@ export function VillagesCard() {
 
         <FormError message={error} />
 
-        {isAdmin && (
+        {isAdmin && villages.length === 0 && (
           <div className="flex gap-2">
             <Button type="button" variant="ghost" className="flex-1" onClick={() => setCreating(true)}>
               <Plus className="mr-1 inline h-4 w-4" /> New village

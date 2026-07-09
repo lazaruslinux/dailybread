@@ -122,10 +122,70 @@ def test_double_join_is_a_plain_400(village, owner, other):
     assert owner.get("/villages").json()[0]["invite_active"] is True
 
 
-def test_family_can_belong_to_two_villages(village, owner, other):
-    second = _create(owner, name="Second Circle")
-    assert other.post("/villages/join", json={"code": second["invite_code"]}).status_code == 200
-    assert len(other.get("/villages").json()) == 2
+# ---- the join confirmation ------------------------------------------------------
+
+
+def test_check_names_the_village_without_consuming(owner, other):
+    created = _create(owner)
+    for _ in range(2):
+        res = other.post("/villages/join/check", json={"code": created["invite_code"]})
+        assert res.status_code == 200
+        assert res.json() == {"name": "Bread Circle", "families": ["Home"]}
+    # Still joinable after being checked.
+    assert other.post("/villages/join", json={"code": created["invite_code"]}).status_code == 200
+
+
+def test_check_is_uniformly_invalid_and_shares_the_throttle(owner, other):
+    from app import throttle as throttle_mod
+
+    _create(owner)
+    for _ in range(throttle_mod.MAX_FAILURES):
+        res = other.post("/villages/join/check", json={"code": "WRONGCOD"})
+        assert res.status_code == 404
+        assert res.json()["detail"] == "That code isn't valid"
+    # Check failures count against the same bucket the join uses.
+    assert other.post("/villages/join", json={"code": "WRONGCOD"}).status_code == 429
+
+
+# ---- parents on the village card -------------------------------------------------
+
+
+def test_village_shows_parents_and_never_children(app, village, owner, other, child, grown_child):
+    listed = owner.get("/villages").json()[0]
+    by_family = {f["name"]: f for f in listed["families"]}
+    home_names = [p["display_name"] for p in by_family["Home"]["parents"]]
+    assert "Owner Parent" in home_names
+    # Children stay behind the family wall — even with an adult birthdate.
+    assert "The Kid" not in home_names
+    assert "Grown Kid" not in home_names
+    # No avatar handle rides along: bubbles are initials-only across families.
+    assert "avatar_updated_at" not in by_family["Home"]["parents"][0]
+    # Family B's head shows for family A too.
+    assert [p["display_name"] for p in by_family["The Bs"]["parents"]] == ["Josh"]
+
+
+def test_one_village_per_family(village, owner, other):
+    # For now a family belongs to at most one village: founding a second is
+    # refused, and so is joining one.
+    assert owner.post("/villages", json={"name": "Second Circle"}).status_code == 400
+    assert other.post("/villages", json={"name": "Second Circle"}).status_code == 400
+
+
+def test_join_refused_when_already_in_a_village(app, village, owner, other):
+    # A third family founds its own village and invites family B — who is
+    # already in one, so the valid code earns a plain 400.
+    from tests.conftest import login
+
+    third_head = {"username": "cathy", "display_name": "Cathy", "password": "cathy-pass-123"}
+    res = owner.post("/auth/users", json={**third_head, "role": "parent", "new_household": True})
+    assert res.status_code == 201
+    cathy = login(app, third_head)
+    assert cathy.post("/families", json={"name": "The Cs"}).status_code == 201
+    created = _create(cathy, name="Other Circle")
+    res = other.post("/villages/join", json={"code": created["invite_code"]})
+    assert res.status_code == 400
+    # The code wasn't consumed by the refusal.
+    assert cathy.get("/villages").json()[0]["invite_active"] is True
 
 
 # ---- regenerating --------------------------------------------------------------

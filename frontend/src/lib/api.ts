@@ -99,10 +99,11 @@ export const bootstrap = (
   display_name: string,
   password: string,
   family_name: string,
+  birthdate: string | null,
 ) =>
   request<User>('/auth/bootstrap', {
     method: 'POST',
-    body: JSON.stringify({ username, display_name, password, family_name }),
+    body: JSON.stringify({ username, display_name, password, family_name, birthdate }),
   })
 
 export const logout = () => request<void>('/auth/logout', { method: 'POST' })
@@ -136,10 +137,11 @@ export const redeemInvite = (
   username: string,
   display_name: string,
   password: string,
+  birthdate: string | null,
 ) =>
   request<User>('/auth/invites/redeem', {
     method: 'POST',
-    body: JSON.stringify({ code, username, display_name, password }),
+    body: JSON.stringify({ code, username, display_name, password, birthdate }),
   })
 
 export const changePassword = (current_password: string, new_password: string) =>
@@ -959,10 +961,16 @@ export const sendTestPush = () => request<{ sent: number }>('/push/test', { meth
 // Private circles of linked families. Nothing is discoverable; the invite code
 // is shown exactly once when minted and can only be regenerated, never re-read.
 
+export interface VillageParent {
+  id: number
+  display_name: string
+}
+
 export interface VillageFamily {
   id: number
   name: string
   joined_at: string
+  parents: VillageParent[]
 }
 
 export interface Village {
@@ -987,6 +995,13 @@ export const listVillages = () => request<Village[]>('/villages')
 
 export const createVillage = (name: string) =>
   request<VillageCreated>('/villages', { method: 'POST', body: JSON.stringify({ name }) })
+
+// Non-consuming: names what the code opens, for the "Join <name>?" confirm.
+export const checkVillageCode = (code: string) =>
+  request<{ name: string; families: string[] }>('/villages/join/check', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  })
 
 export const joinVillage = (code: string) =>
   request<Village>('/villages/join', { method: 'POST', body: JSON.stringify({ code }) })

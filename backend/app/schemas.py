@@ -71,6 +71,9 @@ class BootstrapIn(BaseModel):
     display_name: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=8, max_length=128)
     family_name: str = Field(default="Home", min_length=1, max_length=80)
+    # Optional: prefills the Nutrition health profile (one birthdate per
+    # member — see models.User.birthdate).
+    birthdate: dt.date | None = None
 
 
 class CreateUserIn(BootstrapIn):
@@ -892,6 +895,8 @@ class InviteRedeemIn(InviteCodeIn):
     username: str = Field(min_length=3, max_length=50)
     display_name: str | None = Field(default=None, min_length=1, max_length=100)
     password: str = Field(min_length=8, max_length=128)
+    # Optional: prefills the Nutrition health profile.
+    birthdate: dt.date | None = None
 
 
 # ---- villages -------------------------------------------------------------------
@@ -905,10 +910,28 @@ class VillageJoinIn(BaseModel):
     code: str = Field(min_length=1, max_length=20)
 
 
+class VillageParentOut(BaseModel):
+    """A parent as village-mates see them: name and id, nothing else. No
+    avatar timestamp on purpose — avatar images stay family-scoped, so
+    bubbles render as initials everywhere. Children never appear at all."""
+
+    id: int
+    display_name: str
+
+
 class VillageFamilyOut(BaseModel):
     id: int
     name: str
     joined_at: dt.datetime
+    parents: list[VillageParentOut] = []
+
+
+class VillageCheckOut(BaseModel):
+    """What a held code opens: enough to ask "Join <name>?" and nothing more.
+    Non-consuming; only reachable with a live code in hand."""
+
+    name: str
+    families: list[str]
 
 
 class VillageOut(BaseModel):

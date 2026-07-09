@@ -146,7 +146,8 @@ Where dailybread is headed, in order. Done items stay for history.
 
 ## Next
 
-1. **Villages** — private circles of linked families on the same install.
+1. **Villages** — private circles of linked families on the same install
+   (one village per family for now).
    Invitation-only (one-time codes, hashed at rest, throttled), nothing
    discoverable, and deliberately anti-social-media: no feed, no likes, no
    comments, ever. Exactly two things cross the family wall: recipes shared

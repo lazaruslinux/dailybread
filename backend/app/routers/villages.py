@@ -25,14 +25,16 @@ from app import throttle
 from app.invitecodes import hash_code, mint_code, normalize, pretty, still_valid
 from app.db import get_db
 from app.deps import require_admin, require_family
-from app.models import Family, User, Village, VillageFamily, VillageRecipe
+from app.models import Family, Role, User, Village, VillageFamily, VillageRecipe
 from app.schemas import (
+    VillageCheckOut,
     VillageCreatedOut,
     VillageFamilyOut,
     VillageIn,
     VillageInviteOut,
     VillageJoinIn,
     VillageOut,
+    VillageParentOut,
 )
 
 router = APIRouter(prefix="/villages", tags=["villages"])
@@ -75,17 +77,42 @@ def _village_out(db: Session, village: Village) -> VillageOut:
         .where(VillageFamily.village_id == village.id)
         .order_by(VillageFamily.joined_at, VillageFamily.id)
     ).all()
+    # The faces of the village: every member family's PARENTS. Children are
+    # never shown across the family wall, whatever their birthdate says.
+    parents_by_family: dict[int, list[VillageParentOut]] = {}
+    family_ids = [family.id for _, family in rows]
+    if family_ids:
+        for user in db.scalars(
+            select(User)
+            .where(User.family_id.in_(family_ids), User.role == Role.parent)
+            .order_by(User.created_at, User.id)
+        ):
+            parents_by_family.setdefault(user.family_id, []).append(
+                VillageParentOut(id=user.id, display_name=user.display_name)
+            )
     active = _invite_active(village, _utcnow())
     return VillageOut(
         id=village.id,
         name=village.name,
         created_at=village.created_at,
         families=[
-            VillageFamilyOut(id=family.id, name=family.name, joined_at=vf.joined_at)
+            VillageFamilyOut(
+                id=family.id,
+                name=family.name,
+                joined_at=vf.joined_at,
+                parents=parents_by_family.get(family.id, []),
+            )
             for vf, family in rows
         ],
         invite_active=active,
         invite_expires_at=village.invite_expires_at if active else None,
+    )
+
+
+def _family_in_a_village(db: Session, family_id: int) -> bool:
+    return (
+        db.scalar(select(VillageFamily).where(VillageFamily.family_id == family_id))
+        is not None
     )
 
 
@@ -108,7 +135,12 @@ def create_village(
     admin: User = Depends(require_admin),
 ):
     """Found a village: the creating family is its first member, and the
-    response carries the invite code — the only time it is ever shown."""
+    response carries the invite code — the only time it is ever shown.
+    One village per family for now."""
+    if _family_in_a_village(db, admin.family_id):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Your family is already in a village"
+        )
     code = mint_code()
     village = Village(
         name=data.name.strip(),
@@ -124,21 +156,15 @@ def create_village(
     return VillageCreatedOut(**base.model_dump(), invite_code=pretty(code))
 
 
-@router.post("/join", response_model=VillageOut)
-def join_village(
-    data: VillageJoinIn,
-    db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
-):
-    """Join with an invite code. Wrong, expired, and nonexistent codes are one
-    indistinguishable 404; attempts are throttled like failed logins."""
-    key = f"village-join:{admin.username}"
+def _village_for_code(db: Session, raw: str, throttle_user: str) -> Village:
+    """The throttled door: turn a submitted code into its village, or record
+    a failure and answer the uniform 404."""
+    key = f"village-join:{throttle_user}"
     if throttle.too_many_failures(key):
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS, "Too many attempts. Try again later."
         )
-
-    code = normalize(data.code)
+    code = normalize(raw)
     village = (
         db.scalar(select(Village).where(Village.invite_code_hash == hash_code(code)))
         if code
@@ -147,19 +173,43 @@ def join_village(
     if village is None or not _invite_active(village, _utcnow()):
         throttle.record_failure(key)
         raise HTTPException(status.HTTP_404_NOT_FOUND, "That code isn't valid")
+    return village
 
-    already = db.scalar(
-        select(VillageFamily).where(
-            VillageFamily.village_id == village.id,
-            VillageFamily.family_id == admin.family_id,
-        )
-    )
+
+@router.post("/join/check", response_model=VillageCheckOut)
+def check_join_code(
+    data: VillageJoinIn,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """What would this code join? Drives the "Join <name>?" confirmation
+    without consuming the code. Same throttle bucket as joining."""
+    village = _village_for_code(db, data.code, admin.username)
+    names = db.scalars(
+        select(Family.name)
+        .join(VillageFamily, VillageFamily.family_id == Family.id)
+        .where(VillageFamily.village_id == village.id)
+        .order_by(VillageFamily.joined_at, VillageFamily.id)
+    ).all()
+    return VillageCheckOut(name=village.name, families=list(names))
+
+
+@router.post("/join", response_model=VillageOut)
+def join_village(
+    data: VillageJoinIn,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Join with an invite code. Wrong, expired, and nonexistent codes are one
+    indistinguishable 404; attempts are throttled like failed logins."""
+    village = _village_for_code(db, data.code, admin.username)
+
     # A valid code in hand means the village's existence isn't a secret from
-    # this caller, so the duplicate case can say what it is. The code stays
-    # live — it was minted for someone else.
-    if already is not None:
+    # this caller, so these refusals can say what they are. The code stays
+    # live either way.
+    if _family_in_a_village(db, admin.family_id):
         raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "Your family is already in this village"
+            status.HTTP_400_BAD_REQUEST, "Your family is already in a village"
         )
 
     db.add(VillageFamily(village_id=village.id, family_id=admin.family_id))
@@ -167,7 +217,7 @@ def join_village(
     village.invite_code_hash = None
     village.invite_expires_at = None
     db.commit()
-    throttle.clear(key)
+    throttle.clear(f"village-join:{admin.username}")
     db.refresh(village)
     return _village_out(db, village)
 

@@ -10,6 +10,7 @@ export function Setup() {
   const [displayName, setDisplayName] = useState('')
   const [familyName, setFamilyName] = useState('')
   const [username, setUsername] = useState('')
+  const [birthdate, setBirthdate] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -37,7 +38,7 @@ export function Setup() {
 
     setBusy(true)
     try {
-      await bootstrap(username, displayName, password, familyName)
+      await bootstrap(username, displayName, password, familyName, birthdate || null)
     } catch (err) {
       // 403 here means someone else initialized the install between page
       // load and submit; anything else is a validation or server problem.
@@ -81,6 +82,18 @@ export function Setup() {
           <p className="mt-1.5 text-xs leading-relaxed text-fg/40">
             Lots of families share a last name. A fun, custom name keeps yours recognizable
             when villages link families together. You can change it later.
+          </p>
+        </div>
+        <div>
+          <Field
+            label="Birthdate"
+            type="date"
+            value={birthdate}
+            onChange={(e) => setBirthdate(e.target.value)}
+            onClear={() => setBirthdate('')}
+          />
+          <p className="mt-1.5 text-xs leading-relaxed text-fg/40">
+            Optional. Used for your calorie targets; you can add it in Nutrition later.
           </p>
         </div>
         <Field

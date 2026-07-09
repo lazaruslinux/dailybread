@@ -182,3 +182,19 @@ def test_redeemed_account_founds_its_own_family(app, owner):
     assert me["family_id"] is not None
     assert me["is_admin"] is True
     assert me["is_owner"] is False
+
+def test_signup_birthdate_prefills_the_health_profile(app, owner):
+    invite = mint(owner)
+    anon = TestClient(app)
+    res = anon.post(
+        "/auth/invites/redeem",
+        json={"code": invite["code"], **REDEEM, "birthdate": "1990-06-15"},
+    )
+    assert res.status_code == 201
+    assert anon.get("/auth/me").json()["birthdate"] == "1990-06-15"
+    anon.post("/families", json={"name": "The Carls"})
+    # One birthdate per member: the Nutrition sheet opens prefilled even
+    # though no health row exists yet.
+    health = anon.get("/me/health").json()
+    assert health["profile"]["birthdate"] == "1990-06-15"
+    assert health["computed"] is None

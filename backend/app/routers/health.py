@@ -15,6 +15,7 @@ from app.schemas import (
     GoalIn,
     HealthOut,
     HealthProfileIn,
+    HealthProfileOut,
     WeightIn,
     WeightOut,
 )
@@ -56,12 +57,30 @@ def _health_out(db: Session, user_id: int) -> HealthOut:
     weights = _weights(db, user_id)
     latest = weights[0] if weights else None
     computed = compute(profile, latest)
-    return HealthOut(
+    out = HealthOut(
         profile=profile,
         latest_weight=latest,
         weights=[WeightOut.model_validate(w) for w in weights],
         computed=computed,
     )
+    # No health row yet, but a birthdate may already exist on the account
+    # (set at signup or by an admin): surface it so the sheet prefills — one
+    # birthdate per member, entered once. The card's setup-invite state keys
+    # off `computed`, which stays None, so nothing else changes.
+    if profile is None:
+        user = db.get(User, user_id)
+        if user is not None and user.birthdate is not None:
+            out.profile = HealthProfileOut(
+                birthdate=user.birthdate,
+                sex=None,
+                height_cm=None,
+                activity_level=None,
+                goal=None,
+                rate_lbs_per_week=None,
+                goal_weight_kg=None,
+                goal_body_fat_pct=None,
+            )
+    return out
 
 
 def _managed_child(db: Session, user_id: int, parent: User) -> User:
