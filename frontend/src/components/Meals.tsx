@@ -638,16 +638,20 @@ export function DinnerPlanner() {
               const cal = meal?.per_serving?.calories
               const isToday = iso === todayISO
               const dayPlan = weekPlans[iso]
+              // Compact everyone-sees-everyone: YOUR pick spelled out when you
+              // have one (else the leader's), plus how many other votes exist.
+              const myDayVote = dayPlan?.votes.find((v) => v.user.id === user?.id) ?? null
               const dayLeader = dayPlan ? leaderOf(dayPlan) : null
-              const leaderChoice = CHOICES.find((c) => c.id === dayLeader)
-              const leaderVotes = dayPlan && dayLeader
-                ? dayPlan.votes.filter((v) => v.choice === dayLeader)
-                : []
-              const summary = leaderChoice
-                ? leaderChoice.label +
-                  (leaderVotes.map((v) => v.detail || v.recipe_name).find(Boolean)
-                    ? ' · ' + leaderVotes.map((v) => v.detail || v.recipe_name).find(Boolean)
-                    : '')
+              const shownVote =
+                myDayVote ?? dayPlan?.votes.find((v) => v.choice === dayLeader) ?? null
+              const shownChoice = CHOICES.find((c) => c.id === shownVote?.choice)
+              const others = (dayPlan?.votes.length ?? 0) - (shownVote ? 1 : 0)
+              const summary = shownChoice
+                ? shownChoice.label +
+                  (shownVote?.detail || shownVote?.recipe_name
+                    ? ' · ' + (shownVote.detail || shownVote.recipe_name)
+                    : '') +
+                  (others > 0 ? ` + ${others} other vote${others > 1 ? 's' : ''}` : '')
                 : null
               const dayLabel = (
                 <span

@@ -413,6 +413,10 @@ class Recipe(Base):
     name: Mapped[str] = mapped_column(String(120))
     servings: Mapped[int] = mapped_column(Integer, default=1)
     steps: Mapped[str] = mapped_column(Text, default="")
+    # Set once when the recipe was adopted from a village share: "Copy of X
+    # shared by Alex from Team Jam on Jul 9, 8:42 PM". Display-only — the
+    # copy itself stays fully independent.
+    provenance: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow

@@ -319,20 +319,29 @@ def share(client, village_id, recipe_id):
     return res.json()
 
 
-def test_shelf_lists_shares_with_attribution(village, owner, other, child):
+def test_shelf_shows_other_families_only(village, owner, other, child):
     recipe = make_recipe(owner)
     entry = share(owner, village, recipe["id"])
     assert entry["family_name"] == "Home"
-    assert entry["is_own"] is True
 
-    # Everyone in both families can browse; the sharer's entry reads is_own
-    # only at home.
-    for client, own in ((owner, True), (child, True), (other, False)):
-        shelf = client.get("/villages/shelf").json()
-        assert len(shelf) == 1
-        assert shelf[0]["name"] == "Pancakes"
-        assert shelf[0]["is_own"] is own
-        assert "recipe_id" not in shelf[0] and "id" not in shelf[0]
+    # The sharer's family sees NOTHING here — their share lives as a chip on
+    # their own recipe card instead; the other family sees the live entry
+    # with the recipe's freshness stamp.
+    for client in (owner, child):
+        assert client.get("/villages/shelf").json() == []
+    shelf = other.get("/villages/shelf").json()
+    assert len(shelf) == 1
+    assert shelf[0]["name"] == "Pancakes"
+    assert shelf[0]["updated_at"] is not None
+    assert "recipe_id" not in shelf[0] and "id" not in shelf[0]
+
+    # The owner's recipe payload carries the share handle + village name.
+    mine = next(r for r in owner.get("/recipes").json() if r["id"] == recipe["id"])
+    assert mine["shared_to"] == [
+        {"share_id": entry["share_id"], "village_id": village, "village_name": "Bread Circle"}
+    ]
+    # And copying your own share is nonsense, refused plainly.
+    assert owner.post(f"/villages/shelf/{entry['share_id']}/copy").status_code == 400
 
 
 def test_shared_detail_carries_no_handles(village, owner, other):
@@ -446,3 +455,13 @@ def test_shelf_attribution_names_the_sharer(village, owner, other):
     assert entry["shared_by"] == "Owner"  # first name of "Owner Parent"
     listed = other.get("/villages/shelf").json()
     assert listed[0]["shared_by"] == "Owner" and listed[0]["family_name"] == "Home"
+
+
+def test_copies_carry_their_provenance(village, owner, other):
+    recipe = make_recipe(owner, name="Provenance pie")
+    entry = share(owner, village, recipe["id"])
+    copy = other.post(f"/villages/shelf/{entry['share_id']}/copy").json()
+    assert copy["provenance"].startswith("Copy of Provenance pie shared by Owner from Home on ")
+    # The original never carries one.
+    mine = next(r for r in owner.get("/recipes").json() if r["id"] == recipe["id"])
+    assert mine["provenance"] is None

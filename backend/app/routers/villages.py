@@ -378,6 +378,7 @@ def _shelf_row(
         servings=recipe.servings,
         per_serving=per_serving_macros(recipe),
         created_at=share.created_at,
+        updated_at=recipe.updated_at,
     )
 
 
@@ -398,7 +399,12 @@ def shelf(db: Session = Depends(get_db), user: User = Depends(require_family)):
         .join(Recipe, Recipe.id == VillageRecipe.recipe_id)
         .join(Village, Village.id == VillageRecipe.village_id)
         .join(Family, Family.id == VillageRecipe.family_id)
-        .where(VillageRecipe.village_id.in_(_my_village_ids(db, user.family_id)))
+        .where(
+            VillageRecipe.village_id.in_(_my_village_ids(db, user.family_id)),
+            # Your own shares live on YOUR recipe cards (a "shared" chip), not
+            # here — this list is what the other families brought.
+            VillageRecipe.family_id != user.family_id,
+        )
         .order_by(VillageRecipe.created_at.desc(), VillageRecipe.id.desc())
     ).all()
     return [
@@ -521,6 +527,11 @@ def save_a_copy(
     from app.routers.recipes import _serialize
 
     share = _get_share(db, share_id, parent.family_id)
+    if share.family_id == parent.family_id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "It's already your recipe — no copy needed",
+        )
     src = db.get(Recipe, share.recipe_id)
 
     # Copying must never fail on a name collision: suffix until free.
@@ -535,8 +546,20 @@ def save_a_copy(
         name = src.name[: 120 - len(suffix)] + suffix
         n += 1
 
+    sharer = db.get(User, share.shared_by_id) if share.shared_by_id else None
+    src_family = db.get(Family, share.family_id)
+    stamp = dt.datetime.now().strftime("%b %-d, %-I:%M %p")
+    provenance = (
+        f"Copy of {src.name} shared by "
+        f"{sharer.display_name.split()[0] if sharer else src_family.name} "
+        f"from {src_family.name} on {stamp}"
+    )[:200]
     copy = Recipe(
-        family_id=parent.family_id, name=name, servings=src.servings, steps=src.steps
+        family_id=parent.family_id,
+        name=name,
+        servings=src.servings,
+        steps=src.steps,
+        provenance=provenance,
     )
     db.add(copy)
     db.flush()

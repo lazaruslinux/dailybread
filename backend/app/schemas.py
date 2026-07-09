@@ -462,6 +462,10 @@ class RecipeOut(BaseModel):
     servings: int
     steps: str
     ingredients: list[RecipeIngredientOut]
+    # Where this recipe currently sits on village shelves (own recipes only).
+    shared_to: list["RecipeShareOut"] = []
+    # "Copy of X shared by Alex from Team Jam on ..." when adopted.
+    provenance: str | None = None
     per_serving: RecipeMacros
 
 
@@ -916,6 +920,12 @@ class ShareRecipeIn(BaseModel):
     recipe_id: int
 
 
+class RecipeShareOut(BaseModel):
+    share_id: int
+    village_id: int
+    village_name: str
+
+
 class SharedIngredientOut(BaseModel):
     """An ingredient line as village-mates see it: what and how much, with its
     macro contribution — and NO ids. A share grants reading and copying, never
@@ -955,6 +965,9 @@ class SharedRecipeOut(BaseModel):
     servings: int
     per_serving: RecipeMacros
     created_at: dt.datetime
+    # The recipe is a live pointer: the owner's edits show here. This is when
+    # they last touched it.
+    updated_at: dt.datetime
 
 
 class SharedRecipeDetailOut(SharedRecipeOut):

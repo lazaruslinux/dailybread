@@ -138,6 +138,20 @@ Where dailybread is headed, in order. Done items stay for history.
   log food), and an evening check-in for every adult. Each fires at most
   once per day per member, quietly skipping anyone it doesn't apply to.
 
+- **Village recipe sharing** — parents share recipes to their villages
+  straight from the recipe box (a Shared chip marks them; edits show live on
+  the other side with a last-updated stamp); other families browse the full
+  recipe through an id-free projection and save independent copies, each
+  stamped "Copy of X shared by <name> from <family> on <date>". A family
+  joins any number of villages but founds at most one, and each member may
+  opt their daily mood and status onto the village card (children never
+  appear).
+- **Dinner Plan** — the nightly "are we cooking at all": four standing modes
+  (Self-Serve, Homemade, Go Out, Delivery) always on for today and behind
+  every day of the week planner. Adults pick one with a short note or a
+  recipe; picks show as the voter's face with their own text, kid avatars
+  ride the leading choice, the first pick of the day nudges the other
+  adults, and Lock it in crowns dinner reversibly.
 - **Family identity** — the family's name is asked for at setup (with a nudge
   toward a fun custom name, since several families can share a last name),
   shown atop the member dashboard, and renameable by an admin anytime.
@@ -150,19 +164,7 @@ Where dailybread is headed, in order. Done items stay for history.
 
 ## Next
 
-1. **Villages** — private circles of linked families on the same install
-   (a family may join several, but founds at most one).
-   Invitation-only (one-time codes, hashed at rest, throttled), nothing
-   discoverable, and deliberately anti-social-media: no feed, no likes, no
-   comments, ever. Exactly two things cross the family wall: recipes shared
-   onto a village shelf in the Kitchen (browse, then save an independent
-   copy), and each member's mood/status, visible across families only if
-   that member opts in — minors never. Membership shipped; shelf and
-   presence follow.
-2. **Dinner voting** — once recipes are shared, family members vote on
-   dinner candidates a parent posts; the parent sees the tally and sets the
-   plan.
-3. **Fitness sync** — workouts flowing into the app and auto-completing
+1. **Fitness sync** — workouts flowing into the app and auto-completing
    matching board routines. Strava first (watch → Strava → server polling);
    direct Apple Health export as a self-hosted alternative path.
 

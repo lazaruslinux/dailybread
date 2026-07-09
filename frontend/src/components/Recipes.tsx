@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { BookOpen, ChevronDown, ChevronLeft, Pencil, Plus, ScanBarcode, Search, ShoppingBasket, Trash2, X } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronLeft, Pencil, Plus, ScanBarcode, Search, ShoppingBasket, Trash2, X , Share2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '../lib/api'
@@ -475,6 +475,9 @@ function RecipeDetail({
       <p className="mt-1 text-xs text-fg/45">
         Makes {recipe.servings} {recipe.servings === 1 ? 'serving' : 'servings'} · per serving
       </p>
+      {recipe.provenance && (
+        <p className="mb-2 text-[11px] italic leading-relaxed text-fg/40">{recipe.provenance}</p>
+      )}
 
       <div className="mt-4">
         <NutritionPanel m={m} />
@@ -498,7 +501,7 @@ function RecipeDetail({
       )}
 
       {canEdit && recipe.ingredients.length > 0 && <SendToGrocery recipe={recipe} />}
-      {canEdit && <ShareToVillage recipeId={recipe.id} />}
+      {canEdit && <ShareToVillage recipe={recipe} />}
 
       {recipe.steps.trim() && (
         <div className="mt-4">
@@ -1119,6 +1122,11 @@ export function RecipeBox() {
                       <span className="block truncate font-display text-base font-semibold">{r.name}</span>
                       {summary && <span className="block truncate text-xs text-fg/50">{summary}</span>}
                     </span>
+                    {r.shared_to.length > 0 && (
+                      <span className="flex shrink-0 items-center gap-1 rounded-full border border-accent-bright/30 bg-accent-bright/10 px-2 py-0.5 text-[10px] font-semibold text-accent-bright">
+                        <Share2 className="h-3 w-3" /> Shared
+                      </span>
+                    )}
                   </button>
                 </li>
               )

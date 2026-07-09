@@ -423,11 +423,11 @@ export function VillagesCard() {
               ))}
             </div>
             {isAdmin && (
-              <div className="mt-3 flex items-center justify-between gap-2 text-xs">
-                <span className="text-fg/45">
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
+                <span className="min-w-0 flex-1 truncate text-fg/45">
                   {v.invite_active ? `Invite active · ${expiresIn(v.invite_expires_at)}` : ''}
                 </span>
-                <span className="flex gap-3">
+                <span className="flex shrink-0 gap-3 whitespace-nowrap">
                   <button
                     type="button"
                     onClick={() => regenerate(v)}

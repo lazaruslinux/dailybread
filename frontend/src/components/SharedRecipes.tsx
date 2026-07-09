@@ -7,6 +7,16 @@ import { CollapsibleCard } from './CollapsibleCard'
 import { NutritionPanel, Sheet } from './Recipes'
 import { Button, FormError } from './ui'
 
+function compactStamp(iso: string): string {
+  const d = new Date(iso)
+  const sameYear = d.getFullYear() === new Date().getFullYear()
+  return d.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  }) + ', ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+}
+
 // The village shelf, in the Kitchen: recipes other families shared, with
 // attribution, browseable in full (steps + per-serving nutrition) and one tap
 // from becoming your own independent copy. The card only renders when the
@@ -94,11 +104,11 @@ function ShareSheet({
 
 // "Share to village" inside a recipe's own detail sheet: renders nothing when
 // the family isn't in a village; one village shares on tap, several offer chips.
-export function ShareToVillage({ recipeId }: { recipeId: number }) {
+export function ShareToVillage({ recipe }: { recipe: api.Recipe }) {
   const { user } = useAuth()
   const [villages, setVillages] = useState<api.Village[]>([])
+  const [shares, setShares] = useState<api.RecipeShare[]>(recipe.shared_to)
   const [picking, setPicking] = useState(false)
-  const [done, setDone] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -106,48 +116,80 @@ export function ShareToVillage({ recipeId }: { recipeId: number }) {
   }, [])
 
   if (user?.role !== 'parent' || villages.length === 0) return null
+  const remaining = villages.filter((v) => !shares.some((s) => s.village_id === v.id))
 
   async function shareTo(v: api.Village) {
     setError(null)
     try {
-      await api.shareRecipe(v.id, recipeId)
-      setDone(v.name)
+      const entry = await api.shareRecipe(v.id, recipe.id)
+      setShares((prev) => [
+        ...prev,
+        { share_id: entry.share_id, village_id: v.id, village_name: v.name },
+      ])
       setPicking(false)
-      window.dispatchEvent(new Event('db:villages'))
+      window.dispatchEvent(new Event('db:recipes-changed'))
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Something went wrong')
+    }
+  }
+
+  async function unshare(share: api.RecipeShare) {
+    setError(null)
+    try {
+      await api.unshareRecipe(share.share_id)
+      setShares((prev) => prev.filter((s) => s.share_id !== share.share_id))
+      window.dispatchEvent(new Event('db:recipes-changed'))
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Something went wrong')
     }
   }
 
   return (
-    <div className="mt-2.5">
-      {done ? (
-        <p className="rounded-xl border border-accent-bright/30 bg-accent-bright/10 p-2.5 text-center text-xs font-semibold text-fg/75">
-          Shared to {done}
-        </p>
-      ) : picking && villages.length > 1 ? (
-        <div className="flex flex-wrap gap-1.5">
-          {villages.map((v) => (
-            <button
-              key={v.id}
-              type="button"
-              onClick={() => shareTo(v)}
-              className="rounded-full border border-fg/10 bg-fg/5 px-2.5 py-1 text-xs font-semibold text-fg/70 transition-colors hover:bg-fg/10"
-            >
-              {v.name}
-            </button>
-          ))}
-        </div>
-      ) : (
-        <Button
-          type="button"
-          variant="ghost"
-          className="flex w-full items-center justify-center gap-1.5"
-          onClick={() => (villages.length === 1 ? shareTo(villages[0]) : setPicking(true))}
+    <div className="mt-2.5 flex flex-col gap-1.5">
+      {shares.map((sh) => (
+        <div
+          key={sh.share_id}
+          className="flex items-center justify-between rounded-xl border border-accent-bright/30 bg-accent-bright/10 px-3 py-2 text-xs font-semibold text-fg/75"
         >
-          <Share2 className="h-4 w-4" /> Share to village
-        </Button>
-      )}
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Share2 className="h-3.5 w-3.5 shrink-0 text-accent-bright" />
+            <span className="truncate">
+              Shared to {sh.village_name} — your edits show there live
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={() => unshare(sh)}
+            className="shrink-0 pl-2 font-semibold text-fg/45 hover:text-fg/70"
+          >
+            Unshare
+          </button>
+        </div>
+      ))}
+      {remaining.length > 0 &&
+        (picking && remaining.length > 1 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {remaining.map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => shareTo(v)}
+                className="rounded-full border border-fg/10 bg-fg/5 px-2.5 py-1 text-xs font-semibold text-fg/70 transition-colors hover:bg-fg/10"
+              >
+                {v.name}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <Button
+            type="button"
+            variant="ghost"
+            className="flex w-full items-center justify-center gap-1.5"
+            onClick={() => (remaining.length === 1 ? shareTo(remaining[0]) : setPicking(true))}
+          >
+            <Share2 className="h-4 w-4" /> Share to village
+          </Button>
+        ))}
       <FormError message={error} />
     </div>
   )
@@ -162,7 +204,6 @@ export function SharedRecipesBox() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState<string | null>(null)
-  const [armedUnshare, setArmedUnshare] = useState(false)
 
   const isParent = user?.role === 'parent'
 
@@ -188,7 +229,6 @@ export function SharedRecipesBox() {
   async function openDetail(shareId: number) {
     setError(null)
     setSaved(null)
-    setArmedUnshare(false)
     try {
       setDetail(await api.sharedRecipeDetail(shareId))
     } catch (err) {
@@ -210,23 +250,6 @@ export function SharedRecipesBox() {
     setBusy(false)
   }
 
-  async function unshare() {
-    if (!detail) return
-    if (!armedUnshare) {
-      setArmedUnshare(true)
-      setTimeout(() => setArmedUnshare(false), 4000)
-      return
-    }
-    setBusy(true)
-    try {
-      await api.unshareRecipe(detail.share_id)
-      setDetail(null)
-      refresh()
-    } catch (err) {
-      setError(err instanceof api.ApiError ? err.message : 'Something went wrong')
-    }
-    setBusy(false)
-  }
 
   return (
     <CollapsibleCard
@@ -266,7 +289,9 @@ export function SharedRecipesBox() {
                 <span className="block truncate text-xs text-fg/45">
                   Shared by {s.shared_by ?? s.family_name} from {s.family_name}
                   {villages.length > 1 && ` · ${s.village_name}`}
-                  {s.is_own && ' (you)'}
+                </span>
+                <span className="block truncate text-[10px] text-fg/35">
+                  Last updated {compactStamp(s.updated_at)}
                 </span>
               </span>
               {s.per_serving.calories != null && (
@@ -283,9 +308,12 @@ export function SharedRecipesBox() {
         {detail && (
           <Sheet onClose={() => setDetail(null)}>
             <h3 className="mb-0.5 text-lg font-bold">{detail.name}</h3>
-            <p className="mb-3 text-xs text-fg/45">
+            <p className="mb-0.5 text-xs text-fg/45">
               Shared by {detail.shared_by ?? detail.family_name} from {detail.family_name} ·{' '}
               {detail.servings} servings
+            </p>
+            <p className="mb-3 text-[10px] text-fg/35">
+              Last updated {compactStamp(detail.updated_at)}
             </p>
             <div className="mb-3">
               <NutritionPanel m={detail.per_serving} />
@@ -320,15 +348,6 @@ export function SharedRecipesBox() {
                   {busy ? 'Saving…' : 'Save a copy'}
                 </Button>
               )
-            )}
-            {isParent && detail.is_own && (
-              <button
-                type="button"
-                onClick={unshare}
-                className={`w-full text-center text-xs font-semibold ${armedUnshare ? 'text-danger' : 'text-fg/45'} hover:underline`}
-              >
-                {armedUnshare ? 'Tap again to take it off the shelf' : 'Unshare'}
-              </button>
             )}
           </Sheet>
         )}

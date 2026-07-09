@@ -167,6 +167,8 @@ export interface SharedRecipe {
   servings: number
   per_serving: RecipeMacros
   created_at: string
+  // The live pointer's freshness: when the owner last touched the recipe.
+  updated_at: string
 }
 
 export interface SharedIngredient {
@@ -716,13 +718,22 @@ export interface RecipeMacros {
   sugar_g: number | null
 }
 
+export interface RecipeShare {
+  share_id: number
+  village_id: number
+  village_name: string
+}
+
 export interface Recipe {
   id: number
   name: string
   servings: number
   steps: string
   ingredients: RecipeIngredient[]
-  per_serving: RecipeMacros
+  per_serving: RecipeMacros  // Village shelves this recipe currently sits on (live pointers).
+  shared_to: RecipeShare[]
+  // "Copy of X shared by Alex from Team Jam on ..." when adopted.
+  provenance: string | null
 }
 
 // An ingredient line being saved. It carries the whole food (not just an id):

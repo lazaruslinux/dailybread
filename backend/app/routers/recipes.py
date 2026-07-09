@@ -6,6 +6,7 @@ from app.db import get_db
 from app.deps import require_family, require_parent
 from app.models import GroceryItem, Food, FoodSource, Recipe, RecipeIngredient, User, base_unit_of
 from app.schemas import (
+    RecipeShareOut,
     RecipeToGroceryIn,
     FOOD_NUTRIENTS,
     RecipeIn,
@@ -167,6 +168,29 @@ def _serialize(recipe: Recipe) -> RecipeOut:
     per_serving = RecipeMacros(
         **{m: _r(totals[m] / servings) if totals[m] is not None else None for m in _MACROS}
     )
+    # Where it sits on village shelves, for the "shared" indicator. Shares are
+    # live pointers, so this is also the owner's handle for unsharing.
+    from sqlalchemy.orm import object_session
+
+    from app.models import Village
+
+    shared_to = []
+    session = object_session(recipe)
+    if session is not None and recipe.village_shares:
+        names = {
+            v.id: v.name
+            for v in session.scalars(
+                select(Village).where(
+                    Village.id.in_([sh.village_id for sh in recipe.village_shares])
+                )
+            )
+        }
+        shared_to = [
+            RecipeShareOut(
+                share_id=sh.id, village_id=sh.village_id, village_name=names.get(sh.village_id, "")
+            )
+            for sh in recipe.village_shares
+        ]
     return RecipeOut(
         id=recipe.id,
         name=recipe.name,
@@ -174,6 +198,8 @@ def _serialize(recipe: Recipe) -> RecipeOut:
         steps=recipe.steps,
         ingredients=lines,
         per_serving=per_serving,
+        shared_to=shared_to,
+        provenance=recipe.provenance,
     )
 
 
