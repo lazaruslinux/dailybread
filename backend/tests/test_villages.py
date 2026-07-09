@@ -165,16 +165,14 @@ def test_village_shows_parents_and_never_children(app, village, owner, other, ch
     assert [p["display_name"] for p in by_family["The Bs"]["parents"]] == ["Josh"]
 
 
-def test_one_village_per_family(village, owner, other):
-    # For now a family belongs to at most one village: founding a second is
-    # refused, and so is joining one.
+def test_a_family_founds_once_but_joins_many(app, village, owner, other):
+    # The founder can't create a second village...
     assert owner.post("/villages", json={"name": "Second Circle"}).status_code == 400
-    assert other.post("/villages", json={"name": "Second Circle"}).status_code == 400
+    # ...but a family that only JOINED may found its own, and belonging to
+    # several villages is fine.
+    created = other.post("/villages", json={"name": "Bs Own Circle"}).json()
+    assert created["is_creator"] is True
 
-
-def test_join_refused_when_already_in_a_village(app, village, owner, other):
-    # A third family founds its own village and invites family B — who is
-    # already in one, so the valid code earns a plain 400.
     from tests.conftest import login
 
     third_head = {"username": "cathy", "display_name": "Cathy", "password": "cathy-pass-123"}
@@ -182,11 +180,10 @@ def test_join_refused_when_already_in_a_village(app, village, owner, other):
     assert res.status_code == 201
     cathy = login(app, third_head)
     assert cathy.post("/families", json={"name": "The Cs"}).status_code == 201
-    created = _create(cathy, name="Other Circle")
-    res = other.post("/villages/join", json={"code": created["invite_code"]})
-    assert res.status_code == 400
-    # The code wasn't consumed by the refusal.
-    assert cathy.get("/villages").json()[0]["invite_active"] is True
+    fresh = other.post(f"/villages/{created['id']}/invite").json()
+    assert cathy.post("/villages/join", json={"code": fresh["invite_code"]}).status_code == 200
+    third = _create(cathy, name="Cs Circle") if False else None  # cathy founded none; she may later
+    assert len(other.get("/villages").json()) == 2  # Bread Circle + her own
 
 
 # ---- regenerating --------------------------------------------------------------
@@ -441,3 +438,11 @@ def test_presence_flag_round_trips(owner):
     assert owner.get("/auth/me").json()["village_presence"] is True
     owner.patch("/me/profile", json={"village_presence": False})
     assert owner.get("/auth/me").json()["village_presence"] is False
+
+
+def test_shelf_attribution_names_the_sharer(village, owner, other):
+    recipe = make_recipe(owner, name="Attributed stew")
+    entry = share(owner, village, recipe["id"])
+    assert entry["shared_by"] == "Owner"  # first name of "Owner Parent"
+    listed = other.get("/villages/shelf").json()
+    assert listed[0]["shared_by"] == "Owner" and listed[0]["family_name"] == "Home"

@@ -160,6 +160,8 @@ export interface SharedRecipe {
   village_name: string
   family_id: number
   family_name: string
+  // First name of the sharer: "Shared by Alex from Team Jam".
+  shared_by: string | null
   is_own: boolean
   name: string
   servings: number

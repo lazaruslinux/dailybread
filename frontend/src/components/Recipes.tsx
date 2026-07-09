@@ -6,6 +6,7 @@ import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { Button, FormError } from './ui'
 import { CollapsibleCard } from './CollapsibleCard'
+import { ShareToVillage } from './SharedRecipes'
 import { BarcodeScanner } from './BarcodeScanner'
 
 // How many base units (g for a solid, mL for a liquid) one of each unit is.
@@ -497,6 +498,7 @@ function RecipeDetail({
       )}
 
       {canEdit && recipe.ingredients.length > 0 && <SendToGrocery recipe={recipe} />}
+      {canEdit && <ShareToVillage recipeId={recipe.id} />}
 
       {recipe.steps.trim() && (
         <div className="mt-4">

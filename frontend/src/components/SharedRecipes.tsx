@@ -13,15 +13,16 @@ import { Button, FormError } from './ui'
 // family is in a village.
 
 function ShareSheet({
-  villageId,
+  villages,
   onClose,
   onShared,
 }: {
-  villageId: number
+  villages: api.Village[]
   onClose: () => void
   onShared: () => void
 }) {
   const [recipes, setRecipes] = useState<api.Recipe[] | null>(null)
+  const [villageId, setVillageId] = useState<number>(villages[0]?.id)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<number | null>(null)
 
@@ -47,6 +48,24 @@ function ShareSheet({
   return (
     <Sheet onClose={onClose}>
       <h3 className="mb-1 text-lg font-bold">Share a recipe</h3>
+      {villages.length > 1 && (
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {villages.map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              onClick={() => setVillageId(v.id)}
+              className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                villageId === v.id
+                  ? 'border-accent-bright/60 bg-accent-bright/20 text-fg'
+                  : 'border-fg/10 bg-fg/5 text-fg/70 hover:bg-fg/10'
+              }`}
+            >
+              {v.name}
+            </button>
+          ))}
+        </div>
+      )}
       <p className="mb-4 text-sm text-fg/60">
         It appears on the village shelf for other families to browse and copy. You can take it
         back off anytime; copies they saved stay theirs.
@@ -70,6 +89,67 @@ function ShareSheet({
         )}
       </div>
     </Sheet>
+  )
+}
+
+// "Share to village" inside a recipe's own detail sheet: renders nothing when
+// the family isn't in a village; one village shares on tap, several offer chips.
+export function ShareToVillage({ recipeId }: { recipeId: number }) {
+  const { user } = useAuth()
+  const [villages, setVillages] = useState<api.Village[]>([])
+  const [picking, setPicking] = useState(false)
+  const [done, setDone] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    api.listVillages().then(setVillages).catch(() => {})
+  }, [])
+
+  if (user?.role !== 'parent' || villages.length === 0) return null
+
+  async function shareTo(v: api.Village) {
+    setError(null)
+    try {
+      await api.shareRecipe(v.id, recipeId)
+      setDone(v.name)
+      setPicking(false)
+      window.dispatchEvent(new Event('db:villages'))
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Something went wrong')
+    }
+  }
+
+  return (
+    <div className="mt-2.5">
+      {done ? (
+        <p className="rounded-xl border border-accent-bright/30 bg-accent-bright/10 p-2.5 text-center text-xs font-semibold text-fg/75">
+          Shared to {done}
+        </p>
+      ) : picking && villages.length > 1 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {villages.map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              onClick={() => shareTo(v)}
+              className="rounded-full border border-fg/10 bg-fg/5 px-2.5 py-1 text-xs font-semibold text-fg/70 transition-colors hover:bg-fg/10"
+            >
+              {v.name}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <Button
+          type="button"
+          variant="ghost"
+          className="flex w-full items-center justify-center gap-1.5"
+          onClick={() => (villages.length === 1 ? shareTo(villages[0]) : setPicking(true))}
+        >
+          <Share2 className="h-4 w-4" /> Share to village
+        </Button>
+      )}
+      <FormError message={error} />
+    </div>
   )
 }
 
@@ -104,7 +184,6 @@ export function SharedRecipesBox() {
   }, [refresh])
 
   if (villages.length === 0) return null
-  const village = villages[0]
 
   async function openDetail(shareId: number) {
     setError(null)
@@ -151,9 +230,9 @@ export function SharedRecipesBox() {
 
   return (
     <CollapsibleCard
-      title="Village shelf"
-      summary={shelf.length ? `${shelf.length} shared` : village.name}
-      storageKey="village-shelf"
+      title="Village Recipes"
+      summary={shelf.length ? `${shelf.length} shared` : villages.map((v) => v.name).join(' · ')}
+      storageKey="village-recipes"
       defaultOpen
       action={
         isParent ? (
@@ -170,8 +249,8 @@ export function SharedRecipesBox() {
       <FormError message={error} />
       {shelf.length === 0 ? (
         <p className="text-sm text-fg/50">
-          Nothing on the shelf yet. Recipes shared by {village.name}'s families appear here for
-          everyone to browse and copy.
+          Nothing shared yet. Recipes shared by your village families appear here for everyone
+          to browse and copy.
         </p>
       ) : (
         <div className="flex flex-col gap-1.5">
@@ -185,7 +264,8 @@ export function SharedRecipesBox() {
               <span className="min-w-0">
                 <span className="block truncate text-sm font-semibold text-fg/90">{s.name}</span>
                 <span className="block truncate text-xs text-fg/45">
-                  from {s.family_name}
+                  Shared by {s.shared_by ?? s.family_name} from {s.family_name}
+                  {villages.length > 1 && ` · ${s.village_name}`}
                   {s.is_own && ' (you)'}
                 </span>
               </span>
@@ -204,7 +284,8 @@ export function SharedRecipesBox() {
           <Sheet onClose={() => setDetail(null)}>
             <h3 className="mb-0.5 text-lg font-bold">{detail.name}</h3>
             <p className="mb-3 text-xs text-fg/45">
-              from {detail.family_name} · {detail.servings} servings
+              Shared by {detail.shared_by ?? detail.family_name} from {detail.family_name} ·{' '}
+              {detail.servings} servings
             </p>
             <div className="mb-3">
               <NutritionPanel m={detail.per_serving} />
@@ -253,7 +334,7 @@ export function SharedRecipesBox() {
         )}
         {sharing && (
           <ShareSheet
-            villageId={village.id}
+            villages={villages}
             onClose={() => setSharing(false)}
             onShared={() => {
               setSharing(false)

@@ -272,7 +272,7 @@ function PresenceToggle({ initial, onChanged }: { initial: boolean; onChanged: (
     >
       <span className="min-w-0 pr-2">
         <span className="block text-sm font-semibold text-fg/85">
-          Share my mood & status with the village
+          Share my mood & status with your villages
         </span>
         <span className="block text-xs text-fg/45">
           Off means village families see only your name and photo
@@ -460,11 +460,13 @@ export function VillagesCard() {
 
         <FormError message={error} />
 
-        {isAdmin && villages.length === 0 && (
+        {isAdmin && (
           <div className="flex gap-2">
-            <Button type="button" variant="ghost" className="flex-1" onClick={() => setCreating(true)}>
-              <Plus className="mr-1 inline h-4 w-4" /> New village
-            </Button>
+            {!villages.some((v) => v.is_creator) && (
+              <Button type="button" variant="ghost" className="flex-1" onClick={() => setCreating(true)}>
+                <Plus className="mr-1 inline h-4 w-4" /> New village
+              </Button>
+            )}
             <Button type="button" variant="ghost" className="flex-1" onClick={() => setJoining(true)}>
               Join with a code
             </Button>

@@ -133,6 +133,10 @@ class VillageRecipe(Base):
         ForeignKey("recipes.id", ondelete="CASCADE"), index=True
     )
     family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
+    # The parent who shared it, for "Shared by Alex from Team Jam".
+    shared_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 

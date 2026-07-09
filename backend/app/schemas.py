@@ -948,6 +948,8 @@ class SharedRecipeOut(BaseModel):
     village_name: str
     family_id: int
     family_name: str
+    # First name of the parent who shared it ("Shared by Alex from Team Jam").
+    shared_by: str | None
     is_own: bool
     name: str
     servings: int

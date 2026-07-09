@@ -182,10 +182,13 @@ def create_village(
 ):
     """Found a village: the creating family is its first member, and the
     response carries the invite code — the only time it is ever shown.
-    One village per family for now."""
-    if _family_in_a_village(db, admin.family_id):
+    A family may JOIN many villages but FOUND only one."""
+    founded = db.scalar(
+        select(Village).where(Village.created_by_family_id == admin.family_id)
+    )
+    if founded is not None:
         raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "Your family is already in a village"
+            status.HTTP_400_BAD_REQUEST, "Your family already created a village"
         )
     code = mint_code()
     village = Village(
@@ -252,11 +255,16 @@ def join_village(
     village = _village_for_code(db, data.code, admin.username)
 
     # A valid code in hand means the village's existence isn't a secret from
-    # this caller, so these refusals can say what they are. The code stays
-    # live either way.
-    if _family_in_a_village(db, admin.family_id):
+    # this caller, so this refusal can say what it is. The code stays live —
+    # it was minted for someone else.
+    if db.scalar(
+        select(VillageFamily).where(
+            VillageFamily.village_id == village.id,
+            VillageFamily.family_id == admin.family_id,
+        )
+    ):
         raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "Your family is already in a village"
+            status.HTTP_400_BAD_REQUEST, "Your family is already in this village"
         )
 
     db.add(VillageFamily(village_id=village.id, family_id=admin.family_id))
@@ -348,16 +356,23 @@ def _my_village_ids(db: Session, family_id: int):
 
 
 def _shelf_row(
-    share: VillageRecipe, recipe: Recipe, village_name: str, family_name: str, viewer_family: int
+    db: Session,
+    share: VillageRecipe,
+    recipe: Recipe,
+    village_name: str,
+    family_name: str,
+    viewer_family: int,
 ) -> SharedRecipeOut:
     from app.routers.recipes import per_serving_macros
 
+    sharer = db.get(User, share.shared_by_id) if share.shared_by_id else None
     return SharedRecipeOut(
         share_id=share.id,
         village_id=share.village_id,
         village_name=village_name,
         family_id=share.family_id,
         family_name=family_name,
+        shared_by=sharer.display_name.split()[0] if sharer else None,
         is_own=share.family_id == viewer_family,
         name=recipe.name,
         servings=recipe.servings,
@@ -387,7 +402,7 @@ def shelf(db: Session = Depends(get_db), user: User = Depends(require_family)):
         .order_by(VillageRecipe.created_at.desc(), VillageRecipe.id.desc())
     ).all()
     return [
-        _shelf_row(share, recipe, vname, fname, user.family_id)
+        _shelf_row(db, share, recipe, vname, fname, user.family_id)
         for share, recipe, vname, fname in rows
     ]
 
@@ -400,7 +415,7 @@ def shared_recipe_detail(
     recipe = db.get(Recipe, share.recipe_id)
     village = db.get(Village, share.village_id)
     family = db.get(Family, share.family_id)
-    base = _shelf_row(share, recipe, village.name, family.name, user.family_id)
+    base = _shelf_row(db, share, recipe, village.name, family.name, user.family_id)
     lines = [
         SharedIngredientOut(
             name=ing.food.name,
@@ -447,13 +462,16 @@ def share_recipe(
     ):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Already on the shelf")
     share = VillageRecipe(
-        village_id=village.id, recipe_id=recipe.id, family_id=parent.family_id
+        village_id=village.id,
+        recipe_id=recipe.id,
+        family_id=parent.family_id,
+        shared_by_id=parent.id,
     )
     db.add(share)
     db.commit()
     db.refresh(share)
     family = db.get(Family, parent.family_id)
-    return _shelf_row(share, recipe, village.name, family.name, parent.family_id)
+    return _shelf_row(db, share, recipe, village.name, family.name, parent.family_id)
 
 
 @router.delete("/shelf/{share_id}", status_code=status.HTTP_204_NO_CONTENT)
