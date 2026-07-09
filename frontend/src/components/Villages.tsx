@@ -2,6 +2,7 @@ import { AnimatePresence } from 'framer-motion'
 import { Copy, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
+import { MOODS } from '../lib/moods'
 import {
   ApiError,
   avatarUrl,
@@ -12,6 +13,7 @@ import {
   leaveVillage,
   listVillages,
   regenerateInvite,
+  updateMyProfile,
   type Village,
 } from '../lib/api'
 import { CollapsibleCard } from './CollapsibleCard'
@@ -244,6 +246,49 @@ function JoinSheet({ onClose, onJoined }: { onClose: () => void; onJoined: () =>
   )
 }
 
+function PresenceToggle({ initial, onChanged }: { initial: boolean; onChanged: () => void }) {
+  const [on, setOn] = useState(initial)
+  const [busy, setBusy] = useState(false)
+  async function flip() {
+    const next = !on
+    setOn(next)
+    setBusy(true)
+    try {
+      await updateMyProfile({ village_presence: next })
+      onChanged()
+    } catch {
+      setOn(!next) // roll the switch back; the server didn't take it
+    }
+    setBusy(false)
+  }
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      disabled={busy}
+      onClick={flip}
+      className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left"
+    >
+      <span className="min-w-0 pr-2">
+        <span className="block text-sm font-semibold text-fg/85">
+          Share my mood & status with the village
+        </span>
+        <span className="block text-xs text-fg/45">
+          Off means village families see only your name and photo
+        </span>
+      </span>
+      <span
+        className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${on ? 'bg-accent' : 'bg-fg/15'}`}
+      >
+        <span
+          className={`absolute top-0.5 h-5 w-5 rounded-full bg-fg transition-all ${on ? 'left-[1.125rem]' : 'left-0.5'}`}
+        />
+      </span>
+    </button>
+  )
+}
+
 export function VillagesCard() {
   const { user } = useAuth()
   const [villages, setVillages] = useState<Village[]>([])
@@ -319,6 +364,10 @@ export function VillagesCard() {
           </p>
         )}
 
+        {villages.length > 0 && user && !user.is_minor && (
+          <PresenceToggle initial={user.village_presence} onChanged={refresh} />
+        )}
+
         {villages.map((v) => (
           <div key={v.id} className="rounded-xl border border-fg/10 bg-fg/5 p-4">
             <div className="mb-2 flex items-center gap-2">
@@ -332,28 +381,43 @@ export function VillagesCard() {
                     {f.name}
                   </p>
                   <div className="flex flex-wrap gap-3">
-                    {f.parents.map((p) => (
-                      <span key={p.id} className="flex w-12 flex-col items-center gap-1">
-                        {p.avatar_updated_at ? (
-                          <img
-                            src={avatarUrl(p) ?? undefined}
-                            alt=""
-                            className="h-9 w-9 rounded-full border border-fg/10 object-cover"
-                          />
-                        ) : (
-                          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-accent-bright/60 to-accent-strong/60 text-xs font-bold text-fg">
-                            {p.display_name
-                              .split(/\s+/)
-                              .slice(0, 2)
-                              .map((w) => w[0]?.toUpperCase() ?? '')
-                              .join('')}
+                    {f.parents.map((p) => {
+                      const MoodIcon = p.mood ? MOODS[p.mood.level].Icon : null
+                      return (
+                        <span key={p.id} className="flex w-14 flex-col items-center gap-1">
+                          <span className="relative">
+                            {p.avatar_updated_at ? (
+                              <img
+                                src={avatarUrl(p) ?? undefined}
+                                alt=""
+                                className="h-9 w-9 rounded-full border border-fg/10 object-cover"
+                              />
+                            ) : (
+                              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-accent-bright/60 to-accent-strong/60 text-xs font-bold text-fg">
+                                {p.display_name
+                                  .split(/\s+/)
+                                  .slice(0, 2)
+                                  .map((w) => w[0]?.toUpperCase() ?? '')
+                                  .join('')}
+                              </span>
+                            )}
+                            {MoodIcon && p.mood && (
+                              <span className="absolute -bottom-0.5 -right-1 rounded-full border border-fg/15 bg-[var(--bg-base,#111)] p-0.5">
+                                <MoodIcon className={`h-3 w-3 ${MOODS[p.mood.level].tint}`} />
+                              </span>
+                            )}
                           </span>
-                        )}
-                        <span className="w-full truncate text-center text-[10px] text-fg/55">
-                          {p.display_name.split(/\s+/)[0]}
+                          <span className="w-full truncate text-center text-[10px] text-fg/55">
+                            {p.display_name.split(/\s+/)[0]}
+                          </span>
+                          {p.status && (
+                            <span className="w-full truncate text-center text-[9px] italic text-fg/40">
+                              {p.status}
+                            </span>
+                          )}
                         </span>
-                      </span>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               ))}

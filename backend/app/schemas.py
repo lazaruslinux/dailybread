@@ -54,6 +54,8 @@ class UserOut(BaseModel):
     # None until they pick one; deliberately absent from hand-built member
     # payloads (other members don't need your theme).
     theme: Literal["light", "dark"] | None = None
+    # Whether this member shares mood/status onto the village card.
+    village_presence: bool = False
 
     # Let Pydantic read attributes off a SQLAlchemy User object directly.
     model_config = {"from_attributes": True}
@@ -865,6 +867,39 @@ class ProfileUpdateIn(BaseModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=100)
     bio: str | None = Field(default=None, max_length=500)
     theme: Literal["light", "dark"] | None = None
+    # Opt in to showing today's mood and status on the village card. Off by
+    # default; minors are excluded server-side regardless.
+    village_presence: bool | None = None
+
+
+# ---- dinner voting -------------------------------------------------------------------
+
+
+class DinnerOptionIn(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    recipe_id: int | None = None
+
+
+class DinnerBallotIn(BaseModel):
+    """A parent opening (or replacing) a night's ballot. 2-5 candidates;
+    replacing clears any votes already cast."""
+
+    options: list[DinnerOptionIn] = Field(min_length=2, max_length=5)
+
+
+class DinnerOptionOut(BaseModel):
+    id: int
+    title: str
+    recipe_id: int | None
+    votes: int
+    voters: list[str]  # first names, in voting order
+    my_vote: bool
+
+
+class DinnerBallotOut(BaseModel):
+    date_for: dt.date
+    options: list[DinnerOptionOut]
+    total_votes: int
 
 
 # ---- the village recipe shelf --------------------------------------------------------
@@ -1000,14 +1035,16 @@ class VillageJoinIn(BaseModel):
 
 
 class VillageParentOut(BaseModel):
-    """A parent as village-mates see them: name, id, and photo — the faces on
-    the village card. The avatar image is the ONE thing served across the
-    family wall (see users.get_avatar); profiles, moods, and boards stay
-    sealed, and children never appear at all."""
+    """A parent as village-mates see them: name, id, photo — and, ONLY when
+    that parent opted in (village_presence), today's mood and status. The
+    avatar image is the one other thing served across the family wall;
+    profiles and boards stay sealed, and children never appear at all."""
 
     id: int
     display_name: str
     avatar_updated_at: dt.datetime | None = None
+    mood: MoodOut | None = None
+    status: str = ""
 
 
 class VillageFamilyOut(BaseModel):

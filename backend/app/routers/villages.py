@@ -40,6 +40,7 @@ from app.models import (
 )
 from app.schemas import (
     FOOD_NUTRIENTS,
+    MoodOut,
     RecipeOut,
     SharedIngredientOut,
     SharedRecipeDetailOut,
@@ -97,19 +98,41 @@ def _village_out(db: Session, village: Village, viewer_family_id: int) -> Villag
     ).all()
     # The faces of the village: every member family's PARENTS. Children are
     # never shown across the family wall, whatever their birthdate says.
+    # A parent who opted in (village_presence) also shares today's mood
+    # (unless hidden — hidden reads exactly like unset) and daily status.
+    from app.models import Mood
+    from app.routers.users import _daily_status
+
     parents_by_family: dict[int, list[VillageParentOut]] = {}
     family_ids = [family.id for _, family in rows]
     if family_ids:
-        for user in db.scalars(
+        parents = db.scalars(
             select(User)
             .where(User.family_id.in_(family_ids), User.role == Role.parent)
             .order_by(User.created_at, User.id)
-        ):
+        ).all()
+        today = dt.date.today()
+        sharer_ids = [u.id for u in parents if u.village_presence]
+        moods = {
+            m.user_id: m
+            for m in db.scalars(
+                select(Mood).where(Mood.date_for == today, Mood.user_id.in_(sharer_ids))
+            )
+        } if sharer_ids else {}
+        for user in parents:
+            mood = moods.get(user.id)
+            sharing = user.village_presence
             parents_by_family.setdefault(user.family_id, []).append(
                 VillageParentOut(
                     id=user.id,
                     display_name=user.display_name,
                     avatar_updated_at=user.avatar_updated_at,
+                    mood=(
+                        MoodOut.model_validate(mood)
+                        if sharing and mood is not None and not mood.hidden
+                        else None
+                    ),
+                    status=_daily_status(user, today) if sharing else "",
                 )
             )
     active = _invite_active(village, _utcnow())

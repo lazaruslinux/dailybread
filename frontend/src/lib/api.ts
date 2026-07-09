@@ -81,6 +81,8 @@ export interface User {
   is_minor: boolean
   // Stored color scheme; null until the member picks one on some device.
   theme: 'light' | 'dark' | null
+  // Sharing mood/status onto the village card?
+  village_presence: boolean
 }
 
 export interface SetupState {
@@ -746,7 +748,7 @@ export const getFamily = () => request<FamilyMember[]>(`/users?date=${localDate(
 export const getProfile = (id: number) =>
   request<Profile>(`/users/${id}/profile?date=${localDate()}`)
 
-export const updateMyProfile = (payload: { display_name?: string; bio?: string; theme?: 'light' | 'dark' }) =>
+export const updateMyProfile = (payload: { display_name?: string; bio?: string; theme?: 'light' | 'dark'; village_presence?: boolean }) =>
   request<Profile>('/me/profile', { method: 'PATCH', body: JSON.stringify(payload) })
 
 // The image URL for a member's avatar, or null when they have no photo. The
@@ -1063,6 +1065,10 @@ export interface VillageParent {
   // The photo handle: village parents' avatar images are served across the
   // family wall (nothing else is).
   avatar_updated_at: string | null
+  // Present only when that parent opted in (village_presence) and the mood
+  // isn't hidden; hidden reads exactly like unset.
+  mood: Mood | null
+  status: string
 }
 
 export interface VillageFamily {

@@ -144,6 +144,8 @@ def update_my_profile(
         me.display_name = data.display_name
     if data.theme is not None:
         me.theme = data.theme
+    if data.village_presence is not None:
+        me.village_presence = data.village_presence
     if data.bio is not None:
         # Setting the status stamps today, so it's shown as today's and clears
         # overnight; clearing it (empty text) still just reads as no status.

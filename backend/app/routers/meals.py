@@ -1,14 +1,20 @@
 import datetime as dt
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.db import get_db
 from app.deps import require_family, require_parent
-from app.models import Meal, MealSlot, Recipe, RecipeIngredient, User
+from app.models import DinnerOption, DinnerVote, Meal, MealSlot, Recipe, RecipeIngredient, User
 from app.routers.recipes import per_serving_macros
-from app.schemas import MealIn, MealOut
+from app.schemas import (
+    DinnerBallotIn,
+    DinnerBallotOut,
+    DinnerOptionOut,
+    MealIn,
+    MealOut,
+)
 
 router = APIRouter(prefix="/meals", tags=["meals"])
 
@@ -111,3 +117,140 @@ def clear_meal(
     if meal is not None:
         db.delete(meal)
         db.commit()
+
+
+# ---- dinner voting ---------------------------------------------------------------
+# A parent posts a few candidates for a night; every family member (kids
+# included — deliberately their one Kitchen write) votes once, changeable;
+# the parent reads the tally and crowns the winner via the normal PUT /meals.
+
+
+def _ballot_out(db: Session, family_id: int, date_for: dt.date, viewer: User) -> DinnerBallotOut:
+    options = db.scalars(
+        select(DinnerOption)
+        .where(DinnerOption.family_id == family_id, DinnerOption.date_for == date_for)
+        .order_by(DinnerOption.position, DinnerOption.id)
+    ).all()
+    votes = db.execute(
+        select(DinnerVote, User.display_name)
+        .join(User, User.id == DinnerVote.user_id)
+        .where(DinnerVote.family_id == family_id, DinnerVote.date_for == date_for)
+        .order_by(DinnerVote.created_at, DinnerVote.id)
+    ).all()
+    by_option: dict[int, list[tuple[int, str]]] = {}
+    for vote, name in votes:
+        by_option.setdefault(vote.option_id, []).append((vote.user_id, name.split()[0]))
+    return DinnerBallotOut(
+        date_for=date_for,
+        options=[
+            DinnerOptionOut(
+                id=o.id,
+                title=o.title,
+                recipe_id=o.recipe_id,
+                votes=len(by_option.get(o.id, [])),
+                voters=[n for _, n in by_option.get(o.id, [])],
+                my_vote=any(uid == viewer.id for uid, _ in by_option.get(o.id, [])),
+            )
+            for o in options
+        ],
+        total_votes=len(votes),
+    )
+
+
+@router.get("/vote", response_model=DinnerBallotOut)
+def get_ballot(
+    date_for: dt.date = Query(alias="date"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_family),
+):
+    return _ballot_out(db, user.family_id, date_for, user)
+
+
+@router.put("/vote", response_model=DinnerBallotOut)
+def open_ballot(
+    data: DinnerBallotIn,
+    date_for: dt.date = Query(alias="date"),
+    db: Session = Depends(get_db),
+    parent: User = Depends(require_parent),
+):
+    """Open (or replace) the night's ballot. Replacing clears cast votes —
+    the choices changed, so the votes no longer mean anything."""
+    from app.routers.recipes import _get_recipe
+
+    db.execute(
+        delete(DinnerVote).where(
+            DinnerVote.family_id == parent.family_id, DinnerVote.date_for == date_for
+        )
+    )
+    db.execute(
+        delete(DinnerOption).where(
+            DinnerOption.family_id == parent.family_id, DinnerOption.date_for == date_for
+        )
+    )
+    for i, opt in enumerate(data.options):
+        recipe_id = None
+        if opt.recipe_id is not None:
+            recipe_id = _get_recipe(db, opt.recipe_id, parent.family_id).id
+        db.add(
+            DinnerOption(
+                family_id=parent.family_id,
+                date_for=date_for,
+                title=opt.title.strip(),
+                recipe_id=recipe_id,
+                position=i,
+            )
+        )
+    db.commit()
+    return _ballot_out(db, parent.family_id, date_for, parent)
+
+
+@router.delete("/vote", status_code=status.HTTP_204_NO_CONTENT)
+def close_ballot(
+    date_for: dt.date = Query(alias="date"),
+    db: Session = Depends(get_db),
+    parent: User = Depends(require_parent),
+):
+    db.execute(
+        delete(DinnerVote).where(
+            DinnerVote.family_id == parent.family_id, DinnerVote.date_for == date_for
+        )
+    )
+    db.execute(
+        delete(DinnerOption).where(
+            DinnerOption.family_id == parent.family_id, DinnerOption.date_for == date_for
+        )
+    )
+    db.commit()
+
+
+@router.post("/vote/{option_id}", response_model=DinnerBallotOut)
+def cast_vote(
+    option_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_family),
+):
+    """One vote per member per night, changeable until the ballot closes.
+    Every member votes — this is the single Kitchen write a child has."""
+    option = db.get(DinnerOption, option_id)
+    if option is None or option.family_id != user.family_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such option")
+    existing = db.scalar(
+        select(DinnerVote).where(
+            DinnerVote.family_id == user.family_id,
+            DinnerVote.date_for == option.date_for,
+            DinnerVote.user_id == user.id,
+        )
+    )
+    if existing is None:
+        db.add(
+            DinnerVote(
+                family_id=user.family_id,
+                date_for=option.date_for,
+                user_id=user.id,
+                option_id=option.id,
+            )
+        )
+    else:
+        existing.option_id = option.id
+    db.commit()
+    return _ballot_out(db, user.family_id, option.date_for, user)

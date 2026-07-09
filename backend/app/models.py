@@ -529,6 +529,44 @@ class Meal(Base):
     recipe: Mapped["Recipe | None"] = relationship()
 
 
+class DinnerOption(Base):
+    """One candidate on a night's dinner ballot: a saved recipe or a typed
+    title. A parent posts a few; the family votes; the parent crowns one via
+    the normal meal-planner endpoint."""
+
+    __tablename__ = "dinner_options"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
+    date_for: Mapped[dt.date] = mapped_column(Date, index=True)
+    title: Mapped[str] = mapped_column(String(120))
+    recipe_id: Mapped[int | None] = mapped_column(
+        ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True
+    )
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class DinnerVote(Base):
+    """One member's vote for one night. The unique constraint is the rule:
+    one vote per member per night, changeable until the parent closes it.
+    The one Kitchen write a child account gets."""
+
+    __tablename__ = "dinner_votes"
+    __table_args__ = (
+        UniqueConstraint("family_id", "date_for", "user_id", name="uq_dinner_vote_night"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
+    date_for: Mapped[dt.date] = mapped_column(Date, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    option_id: Mapped[int] = mapped_column(
+        ForeignKey("dinner_options.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class Food(Base):
     """A food with per-100g nutrition, used as a recipe ingredient. Rows are
     either cached from USDA/OFF on first use (family_id NULL = shared across the

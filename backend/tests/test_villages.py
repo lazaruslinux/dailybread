@@ -399,3 +399,45 @@ def test_shelf_is_village_scoped(owner, other):
     assert other.get("/villages/shelf").json() == []
     assert other.get(f"/villages/shelf/{entry['share_id']}").status_code == 404
     assert other.post(f"/villages/shelf/{entry['share_id']}/copy").status_code == 404
+
+
+# ---- presence: opt-in mood/status on the village card -----------------------------
+
+
+def test_presence_is_opt_in_and_hidden_stays_hidden(village, owner, other):
+    from tests.conftest import user_id
+
+    today = dt.date.today().isoformat()
+    owner.put("/me/mood", json={"date_for": today, "level": "sunny", "hidden": False})
+    owner.patch("/me/profile", json={"bio": "Baking day"})
+
+    def owner_row(client):
+        listed = client.get("/villages").json()[0]
+        home = next(f for f in listed["families"] if f["name"] == "Home")
+        return next(p for p in home["parents"] if p["id"] == user_id(owner))
+
+    # Not opted in: nothing crosses, even with a visible mood set.
+    row = owner_row(other)
+    assert row["mood"] is None and row["status"] == ""
+
+    assert owner.patch("/me/profile", json={"village_presence": True}).status_code == 200
+    row = owner_row(other)
+    assert row["mood"] == {"level": "sunny", "hidden": True} or row["mood"] == {
+        "level": "sunny",
+        "hidden": False,
+    }
+    assert row["status"] == "Baking day"
+
+    # A hidden mood reads exactly like no mood, opt-in or not.
+    owner.put("/me/mood", json={"date_for": today, "level": "stormy", "hidden": True})
+    row = owner_row(other)
+    assert row["mood"] is None
+    assert row["status"] == "Baking day"
+
+
+def test_presence_flag_round_trips(owner):
+    assert owner.get("/auth/me").json()["village_presence"] is False
+    owner.patch("/me/profile", json={"village_presence": True})
+    assert owner.get("/auth/me").json()["village_presence"] is True
+    owner.patch("/me/profile", json={"village_presence": False})
+    assert owner.get("/auth/me").json()["village_presence"] is False
