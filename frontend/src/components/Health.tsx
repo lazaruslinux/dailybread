@@ -198,7 +198,7 @@ export function HealthSheet({
         </p>
         <p className="-mt-2 text-xs leading-relaxed text-fg/50">
           All optional, and stored privately: no one else can see your weight, health, or food
-          log. The only exception is that a parent can see and manage a child's.
+          log, not even an admin. Child accounts don't have a Nutrition area at all.
         </p>
 
         <div className="w-44">

@@ -16,14 +16,13 @@ same 404, and guesses are throttled like failed logins, so probing reveals
 nothing about which villages exist.
 """
 import datetime as dt
-import hashlib
-import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app import throttle
+from app.invitecodes import hash_code, mint_code, normalize, pretty, still_valid
 from app.db import get_db
 from app.deps import require_admin, require_family
 from app.models import Family, User, Village, VillageFamily, VillageRecipe
@@ -38,8 +37,6 @@ from app.schemas import (
 
 router = APIRouter(prefix="/villages", tags=["villages"])
 
-_ALPHABET = "ABCDEFGHJKMNPQRSTVWXYZ23456789"
-_CODE_LEN = 8
 INVITE_TTL = dt.timedelta(hours=48)
 
 
@@ -47,32 +44,10 @@ def _utcnow() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 
 
-def _mint_code() -> str:
-    return "".join(secrets.choice(_ALPHABET) for _ in range(_CODE_LEN))
-
-
-def _pretty(code: str) -> str:
-    """ABCD-EFGH — the dash is display sugar, stripped again on entry."""
-    return f"{code[:4]}-{code[4:]}"
-
-
-def _normalize(code: str) -> str:
-    return code.replace("-", "").replace(" ", "").strip().upper()
-
-
-def _hash_code(code: str) -> str:
-    return hashlib.sha256(code.encode()).hexdigest()
-
-
 def _invite_active(village: Village, now: dt.datetime) -> bool:
-    if village.invite_code_hash is None or village.invite_expires_at is None:
-        return False
-    expires = village.invite_expires_at
-    # SQLite (tests) hands back naive datetimes for timezone-aware columns;
-    # Postgres hands back aware ones. Compare in UTC either way.
-    if expires.tzinfo is None:
-        expires = expires.replace(tzinfo=dt.timezone.utc)
-    return expires > now
+    return village.invite_code_hash is not None and still_valid(
+        village.invite_expires_at, now
+    )
 
 
 def _member_village(db: Session, village_id: int, family_id: int) -> Village:
@@ -134,10 +109,10 @@ def create_village(
 ):
     """Found a village: the creating family is its first member, and the
     response carries the invite code — the only time it is ever shown."""
-    code = _mint_code()
+    code = mint_code()
     village = Village(
         name=data.name.strip(),
-        invite_code_hash=_hash_code(code),
+        invite_code_hash=hash_code(code),
         invite_expires_at=_utcnow() + INVITE_TTL,
     )
     db.add(village)
@@ -146,7 +121,7 @@ def create_village(
     db.commit()
     db.refresh(village)
     base = _village_out(db, village)
-    return VillageCreatedOut(**base.model_dump(), invite_code=_pretty(code))
+    return VillageCreatedOut(**base.model_dump(), invite_code=pretty(code))
 
 
 @router.post("/join", response_model=VillageOut)
@@ -163,9 +138,9 @@ def join_village(
             status.HTTP_429_TOO_MANY_REQUESTS, "Too many attempts. Try again later."
         )
 
-    code = _normalize(data.code)
+    code = normalize(data.code)
     village = (
-        db.scalar(select(Village).where(Village.invite_code_hash == _hash_code(code)))
+        db.scalar(select(Village).where(Village.invite_code_hash == hash_code(code)))
         if code
         else None
     )
@@ -206,12 +181,12 @@ def regenerate_invite(
     """Mint a fresh invite code (killing any previous one). Codes can never be
     re-shown — losing one costs a regenerate, never a lookup."""
     village = _member_village(db, village_id, admin.family_id)
-    code = _mint_code()
-    village.invite_code_hash = _hash_code(code)
+    code = mint_code()
+    village.invite_code_hash = hash_code(code)
     village.invite_expires_at = _utcnow() + INVITE_TTL
     db.commit()
     return VillageInviteOut(
-        invite_code=_pretty(code), invite_expires_at=village.invite_expires_at
+        invite_code=pretty(code), invite_expires_at=village.invite_expires_at
     )
 
 

@@ -857,6 +857,36 @@ class ProfileUpdateIn(BaseModel):
     bio: str | None = Field(default=None, max_length=500)
 
 
+# ---- signup invites --------------------------------------------------------------
+
+
+class SignupInviteIn(BaseModel):
+    username: str = Field(min_length=3, max_length=50)
+    display_name: str = Field(min_length=1, max_length=100)
+
+
+class SignupInviteOut(BaseModel):
+    """The minted invite. `code` appears here and nowhere else, ever."""
+
+    code: str
+    username: str
+    display_name: str
+    expires_at: dt.datetime
+
+
+class InviteCodeIn(BaseModel):
+    code: str = Field(min_length=1, max_length=20)
+
+
+class InviteCheckOut(BaseModel):
+    username: str
+    display_name: str
+
+
+class InviteRedeemIn(InviteCodeIn):
+    password: str = Field(min_length=8, max_length=128)
+
+
 # ---- villages -------------------------------------------------------------------
 
 

@@ -84,6 +84,28 @@ class VillageFamily(Base):
     joined_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class SignupInvite(Base):
+    """A pending invitation onto the install itself. The server owner mints
+    one with the invitee's name and username; the invitee redeems the code on
+    the sign-in screen, chooses their own password, and lands in the
+    create-your-family wizard — invites found NEW households, they never join
+    an existing family. Codes live 15 minutes (they're redeemable by anonymous
+    visitors, unlike village codes) and only their hash is stored."""
+
+    __tablename__ = "signup_invites"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # Pre-claimed: one pending invite per username; re-minting replaces it.
+    username: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(100))
+    invited_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class VillageRecipe(Base):
     """One recipe shared onto one village's shelf. The row is a pointer, not a
     copy: the owning family's recipe stays theirs, and "save a copy" (not this

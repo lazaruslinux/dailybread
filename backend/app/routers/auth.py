@@ -1,18 +1,27 @@
+import datetime as dt
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_db
 from app.deps import get_current_user, require_admin
-from app.models import Family, Role, User
+from app.invitecodes import hash_code, mint_code, normalize, pretty, still_valid
+from app.models import Family, Role, SignupInvite, User
 from app.schemas import (
     BootstrapIn,
     ChangePasswordIn,
     CreateUserIn,
+    InviteCheckOut,
+    InviteCodeIn,
+    InviteRedeemIn,
     LoginIn,
     ResetPasswordOut,
     SetupOut,
+    SignupInviteIn,
+    SignupInviteOut,
     UpdateUserIn,
     UserOut,
 )
@@ -20,6 +29,17 @@ from app.security import generate_password, hash_password, set_session_cookie, v
 from app import throttle
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Signup invites are redeemable by ANONYMOUS visitors on the sign-in screen,
+# so they live only 15 minutes (village codes, by contrast, need a signed-in
+# admin and get 48h). All anonymous code attempts share ONE throttle bucket —
+# per-code keys would throttle nothing, since every wrong guess is a fresh
+# key — with a higher cap so a prankster can't cheaply starve a real invitee.
+# Residual risk: a deliberate flood locks code entry for 15 minutes; on a
+# family server that's acceptable, and the owner just re-mints afterward.
+SIGNUP_INVITE_TTL = dt.timedelta(minutes=15)
+SIGNUP_THROTTLE_KEY = "signup-invite"
+SIGNUP_MAX_FAILURES = 30
 
 
 @router.get("/setup", response_model=SetupOut)
@@ -108,6 +128,128 @@ def change_password(
     set_session_cookie(response, str(user.id), user.token_version)
     db.commit()
     db.refresh(user)
+    return user
+
+
+# ---- signup invites --------------------------------------------------------------
+
+
+def _live_invite(db: Session, raw: str) -> SignupInvite | None:
+    code = normalize(raw)
+    if not code:
+        return None
+    invite = db.scalar(select(SignupInvite).where(SignupInvite.code_hash == hash_code(code)))
+    if invite is None or not still_valid(invite.expires_at, dt.datetime.now(dt.timezone.utc)):
+        return None
+    return invite
+
+
+def _gate_anonymous_code_attempts() -> None:
+    if throttle.too_many_failures(SIGNUP_THROTTLE_KEY, limit=SIGNUP_MAX_FAILURES):
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS, "Too many attempts. Try again later."
+        )
+
+
+@router.post("/invites", response_model=SignupInviteOut, status_code=status.HTTP_201_CREATED)
+def mint_signup_invite(
+    data: SignupInviteIn,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Server-admin only: invite someone onto this dailybread. The response
+    carries the code exactly once; the invitee redeems it on the sign-in
+    screen, picks their own password, and founds their OWN family — invites
+    never join an existing one."""
+    if not admin.is_owner:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Only the server admin can invite to dailybread"
+        )
+
+    now = dt.datetime.now(dt.timezone.utc)
+    # Hygiene: expired invites are dead weight and would squat usernames.
+    db.execute(delete(SignupInvite).where(SignupInvite.expires_at < now))
+
+    if db.scalar(select(User).where(User.username == data.username)):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Username already taken")
+    # Re-minting for the same person replaces their pending invite.
+    db.execute(delete(SignupInvite).where(SignupInvite.username == data.username))
+
+    code = mint_code()
+    invite = SignupInvite(
+        code_hash=hash_code(code),
+        username=data.username,
+        display_name=data.display_name,
+        invited_by_id=admin.id,
+        expires_at=now + SIGNUP_INVITE_TTL,
+    )
+    db.add(invite)
+    db.commit()
+    return SignupInviteOut(
+        code=pretty(code),
+        username=invite.username,
+        display_name=invite.display_name,
+        expires_at=invite.expires_at,
+    )
+
+
+@router.post("/invites/check", response_model=InviteCheckOut)
+def check_signup_invite(data: InviteCodeIn, db: Session = Depends(get_db)):
+    """Anonymous: does this code open a door? Drives the "Welcome, Bob" step
+    without consuming the code. Wrong, expired, and never-existed codes are
+    one indistinguishable 404."""
+    _gate_anonymous_code_attempts()
+    invite = _live_invite(db, data.code)
+    if invite is None:
+        throttle.record_failure(SIGNUP_THROTTLE_KEY)
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "That code isn't valid")
+    return InviteCheckOut(username=invite.username, display_name=invite.display_name)
+
+
+@router.post("/invites/redeem", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+def redeem_signup_invite(
+    data: InviteRedeemIn, response: Response, db: Session = Depends(get_db)
+):
+    """Anonymous: trade a live invite code + a chosen password for a signed-in
+    account. The account starts family-less; the create-your-family wizard
+    takes it from there."""
+    _gate_anonymous_code_attempts()
+    invite = _live_invite(db, data.code)
+    if invite is None:
+        throttle.record_failure(SIGNUP_THROTTLE_KEY)
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "That code isn't valid")
+
+    # The username was free at mint time, but an admin may have legitimately
+    # taken it since. The invite is dead either way.
+    if db.scalar(select(User).where(User.username == invite.username)):
+        db.delete(invite)
+        db.commit()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "That username was taken in the meantime. Ask for a new invite.",
+        )
+
+    user = User(
+        family_id=None,  # the create-your-family wizard fills this in
+        username=invite.username,
+        display_name=invite.display_name,
+        password_hash=hash_password(data.password),
+        role=Role.parent,
+        is_admin=False,
+        is_owner=False,
+    )
+    db.add(user)
+    db.delete(invite)  # single-use: the redemption consumes it
+    try:
+        db.commit()
+    except IntegrityError:  # a truly concurrent taker of the same username
+        db.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "That username was taken in the meantime. Ask for a new invite.",
+        )
+    db.refresh(user)
+    set_session_cookie(response, str(user.id), user.token_version)
     return user
 
 

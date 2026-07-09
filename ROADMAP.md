@@ -114,10 +114,10 @@ Where dailybread is headed, in order. Done items stay for history.
   relays with end-to-end encrypted payloads, so the server stays
   private-network-only with no inbound exposure.
 
-- **Kid accounts** — a birthdate on each member marks minors (unlocking
-  automatically at 18). Minors see a simplified app: no nutrition, health,
-  or diary (hidden in the UI and refused by the server), and a board limited
-  to their own cards plus read-only family-wide ones. A minor's check-off
+- **Kid accounts** — the Child role is the switch (birthdate is optional,
+  informational only). Child accounts see a simplified app: no nutrition,
+  health, or diary (hidden in the UI and refused by the server), and a board
+  limited to their own cards plus read-only family-wide ones. A minor's check-off
   waits as pending until a parent approves it — parents get a push and a
   "Waiting on you" section on Home; the kid can withdraw a pending tick but
   can't undo an approved one. A minor's mood, status, and journal are
@@ -133,6 +133,16 @@ Where dailybread is headed, in order. Done items stay for history.
   what's next), a mid-day check with calories left (only for members who
   log food), and an evening check-in for every adult. Each fires at most
   once per day per member, quietly skipping anyone it doesn't apply to.
+
+- **Family identity** — the family's name is asked for at setup (with a nudge
+  toward a fun custom name, since several families can share a last name),
+  shown atop the member dashboard, and renameable by an admin anytime.
+- **Invite onboarding** — the server admin invites a new household by minting
+  a one-time code (15-minute expiry, stored hashed, attempts throttled)
+  instead of typing a temporary password. The invitee taps "Enter invite
+  code" on the sign-in screen, is greeted by name, chooses their own
+  password, gets a four-step tour, and founds their own family — invites
+  never join an existing one. Pre-sign-in screens default to the dark theme.
 
 ## Next
 
@@ -159,6 +169,8 @@ Where dailybread is headed, in order. Done items stay for history.
 
 ## Parked
 
+- **Adult member role** — parent permissions without admin, for grown members
+  who aren't heads of household. Today the roles are Parent and Child only.
 - **Dinner voting** — a parent posts a few candidate meals for a night and
   the family votes from the Kitchen tab (the one Kitchen write kids would
   get); the parent sees the tally and sets the plan. Not scheduled.

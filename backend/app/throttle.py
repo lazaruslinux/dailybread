@@ -28,8 +28,11 @@ def _fresh(times: list[float], now: float) -> list[float]:
     return [t for t in times if t > cutoff]
 
 
-def too_many_failures(key: str) -> bool:
-    """Is this key locked out right now? Prunes expired attempts as it looks."""
+def too_many_failures(key: str, limit: int = MAX_FAILURES) -> bool:
+    """Is this key locked out right now? Prunes expired attempts as it looks.
+    Callers guarding a shared/global key (e.g. anonymous invite redemption)
+    pass a higher limit so one prankster can't starve a legitimate user as
+    easily."""
     now = time.monotonic()
     with _lock:
         times = _fresh(_failures.get(key, []), now)
@@ -37,7 +40,7 @@ def too_many_failures(key: str) -> bool:
             _failures[key] = times
         else:
             _failures.pop(key, None)
-        return len(times) >= MAX_FAILURES
+        return len(times) >= limit
 
 
 def record_failure(key: str) -> None:

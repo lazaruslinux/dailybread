@@ -256,22 +256,7 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <motion.div
-        initial={{ opacity: 0, y: 40 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 40 }}
-        transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-        className="glass w-full max-w-sm p-6"
-        role="dialog"
-        aria-modal="true"
-      >
+    <Sheet onClose={onClose}>
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-lg font-bold">{creating ? 'Add family member' : `Edit ${member.display_name}`}</h2>
           <button
@@ -420,8 +405,7 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
             {busy ? 'Saving' : creating ? 'Add member' : 'Save changes'}
           </Button>
         </form>
-      </motion.div>
-    </motion.div>
+    </Sheet>
   )
 }
 
@@ -452,21 +436,7 @@ function DeleteConfirm({
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="glass w-full max-w-xs p-6 text-center"
-        role="alertdialog"
-        aria-modal="true"
-      >
+    <Sheet onClose={onClose}>
         <p className="mb-1 font-bold">Remove {member.display_name}?</p>
         <p className="mb-5 text-sm text-fg/55">
           @{member.username} will be signed out everywhere and their account deleted.
@@ -480,8 +450,7 @@ function DeleteConfirm({
             {busy ? 'Removing' : 'Remove'}
           </Button>
         </div>
-      </motion.div>
-    </motion.div>
+    </Sheet>
   )
 }
 
@@ -494,54 +463,37 @@ function DeleteConfirm({
 function InviteHouseholdSheet({ onClose }: { onClose: () => void }) {
   const [displayName, setDisplayName] = useState('')
   const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [created, setCreated] = useState<string | null>(null) // username, once done
+  const [invite, setInvite] = useState<api.SignupInvite | null>(null)
+  const [copied, setCopied] = useState(false)
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.')
-      return
-    }
     setBusy(true)
     try {
-      await api.createUser({
-        username,
-        display_name: displayName,
-        password,
-        role: 'parent',
-        new_household: true,
-      })
-      setCreated(username)
+      setInvite(await api.mintInvite(username, displayName))
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Something went wrong. Try again.')
       setBusy(false)
     }
   }
 
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(invite?.code ?? '')
+      setCopied(true)
+    } catch {
+      /* http contexts have no clipboard API; the code is selectable */
+    }
+  }
+
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <motion.div
-        initial={{ opacity: 0, y: 40 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 40 }}
-        transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-        className="glass w-full max-w-sm p-6"
-        role="dialog"
-        aria-modal="true"
-      >
+    <Sheet onClose={onClose}>
         <div className="mb-5 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-lg font-bold">
-            <Home className="h-5 w-5 text-accent-bright" /> Invite another household
+            <Home className="h-5 w-5 text-accent-bright" /> Invite to dailybread
           </h2>
           <button
             onClick={onClose}
@@ -552,22 +504,36 @@ function InviteHouseholdSheet({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        {created ? (
+        {invite ? (
           <div className="flex flex-col gap-4">
             <p className="text-sm leading-relaxed text-fg/70">
-              Created a new parent account,{' '}
-              <span className="font-semibold text-fg">@{created}</span>. Give them that username
-              and the password you set. When they sign in they'll name their own family and add
-              their members. Their board is completely separate from yours, so they won't appear in
-              your list here.
+              Give this code to <span className="font-semibold text-fg">{invite.display_name}</span>.
+              On the sign-in screen they tap "Enter invite code", pick their own password, and set
+              up their own family. It works once and expires in 15 minutes; if it lapses, just
+              mint another.
             </p>
+            <div className="flex items-center justify-center gap-3 rounded-xl border border-fg/10 bg-fg/5 p-4">
+              <span className="select-all font-mono text-2xl font-bold tracking-widest text-fg/90">
+                {invite.code}
+              </span>
+              <button
+                type="button"
+                onClick={copy}
+                aria-label="Copy invite code"
+                className="rounded-full bg-fg/10 p-2 text-fg/60 hover:bg-fg/20 hover:text-fg"
+              >
+                <Copy className="h-4 w-4" />
+              </button>
+            </div>
+            {copied && <p className="-mt-2 text-center text-xs text-fg/50">Copied</p>}
             <Button onClick={onClose}>Done</Button>
           </div>
         ) : (
           <form onSubmit={onSubmit} className="flex flex-col gap-4">
             <p className="text-xs leading-relaxed text-fg/50">
-              This starts a brand-new family on this dailybread, headed by the person you invite. Use
-              "Add family member" instead if you're adding someone to your own family.
+              This invites someone to start their own family on this dailybread, with their own
+              board, completely separate from yours. Use "Add family member" instead if you're
+              adding someone to your own family.
             </p>
             <Field
               label="Their name"
@@ -584,23 +550,13 @@ function InviteHouseholdSheet({ onClose }: { onClose: () => void }) {
               minLength={3}
               required
             />
-            <Field
-              label="Temporary password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 8 characters"
-              autoComplete="new-password"
-              required
-            />
             <FormError message={error} />
             <Button type="submit" disabled={busy} className="mt-1">
-              {busy ? 'Creating' : 'Create household account'}
+              {busy ? 'Creating invite' : 'Create invite code'}
             </Button>
           </form>
         )}
-      </motion.div>
-    </motion.div>
+    </Sheet>
   )
 }
 
@@ -735,14 +691,14 @@ export function Admin() {
             Server admin
           </p>
           <p className="mt-1 mb-3 text-sm text-fg/50">
-            Set up a separate family on this dailybread. They run their own board; you won't see
-            their members here.
+            Invite someone to found their own family on this dailybread with an invite code. They
+            run their own board; you won't see their members here.
           </p>
           <button
             onClick={() => setInviting(true)}
             className="glass flex w-full items-center gap-3 p-4 text-left font-semibold text-fg/80 transition-colors hover:text-fg"
           >
-            <Home className="h-4 w-4 text-accent-bright" /> Invite another household
+            <Home className="h-4 w-4 text-accent-bright" /> Invite to dailybread
           </button>
         </div>
       )}

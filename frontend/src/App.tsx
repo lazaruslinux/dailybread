@@ -135,6 +135,13 @@ function AppShell() {
 function App() {
   const { screen } = useAuth()
 
+  // Pre-auth screens (setup, login, wizards) default to dark — nobody is
+  // signed in yet, so there's no saved preference to honor. AppShell's own
+  // effect swaps in the member's real theme the moment they're in.
+  useEffect(() => {
+    if (screen !== 'app') applyTheme('dark')
+  }, [screen])
+
   if (screen === 'loading') {
     // Splash while /auth/me resolves; keeps the login form from flashing for
     // users who are already signed in.

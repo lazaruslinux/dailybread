@@ -3,6 +3,7 @@ import { Check, KeyRound, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { ApiError } from '../lib/api'
+import { Sheet } from '../components/Recipes'
 import { AuthShell, Brand, Button, Field, FormError } from '../components/ui'
 
 // Both ways a member sets their own password: the Preferences sheet on the
@@ -112,22 +113,7 @@ export function ChangePasswordSheet({ onClose }: { onClose: () => void }) {
   const [done, setDone] = useState(false)
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <motion.div
-        initial={{ opacity: 0, y: 40 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 40 }}
-        transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-        className="glass w-full max-w-sm p-6"
-        role="dialog"
-        aria-modal="true"
-      >
+    <Sheet onClose={onClose}>
         <div className="mb-5 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-lg font-bold">
             <KeyRound className="h-5 w-5 text-accent-bright" /> Change password
@@ -168,7 +154,6 @@ export function ChangePasswordSheet({ onClose }: { onClose: () => void }) {
             </motion.div>
           )}
         </AnimatePresence>
-      </motion.div>
-    </motion.div>
+    </Sheet>
   )
 }

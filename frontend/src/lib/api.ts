@@ -105,6 +105,35 @@ export const bootstrap = (
 
 export const logout = () => request<void>('/auth/logout', { method: 'POST' })
 
+// ---- signup invites -----------------------------------------------------------
+// The server owner mints a 15-minute code; the invitee redeems it on the
+// sign-in screen, picks their own password, and founds their own family.
+
+export interface SignupInvite {
+  code: string // shown exactly once, right here
+  username: string
+  display_name: string
+  expires_at: string
+}
+
+export const mintInvite = (username: string, display_name: string) =>
+  request<SignupInvite>('/auth/invites', {
+    method: 'POST',
+    body: JSON.stringify({ username, display_name }),
+  })
+
+export const checkInvite = (code: string) =>
+  request<{ username: string; display_name: string }>('/auth/invites/check', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  })
+
+export const redeemInvite = (code: string, password: string) =>
+  request<User>('/auth/invites/redeem', {
+    method: 'POST',
+    body: JSON.stringify({ code, password }),
+  })
+
 export const changePassword = (current_password: string, new_password: string) =>
   request<User>('/auth/change-password', {
     method: 'POST',
