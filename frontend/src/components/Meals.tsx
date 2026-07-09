@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { createPortal } from 'react-dom'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
-import { Button, FormError } from './ui'
+import { Sheet } from './Recipes'
+import { Button, Field, FormError } from './ui'
 
 // The Kitchen's hero: tonight's dinner, with the week's menu underneath.
 // Parents plan a night from the recipe box or type a one-off ("Pizza out");
@@ -198,6 +199,207 @@ function MealSheet({
   )
 }
 
+// "What should we have?" — the two-person-friendly face of dinner voting: a
+// parent poses 2-3 choices, the others get a push and tap a pick, names (not
+// tallies) show who wants what, and one tap crowns the winner as dinner.
+function AskSheet({
+  dayISO,
+  onClose,
+  onAsked,
+}: {
+  dayISO: string
+  onClose: () => void
+  onAsked: () => void
+}) {
+  const [choices, setChoices] = useState<{ title: string; recipe_id: number | null }[]>([
+    { title: '', recipe_id: null },
+    { title: '', recipe_id: null },
+    { title: '', recipe_id: null },
+  ])
+  const [recipes, setRecipes] = useState<api.Recipe[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    api.getRecipes().then(setRecipes).catch(() => {})
+  }, [])
+
+  function setChoice(i: number, title: string, recipeId: number | null = null) {
+    setChoices((prev) => prev.map((c, j) => (j === i ? { title, recipe_id: recipeId } : c)))
+  }
+
+  function addRecipe(r: api.Recipe) {
+    const slot = choices.findIndex((c) => !c.title.trim())
+    if (slot === -1) return
+    setChoice(slot, r.name, r.id)
+  }
+
+  const filled = choices.filter((c) => c.title.trim())
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      await api.openBallot(
+        dayISO,
+        filled.map((c) => ({ title: c.title.trim(), recipe_id: c.recipe_id })),
+      )
+      onAsked()
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Something went wrong.')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Sheet onClose={onClose}>
+      <h3 className="mb-1 text-lg font-bold">Ask about dinner</h3>
+      <p className="mb-4 text-sm text-fg/60">
+        Give the family two or three choices. Everyone gets a nudge and taps a pick; you set
+        the winner.
+      </p>
+      <form onSubmit={submit} noValidate className="flex flex-col gap-3">
+        {choices.map((c, i) => (
+          <Field
+            key={i}
+            label={`Choice ${i + 1}${i === 2 ? ' (optional)' : ''}`}
+            value={c.title}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setChoice(i, e.target.value)}
+            maxLength={120}
+          />
+        ))}
+        {recipes.length > 0 && (
+          <div>
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
+              From your recipes
+            </span>
+            <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto">
+              {recipes.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => addRecipe(r)}
+                  className="rounded-full border border-fg/10 bg-fg/5 px-2.5 py-1 text-xs font-semibold text-fg/70 transition-colors hover:bg-fg/10"
+                >
+                  {r.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <FormError message={error} />
+        <Button type="submit" disabled={busy || filled.length < 2}>
+          {busy ? 'Asking…' : 'Ask the family'}
+        </Button>
+      </form>
+    </Sheet>
+  )
+}
+
+function DinnerQuestion({
+  ballot,
+  isParent,
+  dayISO,
+  onChanged,
+}: {
+  ballot: api.DinnerBallot
+  isParent: boolean
+  dayISO: string
+  onChanged: () => void
+}) {
+  const [error, setError] = useState<string | null>(null)
+  const [busyId, setBusyId] = useState<number | null>(null)
+
+  async function pick(o: api.DinnerOption) {
+    setBusyId(o.id)
+    setError(null)
+    try {
+      await api.castVote(o.id)
+      onChanged()
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Something went wrong.')
+    }
+    setBusyId(null)
+  }
+
+  async function crown(o: api.DinnerOption) {
+    setBusyId(o.id)
+    setError(null)
+    try {
+      await api.setMeal(
+        o.recipe_id != null
+          ? { date_for: dayISO, recipe_id: o.recipe_id }
+          : { date_for: dayISO, custom_title: o.title },
+      )
+      await api.closeBallot(dayISO)
+      onChanged()
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Something went wrong.')
+      setBusyId(null)
+    }
+  }
+
+  async function drop() {
+    try {
+      await api.closeBallot(dayISO)
+      onChanged()
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Something went wrong.')
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded-xl border border-accent-bright/25 bg-accent-bright/5 p-3">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-accent-bright">
+        What should we have?
+      </p>
+      <div className="flex flex-col gap-1.5">
+        {ballot.options.map((o) => (
+          <div
+            key={o.id}
+            className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${
+              o.my_vote ? 'border-accent-bright/60 bg-accent-bright/15' : 'border-fg/10 bg-fg/5'
+            }`}
+          >
+            <button
+              type="button"
+              disabled={busyId !== null}
+              onClick={() => pick(o)}
+              className="min-w-0 flex-1 text-left"
+            >
+              <span className="block truncate text-sm font-semibold text-fg/90">{o.title}</span>
+              <span className="block truncate text-xs italic text-fg/45">
+                {o.voters.length ? o.voters.join(', ') : 'No picks yet'}
+              </span>
+            </button>
+            {isParent && (
+              <button
+                type="button"
+                disabled={busyId !== null}
+                onClick={() => crown(o)}
+                className="shrink-0 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-2.5 py-1 text-[11px] font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
+              >
+                Set as dinner
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      <FormError message={error} />
+      {isParent && (
+        <button
+          type="button"
+          onClick={drop}
+          className="mt-2 w-full text-center text-xs font-semibold text-fg/40 hover:text-fg/60"
+        >
+          Drop the question
+        </button>
+      )}
+    </div>
+  )
+}
+
 export function DinnerPlanner() {
   const { user } = useAuth()
   const isParent = user?.role === 'parent'
@@ -207,6 +409,8 @@ export function DinnerPlanner() {
   const [error, setError] = useState<string | null>(null)
   const [planning, setPlanning] = useState<string | null>(null) // dayISO in the sheet
   const [showWeek, setShowWeek] = useState(false)
+  const [asking, setAsking] = useState(false)
+  const [ballot, setBallot] = useState<api.DinnerBallot | null>(null)
 
   const days = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
@@ -222,6 +426,7 @@ export function DinnerPlanner() {
       ])
       const seen = new Set(week.map((m) => `${m.date_for}:${m.slot}`))
       setMeals([...week, ...tonight.filter((m) => !seen.has(`${m.date_for}:${m.slot}`))])
+      setBallot(await api.getBallot(todayISO))
       setError(null)
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Could not load the menu.')
@@ -263,17 +468,32 @@ export function DinnerPlanner() {
           </h2>
         </div>
         {isParent && (
-          <button
-            type="button"
-            onClick={() => setPlanning(todayISO)}
-            className="shrink-0 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-3 py-1.5 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
-          >
-            {mealTitle(tonight) ? 'Change' : 'Plan'}
-          </button>
+          <span className="flex shrink-0 gap-1.5">
+            {!mealTitle(tonight) && !(ballot && ballot.options.length > 0) && (
+              <button
+                type="button"
+                onClick={() => setAsking(true)}
+                className="rounded-full border border-accent-bright/40 bg-accent-bright/15 px-3 py-1.5 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
+              >
+                Ask
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setPlanning(todayISO)}
+              className="rounded-full border border-accent-bright/40 bg-accent-bright/15 px-3 py-1.5 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
+            >
+              {mealTitle(tonight) ? 'Change' : 'Plan'}
+            </button>
+          </span>
         )}
       </div>
 
       {tonight?.per_serving && <MacroPills ps={tonight.per_serving} />}
+
+      {!mealTitle(tonight) && ballot && ballot.options.length > 0 && (
+        <DinnerQuestion ballot={ballot} isParent={!!isParent} dayISO={todayISO} onChanged={refresh} />
+      )}
 
       <FormError message={error} />
 
@@ -376,6 +596,19 @@ export function DinnerPlanner() {
             onClose={() => setPlanning(null)}
             onSaved={() => {
               setPlanning(null)
+              refresh()
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {asking && (
+          <AskSheet
+            dayISO={todayISO}
+            onClose={() => setAsking(false)}
+            onAsked={() => {
+              setAsking(false)
               refresh()
             }}
           />

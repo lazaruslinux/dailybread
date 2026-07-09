@@ -201,6 +201,33 @@ def open_ballot(
             )
         )
     db.commit()
+
+    # The nudge that makes a two-person question work: the other adults hear
+    # the question the moment it's asked. One push per ask, kids never.
+    try:
+        from app import push
+
+        if push.enabled():
+            first = parent.display_name.split()[0]
+            titles = [o.title.strip() for o in data.options]
+            body = " or ".join(titles[:-1]) + f" or {titles[-1]}?" if len(titles) > 1 else titles[0]
+            payload = {
+                "title": f"{first} is asking about dinner",
+                "body": body[:150],
+                "tag": f"dinner-question-{date_for.isoformat()}",
+                "url": "/",
+            }
+            others = db.scalars(
+                select(User).where(
+                    User.family_id == parent.family_id, User.id != parent.id
+                )
+            )
+            for member in others:
+                if not member.is_minor:
+                    push.send_to_user(db, member.id, payload)
+    except Exception:
+        pass  # the ballot itself is saved; a failed nudge is not worth a 500
+
     return _ballot_out(db, parent.family_id, date_for, parent)
 
 

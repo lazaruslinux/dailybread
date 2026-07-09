@@ -110,6 +110,37 @@ export const bootstrap = (
 
 export const logout = () => request<void>('/auth/logout', { method: 'POST' })
 
+// ---- the dinner question ----------------------------------------------------------
+
+export interface DinnerOption {
+  id: number
+  title: string
+  recipe_id: number | null
+  votes: number
+  voters: string[] // first names, in voting order
+  my_vote: boolean
+}
+
+export interface DinnerBallot {
+  date_for: string
+  options: DinnerOption[]
+  total_votes: number
+}
+
+export const getBallot = (date: string) => request<DinnerBallot>(`/meals/vote?date=${date}`)
+
+export const openBallot = (date: string, options: { title: string; recipe_id?: number | null }[]) =>
+  request<DinnerBallot>(`/meals/vote?date=${date}`, {
+    method: 'PUT',
+    body: JSON.stringify({ options }),
+  })
+
+export const closeBallot = (date: string) =>
+  request<void>(`/meals/vote?date=${date}`, { method: 'DELETE' })
+
+export const castVote = (optionId: number) =>
+  request<DinnerBallot>(`/meals/vote/${optionId}`, { method: 'POST' })
+
 // ---- the village recipe shelf -----------------------------------------------------
 
 export interface SharedRecipe {

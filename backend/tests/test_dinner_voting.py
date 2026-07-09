@@ -74,3 +74,17 @@ def test_ballot_needs_two_to_five_options(owner):
     ).status_code == 422
     six = [{"title": f"O{i}"} for i in range(6)]
     assert owner.put(f"/meals/vote?date={TODAY}", json={"options": six}).status_code == 422
+
+
+def test_asking_nudges_the_other_adults(owner, parent, child, configured, outbox):
+    import datetime as dt2  # noqa: F401  (parity with test_push style)
+
+    # Subscribe both the other parent and the kid; only the adult hears.
+    parent.put("/push/subscription", json={
+        "endpoint": "https://push.example/p1", "keys": {"p256dh": "k", "auth": "a"},
+    })
+    child.put("/push/subscription", json={
+        "endpoint": "https://push.example/k1", "keys": {"p256dh": "k", "auth": "a"},
+    })
+    open_ballot(owner)
+    assert outbox == ["https://push.example/p1"]
