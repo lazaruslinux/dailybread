@@ -108,6 +108,62 @@ export const bootstrap = (
 
 export const logout = () => request<void>('/auth/logout', { method: 'POST' })
 
+// ---- the village recipe shelf -----------------------------------------------------
+
+export interface SharedRecipe {
+  share_id: number
+  village_id: number
+  village_name: string
+  family_id: number
+  family_name: string
+  is_own: boolean
+  name: string
+  servings: number
+  per_serving: RecipeMacros
+  created_at: string
+}
+
+export interface SharedIngredient {
+  name: string
+  brand: string
+  amount: number
+  unit: string
+  grams: number
+  calories: number | null
+  protein_g: number | null
+  carbs_g: number | null
+  fat_g: number | null
+  saturated_fat_g: number | null
+  trans_fat_g: number | null
+  cholesterol_mg: number | null
+  sodium_mg: number | null
+  fiber_g: number | null
+  sugar_g: number | null
+}
+
+export interface SharedRecipeDetail extends SharedRecipe {
+  steps: string
+  ingredients: SharedIngredient[]
+}
+
+export const villageShelf = () => request<SharedRecipe[]>('/villages/shelf')
+
+export const sharedRecipeDetail = (shareId: number) =>
+  request<SharedRecipeDetail>(`/villages/shelf/${shareId}`)
+
+export const shareRecipe = (villageId: number, recipe_id: number) =>
+  request<SharedRecipe>(`/villages/${villageId}/recipes`, {
+    method: 'POST',
+    body: JSON.stringify({ recipe_id }),
+  })
+
+export const unshareRecipe = (shareId: number) =>
+  request<void>(`/villages/shelf/${shareId}`, { method: 'DELETE' })
+
+// An independent snapshot into your own recipe box.
+export const saveSharedCopy = (shareId: number) =>
+  request<Recipe>(`/villages/shelf/${shareId}/copy`, { method: 'POST' })
+
 // ---- server overview -----------------------------------------------------------
 
 export interface OverviewUser {

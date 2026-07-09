@@ -867,6 +867,57 @@ class ProfileUpdateIn(BaseModel):
     theme: Literal["light", "dark"] | None = None
 
 
+# ---- the village recipe shelf --------------------------------------------------------
+
+
+class ShareRecipeIn(BaseModel):
+    recipe_id: int
+
+
+class SharedIngredientOut(BaseModel):
+    """An ingredient line as village-mates see it: what and how much, with its
+    macro contribution — and NO ids. A share grants reading and copying, never
+    a handle into the owning family's rows."""
+
+    name: str
+    brand: str
+    amount: float
+    unit: str
+    grams: float
+    calories: float | None
+    protein_g: float | None
+    carbs_g: float | None
+    fat_g: float | None
+    saturated_fat_g: float | None
+    trans_fat_g: float | None
+    cholesterol_mg: float | None
+    sodium_mg: float | None
+    fiber_g: float | None
+    sugar_g: float | None
+
+
+class SharedRecipeOut(BaseModel):
+    """A shelf row: the recipe at arm's length (no recipe id), with village
+    and family attribution. is_own lets the sharing family see the Unshare
+    action on their entries."""
+
+    share_id: int
+    village_id: int
+    village_name: str
+    family_id: int
+    family_name: str
+    is_own: bool
+    name: str
+    servings: int
+    per_serving: RecipeMacros
+    created_at: dt.datetime
+
+
+class SharedRecipeDetailOut(SharedRecipeOut):
+    steps: str
+    ingredients: list[SharedIngredientOut]
+
+
 # ---- server overview ---------------------------------------------------------------
 
 

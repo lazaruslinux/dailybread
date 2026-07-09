@@ -24,9 +24,27 @@ from sqlalchemy.orm import Session
 from app import throttle
 from app.invitecodes import hash_code, mint_code, normalize, pretty, still_valid
 from app.db import get_db
-from app.deps import require_admin, require_family
-from app.models import Family, Role, User, Village, VillageFamily, VillageRecipe
+from app.deps import require_admin, require_family, require_parent
+from app.models import (
+    Family,
+    Food,
+    FoodServing,
+    FoodSource,
+    Recipe,
+    RecipeIngredient,
+    Role,
+    User,
+    Village,
+    VillageFamily,
+    VillageRecipe,
+)
 from app.schemas import (
+    FOOD_NUTRIENTS,
+    RecipeOut,
+    SharedIngredientOut,
+    SharedRecipeDetailOut,
+    SharedRecipeOut,
+    ShareRecipeIn,
     VillageCheckOut,
     VillageCreatedOut,
     VillageFamilyOut,
@@ -293,3 +311,230 @@ def leave_village(
     if remaining == 0:
         db.delete(village)
     db.commit()
+
+
+# ---- the recipe shelf ---------------------------------------------------------------
+# What a village actually shares. A shelf entry is a POINTER at the owning
+# family's recipe (their edits show live on the shelf); "Save a copy" is what
+# puts an independent snapshot in another family's kitchen — unsharing,
+# leaving, or deleting never reaches into anyone else's recipe box.
+
+
+def _my_village_ids(db: Session, family_id: int):
+    return select(VillageFamily.village_id).where(VillageFamily.family_id == family_id)
+
+
+def _shelf_row(
+    share: VillageRecipe, recipe: Recipe, village_name: str, family_name: str, viewer_family: int
+) -> SharedRecipeOut:
+    from app.routers.recipes import per_serving_macros
+
+    return SharedRecipeOut(
+        share_id=share.id,
+        village_id=share.village_id,
+        village_name=village_name,
+        family_id=share.family_id,
+        family_name=family_name,
+        is_own=share.family_id == viewer_family,
+        name=recipe.name,
+        servings=recipe.servings,
+        per_serving=per_serving_macros(recipe),
+        created_at=share.created_at,
+    )
+
+
+def _get_share(db: Session, share_id: int, viewer_family: int) -> VillageRecipe:
+    """A shelf entry in one of the viewer's villages; anything else 404s."""
+    share = db.get(VillageRecipe, share_id)
+    if share is None or share.village_id not in set(
+        db.scalars(_my_village_ids(db, viewer_family))
+    ):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such shared recipe")
+    return share
+
+
+@router.get("/shelf", response_model=list[SharedRecipeOut])
+def shelf(db: Session = Depends(get_db), user: User = Depends(require_family)):
+    rows = db.execute(
+        select(VillageRecipe, Recipe, Village.name, Family.name)
+        .join(Recipe, Recipe.id == VillageRecipe.recipe_id)
+        .join(Village, Village.id == VillageRecipe.village_id)
+        .join(Family, Family.id == VillageRecipe.family_id)
+        .where(VillageRecipe.village_id.in_(_my_village_ids(db, user.family_id)))
+        .order_by(VillageRecipe.created_at.desc(), VillageRecipe.id.desc())
+    ).all()
+    return [
+        _shelf_row(share, recipe, vname, fname, user.family_id)
+        for share, recipe, vname, fname in rows
+    ]
+
+
+@router.get("/shelf/{share_id}", response_model=SharedRecipeDetailOut)
+def shared_recipe_detail(
+    share_id: int, db: Session = Depends(get_db), user: User = Depends(require_family)
+):
+    share = _get_share(db, share_id, user.family_id)
+    recipe = db.get(Recipe, share.recipe_id)
+    village = db.get(Village, share.village_id)
+    family = db.get(Family, share.family_id)
+    base = _shelf_row(share, recipe, village.name, family.name, user.family_id)
+    lines = [
+        SharedIngredientOut(
+            name=ing.food.name,
+            brand=ing.food.brand,
+            amount=ing.amount,
+            unit=ing.unit,
+            grams=round(ing.grams, 2),
+            **{
+                n: (
+                    round(getattr(ing.food, n) * ing.grams / 100.0, 1)
+                    if getattr(ing.food, n) is not None
+                    else None
+                )
+                for n in FOOD_NUTRIENTS
+            },
+        )
+        for ing in recipe.ingredients
+    ]
+    return SharedRecipeDetailOut(
+        **base.model_dump(), steps=recipe.steps, ingredients=lines
+    )
+
+
+@router.post(
+    "/{village_id}/recipes",
+    response_model=SharedRecipeOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def share_recipe(
+    village_id: int,
+    data: ShareRecipeIn,
+    db: Session = Depends(get_db),
+    parent: User = Depends(require_parent),
+):
+    """Put one of the family's own recipes on the village shelf."""
+    from app.routers.recipes import _get_recipe
+
+    village = _member_village(db, village_id, parent.family_id)
+    recipe = _get_recipe(db, data.recipe_id, parent.family_id)
+    if db.scalar(
+        select(VillageRecipe).where(
+            VillageRecipe.village_id == village.id, VillageRecipe.recipe_id == recipe.id
+        )
+    ):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Already on the shelf")
+    share = VillageRecipe(
+        village_id=village.id, recipe_id=recipe.id, family_id=parent.family_id
+    )
+    db.add(share)
+    db.commit()
+    db.refresh(share)
+    family = db.get(Family, parent.family_id)
+    return _shelf_row(share, recipe, village.name, family.name, parent.family_id)
+
+
+@router.delete("/shelf/{share_id}", status_code=status.HTTP_204_NO_CONTENT)
+def unshare_recipe(
+    share_id: int, db: Session = Depends(get_db), parent: User = Depends(require_parent)
+):
+    """Take an own-family entry off the shelf. Copies others saved survive."""
+    share = _get_share(db, share_id, parent.family_id)
+    if share.family_id != parent.family_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such shared recipe")
+    db.delete(share)
+    db.commit()
+
+
+def _matching_custom_food(db: Session, family_id: int, src: Food) -> Food | None:
+    """An existing custom food of the destination family that is the same
+    thing: same name/brand/base unit AND all ten nutrients equal. Name alone
+    could silently swap in different nutrition; this keeps repeated copies
+    idempotent without ever lying."""
+    from sqlalchemy import func
+
+    candidates = db.scalars(
+        select(Food).where(
+            Food.family_id == family_id,
+            func.lower(Food.name) == src.name.lower(),
+            func.lower(Food.brand) == src.brand.lower(),
+            Food.base_unit == src.base_unit,
+        )
+    )
+    for cand in candidates:
+        if all(getattr(cand, n) == getattr(src, n) for n in FOOD_NUTRIENTS):
+            return cand
+    return None
+
+
+@router.post(
+    "/shelf/{share_id}/copy", response_model=RecipeOut, status_code=status.HTTP_201_CREATED
+)
+def save_a_copy(
+    share_id: int, db: Session = Depends(get_db), parent: User = Depends(require_parent)
+):
+    """Adopt a shared recipe: an independent snapshot in the family's own
+    kitchen. Shared-cache foods are reused as-is; the sharing family's custom
+    foods are copied in (servings and all), deduped against existing ones."""
+    from sqlalchemy import func
+
+    from app.routers.recipes import _serialize
+
+    share = _get_share(db, share_id, parent.family_id)
+    src = db.get(Recipe, share.recipe_id)
+
+    # Copying must never fail on a name collision: suffix until free.
+    name = src.name
+    n = 2
+    while db.scalar(
+        select(Recipe).where(
+            Recipe.family_id == parent.family_id, func.lower(Recipe.name) == name.lower()
+        )
+    ):
+        suffix = f" ({n})"
+        name = src.name[: 120 - len(suffix)] + suffix
+        n += 1
+
+    copy = Recipe(
+        family_id=parent.family_id, name=name, servings=src.servings, steps=src.steps
+    )
+    db.add(copy)
+    db.flush()
+
+    for ing in src.ingredients:
+        food = ing.food
+        if food.family_id is not None:  # the sharer's custom food: bring it over
+            existing = _matching_custom_food(db, parent.family_id, food)
+            if existing is None:
+                existing = Food(
+                    family_id=parent.family_id,
+                    source=FoodSource.custom,
+                    source_id=None,
+                    name=food.name,
+                    brand=food.brand,
+                    base_unit=food.base_unit,
+                    **{n_: getattr(food, n_) for n_ in FOOD_NUTRIENTS},
+                )
+                db.add(existing)
+                db.flush()
+                for serving in food.servings:
+                    db.add(
+                        FoodServing(
+                            food_id=existing.id,
+                            name=serving.name,
+                            grams=serving.grams,
+                            position=serving.position,
+                        )
+                    )
+            food = existing
+        db.add(
+            RecipeIngredient(
+                recipe_id=copy.id,
+                food_id=food.id,
+                position=ing.position,
+                amount=ing.amount,
+                unit=ing.unit,
+            )
+        )
+    db.commit()
+    db.refresh(copy)
+    return _serialize(copy)

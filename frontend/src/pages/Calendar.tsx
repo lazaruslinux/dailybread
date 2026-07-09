@@ -592,6 +592,18 @@ export function Calendar() {
                     : undefined
                 }
                 onDelete={isParent ? () => deleteFromDetail(detail.item) : undefined}
+                onCancel={
+                  isParent &&
+                  dayMarkable &&
+                  (detail.item.kind === 'appointment' || detail.item.kind === 'activity')
+                    ? async () => {
+                        const call = detail.item.cancelled ? api.uncancelItem : api.cancelItem
+                        await call(detail.item.id, detail.day)
+                        setDetail(null)
+                        refresh()
+                      }
+                    : undefined
+                }
                 onClose={() => setDetail(null)}
               />
             )

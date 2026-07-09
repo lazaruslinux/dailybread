@@ -325,7 +325,7 @@ const MORE_NUTRIENTS: { key: keyof api.RecipeMacros; label: string; unit: string
   { key: 'fiber_g', label: 'Fiber', unit: 'g' },
 ]
 
-function NutritionPanel({ m }: { m: api.RecipeMacros }) {
+export function NutritionPanel({ m }: { m: api.RecipeMacros }) {
   const [open, setOpen] = useState(false)
   const hasMore = MORE_NUTRIENTS.some((r) => m[r.key] != null)
   return (
@@ -1062,8 +1062,12 @@ export function RecipeBox() {
   useEffect(() => {
     mounted.current = true
     refresh()
+    // A copy saved from the village shelf lands here without this box
+    // knowing; the shelf announces it instead.
+    window.addEventListener('db:recipes-changed', refresh)
     return () => {
       mounted.current = false
+      window.removeEventListener('db:recipes-changed', refresh)
     }
   }, [refresh])
 

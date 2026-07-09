@@ -543,6 +543,28 @@ export function HealthCard({
         ? `Gaining ${p.rate_lbs_per_week ?? 1} lb/week`
         : 'Maintaining'
 
+  // The little carrot: at the current rate, when does the goal weight land?
+  // Pure arithmetic on what's already on screen (lbs to go / lbs per week),
+  // shown only while a lose/gain plan is actually running.
+  let forecast: string | null = null
+  if (
+    !health.computed.at_goal &&
+    p.goal_weight_kg != null &&
+    (p.goal === 'lose' || p.goal === 'gain') &&
+    (p.rate_lbs_per_week ?? 0) > 0
+  ) {
+    const lbsToGo = Math.abs(w.weight_kg - p.goal_weight_kg) * 2.20462
+    const days = Math.round((lbsToGo / (p.rate_lbs_per_week ?? 1)) * 7)
+    if (days > 0 && days < 365 * 3) {
+      const when = new Date(Date.now() + days * 86_400_000)
+      forecast = when.toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        ...(when.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}),
+      })
+    }
+  }
+
   return (
     <section className="glass p-4" data-health-card>
       <div className="mb-2 flex items-center justify-between">
@@ -575,7 +597,9 @@ export function HealthCard({
               )}
           </p>
           <p className="truncate text-xs text-fg/50">
-            {goalText} · burn ≈ {health.computed.maintenance_calories.toLocaleString()} kcal
+            {goalText}
+            {forecast && ` · goal around ${forecast}`} · burn ≈{' '}
+            {health.computed.maintenance_calories.toLocaleString()} kcal
             {targetsMode === 'auto' && ' · auto'}
           </p>
         </div>

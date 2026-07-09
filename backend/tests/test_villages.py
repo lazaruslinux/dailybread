@@ -282,3 +282,120 @@ def test_child_avatars_never_cross_the_wall(village, owner, other, child):
     res = other.get(f"/users/{user_id(child)}/avatar")
     assert res.status_code == 404
     assert res.json()["detail"] == "No such user"
+
+
+# ---- the recipe shelf -------------------------------------------------------------
+
+
+def make_recipe(client, name="Pancakes", custom=False):
+    """A two-line recipe: one shared-cache food, optionally one custom food."""
+    lines = [
+        {
+            "source": "usda", "source_id": "1111", "name": "Flour", "brand": "",
+            "amount": 200, "unit": "g", "calories": 364.0, "protein_g": 10.0,
+        }
+    ]
+    if custom:
+        res = client.post(
+            "/foods",
+            json={
+                "name": "Grandma's mix", "brand": "", "base_unit": "g",
+                "calories": 400.0, "protein_g": 8.0,
+                "servings": [{"name": "1 scoop", "grams": 30.0}],
+            },
+        )
+        assert res.status_code == 201, res.text
+        lines.append({
+            "food_id": res.json()["id"], "source": "custom", "name": "Grandma's mix",
+            "amount": 60, "unit": "g",
+        })
+    res = client.post(
+        "/recipes", json={"name": name, "servings": 4, "steps": "Mix. Cook.", "ingredients": lines}
+    )
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+def share(client, village_id, recipe_id):
+    res = client.post(f"/villages/{village_id}/recipes", json={"recipe_id": recipe_id})
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+def test_shelf_lists_shares_with_attribution(village, owner, other, child):
+    recipe = make_recipe(owner)
+    entry = share(owner, village, recipe["id"])
+    assert entry["family_name"] == "Home"
+    assert entry["is_own"] is True
+
+    # Everyone in both families can browse; the sharer's entry reads is_own
+    # only at home.
+    for client, own in ((owner, True), (child, True), (other, False)):
+        shelf = client.get("/villages/shelf").json()
+        assert len(shelf) == 1
+        assert shelf[0]["name"] == "Pancakes"
+        assert shelf[0]["is_own"] is own
+        assert "recipe_id" not in shelf[0] and "id" not in shelf[0]
+
+
+def test_shared_detail_carries_no_handles(village, owner, other):
+    recipe = make_recipe(owner, custom=True)
+    entry = share(owner, village, recipe["id"])
+    detail = other.get(f"/villages/shelf/{entry['share_id']}").json()
+    assert detail["steps"] == "Mix. Cook."
+    assert len(detail["ingredients"]) == 2
+    for line in detail["ingredients"]:
+        assert "food_id" not in line and "source_id" not in line and "id" not in line
+
+
+def test_share_needs_your_own_recipe_and_membership(village, owner, other, child):
+    theirs = make_recipe(other, name="Their stew")
+    # Sharing someone else's recipe id 404s like it doesn't exist.
+    assert owner.post(f"/villages/{village}/recipes", json={"recipe_id": theirs["id"]}).status_code == 404
+    mine = make_recipe(owner)
+    assert child.post(f"/villages/{village}/recipes", json={"recipe_id": mine["id"]}).status_code == 403
+    entry = share(owner, village, mine["id"])
+    assert owner.post(f"/villages/{village}/recipes", json={"recipe_id": mine["id"]}).status_code == 400
+    # Only the sharing family may unshare.
+    assert other.delete(f"/villages/shelf/{entry['share_id']}").status_code == 404
+    assert owner.delete(f"/villages/shelf/{entry['share_id']}").status_code == 204
+
+
+def test_save_a_copy_is_an_independent_snapshot(village, owner, other):
+    recipe = make_recipe(owner, custom=True)
+    entry = share(owner, village, recipe["id"])
+    copy = other.post(f"/villages/shelf/{entry['share_id']}/copy").json()
+    assert copy["name"] == "Pancakes"
+    assert {l["name"] for l in copy["ingredients"]} == {"Flour", "Grandma's mix"}
+
+    # The sharer's later edits and unshares never reach the copy.
+    owner.patch(f"/recipes/{recipe['id']}", json={"name": "Renamed"})
+    owner.delete(f"/villages/shelf/{entry['share_id']}")
+    mine = other.get("/recipes").json()
+    assert any(r["name"] == "Pancakes" for r in mine)
+
+    # A second copy of a re-shared identical recipe dedupes the custom food
+    # and suffixes the recipe name instead of failing.
+    entry2 = share(owner, village, recipe["id"])
+    copy2 = other.post(f"/villages/shelf/{entry2['share_id']}/copy").json()
+    assert copy2["name"] == "Renamed"
+    foods = other.get("/foods").json()
+    assert sum(1 for f in foods if f["name"] == "Grandma's mix") == 1
+
+
+def test_copy_name_collision_suffixes(village, owner, other):
+    recipe = make_recipe(owner, name="Stew")
+    make_recipe(other, name="Stew")  # the destination already has one
+    entry = share(owner, village, recipe["id"])
+    copy = other.post(f"/villages/shelf/{entry['share_id']}/copy").json()
+    assert copy["name"] == "Stew (2)"
+
+
+def test_shelf_is_village_scoped(owner, other):
+    # No shared village: the shelf is empty and a foreign share id 404s.
+    recipe = make_recipe(owner)
+    created = _create(owner)
+    entry = share(owner, created["id"], recipe["id"])
+    assert other.get("/villages/shelf").json() == []
+    assert other.get(f"/villages/shelf/{entry['share_id']}").status_code == 404
+    assert other.post(f"/villages/shelf/{entry['share_id']}/copy").status_code == 404
