@@ -324,16 +324,16 @@ def test_shelf_shows_other_families_only(village, owner, other, child):
     entry = share(owner, village, recipe["id"])
     assert entry["family_name"] == "Home"
 
-    # The sharer's family sees NOTHING here — their share lives as a chip on
-    # their own recipe card instead; the other family sees the live entry
-    # with the recipe's freshness stamp.
-    for client in (owner, child):
-        assert client.get("/villages/shelf").json() == []
-    shelf = other.get("/villages/shelf").json()
-    assert len(shelf) == 1
-    assert shelf[0]["name"] == "Pancakes"
-    assert shelf[0]["updated_at"] is not None
-    assert "recipe_id" not in shelf[0] and "id" not in shelf[0]
+    # The sharer's family sees their own entry flagged is_own (the client
+    # renders it in a read-only "Shared by you" area); the other family sees
+    # the live entry with the recipe's freshness stamp.
+    for client, own in ((owner, True), (child, True), (other, False)):
+        shelf = client.get("/villages/shelf").json()
+        assert len(shelf) == 1
+        assert shelf[0]["name"] == "Pancakes"
+        assert shelf[0]["is_own"] is own
+        assert shelf[0]["updated_at"] is not None
+        assert "recipe_id" not in shelf[0] and "id" not in shelf[0]
 
     # The owner's recipe payload carries the share handle + village name.
     mine = next(r for r in owner.get("/recipes").json() if r["id"] == recipe["id"])

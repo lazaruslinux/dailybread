@@ -399,12 +399,7 @@ def shelf(db: Session = Depends(get_db), user: User = Depends(require_family)):
         .join(Recipe, Recipe.id == VillageRecipe.recipe_id)
         .join(Village, Village.id == VillageRecipe.village_id)
         .join(Family, Family.id == VillageRecipe.family_id)
-        .where(
-            VillageRecipe.village_id.in_(_my_village_ids(db, user.family_id)),
-            # Your own shares live on YOUR recipe cards (a "shared" chip), not
-            # here — this list is what the other families brought.
-            VillageRecipe.family_id != user.family_id,
-        )
+        .where(VillageRecipe.village_id.in_(_my_village_ids(db, user.family_id)))
         .order_by(VillageRecipe.created_at.desc(), VillageRecipe.id.desc())
     ).all()
     return [

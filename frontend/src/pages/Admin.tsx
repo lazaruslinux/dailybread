@@ -279,7 +279,6 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
             label="Name"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
-            autoFocus={creating}
             required
           />
           {creating ? (
@@ -544,7 +543,6 @@ function InviteHouseholdSheet({ onClose }: { onClose: () => void }) {
               label="Their name"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              autoFocus
               required
             />
             <FormError message={error} />
@@ -678,7 +676,6 @@ function RenameFamilySheet({
           value={name}
           onChange={(e) => setName(e.target.value)}
           maxLength={80}
-          autoFocus
           required
         />
         <FormError message={error} />

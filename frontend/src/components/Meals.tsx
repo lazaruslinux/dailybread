@@ -172,7 +172,6 @@ function DetailSheet({
             setRecipeId(null)
           }}
           maxLength={30}
-          autoFocus
         />
         {choice.id === 'homemade' && recipes.length > 0 && (
           <div>

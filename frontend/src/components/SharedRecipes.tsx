@@ -48,6 +48,9 @@ function ShareSheet({
     setError(null)
     try {
       await api.shareRecipe(villageId, id)
+      // Tell BOTH surfaces: the shelf refreshes, and the recipe box's row
+      // grows its "Shared" chip immediately (not on the next tab visit).
+      window.dispatchEvent(new Event('db:recipes-changed'))
       onShared()
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Something went wrong')
@@ -225,6 +228,19 @@ export function SharedRecipesBox() {
   }, [refresh])
 
   if (villages.length === 0) return null
+  const theirs = shelf.filter((s) => !s.is_own)
+  const mine = shelf.filter((s) => s.is_own)
+
+  async function unshareMine(entry: api.SharedRecipe) {
+    setError(null)
+    try {
+      await api.unshareRecipe(entry.share_id)
+      window.dispatchEvent(new Event('db:recipes-changed'))
+      refresh()
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Something went wrong')
+    }
+  }
 
   async function openDetail(shareId: number) {
     setError(null)
@@ -270,14 +286,14 @@ export function SharedRecipesBox() {
       }
     >
       <FormError message={error} />
-      {shelf.length === 0 ? (
+      {theirs.length === 0 ? (
         <p className="text-sm text-fg/50">
           Nothing shared yet. Recipes shared by your village families appear here for everyone
           to browse and copy.
         </p>
       ) : (
         <div className="flex flex-col gap-1.5">
-          {shelf.map((s) => (
+          {theirs.map((s) => (
             <button
               key={s.share_id}
               type="button"
@@ -301,6 +317,40 @@ export function SharedRecipesBox() {
               )}
             </button>
           ))}
+        </div>
+      )}
+
+      {mine.length > 0 && (
+        <div className="mt-3">
+          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg/45">
+            Shared by you
+          </p>
+          <div className="flex flex-col gap-1.5">
+            {mine.map((s) => (
+              <div
+                key={s.share_id}
+                className="flex items-center gap-3 rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold text-fg/80">{s.name}</span>
+                  <span className="block truncate text-xs text-fg/40">
+                    {villages.length > 1 ? `${s.village_name} · ` : ''}Last updated{' '}
+                    {compactStamp(s.updated_at)}
+                  </span>
+                </span>
+                {isParent && (
+                  <button
+                    type="button"
+                    onClick={() => unshareMine(s)}
+                    aria-label={`Unshare ${s.name}`}
+                    className="btn-danger flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-base font-bold leading-none"
+                  >
+                    −
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
