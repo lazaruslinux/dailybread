@@ -18,6 +18,8 @@ export function Profile({ userId }: { userId: number }) {
   // This member's slice of the board: cards assigned to them plus whole-family
   // cards (those are everyone's, so they belong on everyone's day).
   const [day, setDay] = useState<api.FeedItem[] | null>(null)
+  // Kid privacy's flip side: a minor's journal, readable by their parents.
+  const [journal, setJournal] = useState<api.JournalEntry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [editingBio, setEditingBio] = useState(false)
   const [bioDraft, setBioDraft] = useState('')
@@ -38,10 +40,14 @@ export function Profile({ userId }: { userId: number }) {
       // Their day: what's due today plus anything of theirs still past due.
       setDay([...mine(feed.overdue), ...mine(feed.today)])
       setError(null)
+      if (viewer?.role === 'parent' && viewer.id !== userId && p.is_minor) {
+        // Separate so a hiccup here never blanks the profile.
+        api.getMemberJournal(userId).then(setJournal).catch(() => {})
+      }
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Could not load this profile.')
     }
-  }, [userId])
+  }, [userId, viewer])
 
   useEffect(() => {
     refresh()
@@ -321,6 +327,38 @@ export function Profile({ userId }: { userId: number }) {
               ))}
             </ul>
           )}
+        </motion.div>
+      )}
+
+      {journal && journal.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="glass mt-4 p-5"
+        >
+          <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-fg/40">
+            Their journal
+          </p>
+          <p className="mb-3 text-[11px] text-fg/35">
+            Visible to parents while they're a kid.
+          </p>
+          <div className="flex flex-col gap-3">
+            {journal.slice(0, 7).map((entry) => (
+              <div key={entry.date_for}>
+                <p className="mb-0.5 text-[11px] font-semibold text-fg/45">
+                  {new Date(`${entry.date_for}T12:00:00`).toLocaleDateString(undefined, {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                </p>
+                <p className="whitespace-pre-wrap text-sm leading-relaxed text-fg/75">
+                  {entry.body}
+                </p>
+              </div>
+            ))}
+          </div>
         </motion.div>
       )}
 

@@ -660,6 +660,11 @@ export const getJournal = (date = localDate()) =>
 
 export const getJournalHistory = () => request<JournalEntry[]>('/me/journal/history')
 
+// Kid privacy's flip side: a minor's journal is open to their parents
+// (404 for any grown member, same as an unknown id).
+export const getMemberJournal = (id: number) =>
+  request<JournalEntry[]>(`/members/${id}/journal`)
+
 // Upsert a day's entry. A blank body clears it (returned body is "").
 export const saveJournal = (body: string, date = localDate()) =>
   request<JournalEntry>('/me/journal', {

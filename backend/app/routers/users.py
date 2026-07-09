@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app import avatars
 from app.db import get_db
-from app.deps import require_family
+from app.deps import require_family, require_parent
 from app.models import JournalEntry, Mood, Role, User
 from app.schemas import (
     FamilyMemberOut,
@@ -30,6 +30,13 @@ def _daily_status(user: User, today: dt.date) -> str:
     return user.bio if user.status_date == today else ""
 
 
+def _shepherded(owner: User, viewer: User) -> bool:
+    """Kid privacy: a minor's mood and status are the parents' business, not
+    the household's. True when this viewer may see them — the kid themself,
+    any parent, or anyone at all once the member isn't a minor."""
+    return viewer.id == owner.id or viewer.role == Role.parent or not owner.is_minor
+
+
 def _profile_out(user: User, mood: Mood | None, viewer: User, today: dt.date) -> ProfileOut:
     return ProfileOut(
         id=user.id,
@@ -40,9 +47,11 @@ def _profile_out(user: User, mood: Mood | None, viewer: User, today: dt.date) ->
         is_owner=user.is_owner,
         family_id=user.family_id,
         avatar_updated_at=user.avatar_updated_at,
-        bio=_daily_status(user, today),
+        birthdate=user.birthdate,
+        is_minor=user.is_minor,
+        bio=_daily_status(user, today) if _shepherded(user, viewer) else "",
         created_at=user.created_at,
-        mood=_visible_mood(mood, viewer, user.id),
+        mood=_visible_mood(mood, viewer, user),
     )
 
 
@@ -52,13 +61,16 @@ def _check_date(date_for: dt.date) -> dt.date:
     return date_for
 
 
-def _visible_mood(mood: Mood | None, viewer: User, owner_id: int) -> MoodOut | None:
+def _visible_mood(mood: Mood | None, viewer: User, owner: User) -> MoodOut | None:
     """The privacy rule, in one place: you always see your own mood; others
-    see it only if it isn't hidden. A hidden mood and no mood look identical
-    from the outside, so hiding doesn't leak that something is being hidden."""
+    see it only if it isn't hidden — and a minor's mood only if you're a
+    parent (kid privacy). A hidden or shepherded mood and no mood look
+    identical from the outside, so nothing leaks about what's being kept."""
     if mood is None:
         return None
-    if mood.hidden and viewer.id != owner_id:
+    if mood.hidden and viewer.id != owner.id:
+        return None
+    if not _shepherded(owner, viewer):
         return None
     return MoodOut.model_validate(mood)
 
@@ -73,7 +85,9 @@ def _member_out(user: User, mood: Mood | None, viewer: User) -> FamilyMemberOut:
         is_owner=user.is_owner,
         family_id=user.family_id,
         avatar_updated_at=user.avatar_updated_at,
-        mood=_visible_mood(mood, viewer, user.id),
+        birthdate=user.birthdate,
+        is_minor=user.is_minor,
+        mood=_visible_mood(mood, viewer, user),
     )
 
 
@@ -176,8 +190,10 @@ def clear_my_mood(
 
 
 # ---- journal -------------------------------------------------------------------
-# A member's daily written entry. Strictly private: there is no endpoint to read
-# anyone else's, and nothing about a journal appears on the family strip.
+# A member's daily written entry. Private between adults: no endpoint reads
+# another grown member's, and nothing about a journal appears on the family
+# strip. The one exception is kid privacy's flip side: a MINOR's journal is
+# open to the parents (shepherding, not surveillance — same rule as health).
 
 
 @router.get("/me/journal", response_model=JournalOut | None)
@@ -337,3 +353,22 @@ def remove_avatar(
     avatars.delete_avatar(user.id)
     user.avatar_updated_at = None
     db.commit()
+
+
+@router.get("/members/{user_id}/journal", response_model=list[JournalOut])
+def child_journal(
+    user_id: int,
+    db: Session = Depends(get_db),
+    parent: User = Depends(require_parent),
+):
+    """A minor's journal history, for their parents. Grown members — adult
+    children included — 404 exactly like other families' ids do, so the
+    endpoint reveals nothing about who keeps a journal."""
+    target = db.get(User, user_id)
+    if target is None or target.family_id != parent.family_id or not target.is_minor:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such member")
+    return db.scalars(
+        select(JournalEntry)
+        .where(JournalEntry.user_id == target.id)
+        .order_by(JournalEntry.date_for.desc())
+    ).all()

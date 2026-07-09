@@ -2,6 +2,8 @@
 
 import datetime as dt
 
+from tests.conftest import user_id
+
 TODAY = dt.date.today().isoformat()
 
 
@@ -62,3 +64,38 @@ def test_anon_cannot_touch_journal(anon):
 def test_far_date_is_rejected(owner):
     far = (dt.date.today() + dt.timedelta(days=5)).isoformat()
     assert owner.put("/me/journal", json={"date_for": far, "body": "x"}).status_code == 400
+
+
+# ---- kid privacy's flip side: parents read a minor's journal ------------------------
+
+
+def test_parents_read_a_minors_journal(owner, parent, child):
+    child.put("/me/journal", json={"date_for": TODAY, "body": "Rode my bike"})
+    kid = user_id(child)
+
+    # Any parent, admin or not; most recent first, same shape as own history.
+    for grown_up in (owner, parent):
+        entries = grown_up.get(f"/members/{kid}/journal").json()
+        assert [e["body"] for e in entries] == ["Rode my bike"]
+
+
+def test_grown_journals_stay_closed_to_everyone(owner, parent, adult_child):
+    adult_child.put("/me/journal", json={"date_for": TODAY, "body": "private"})
+    # An of-age child's journal 404s for parents exactly like an unknown id:
+    # the response doesn't even confirm a journal exists.
+    assert owner.get(f"/members/{user_id(adult_child)}/journal").status_code == 404
+    assert owner.get(f"/members/{user_id(parent)}/journal").status_code == 404
+    assert owner.get("/members/99999/journal").status_code == 404
+
+
+def test_children_cannot_use_the_member_journal_door(owner, child, adult_child):
+    child.put("/me/journal", json={"date_for": TODAY, "body": "secret"})
+    kid = user_id(child)
+    # Not other kids, not grown children — parents only (403 via require_parent).
+    assert adult_child.get(f"/members/{kid}/journal").status_code == 403
+    assert child.get(f"/members/{kid}/journal").status_code == 403
+
+
+def test_cross_family_minor_journal_is_invisible(other, child):
+    child.put("/me/journal", json={"date_for": TODAY, "body": "ours"})
+    assert other.get(f"/members/{user_id(child)}/journal").status_code == 404

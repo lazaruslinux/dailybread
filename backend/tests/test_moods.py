@@ -74,3 +74,46 @@ def test_status_clears_overnight(owner, child):
     tomorrow = (dt.date.today() + dt.timedelta(days=1)).isoformat()
     prof = child.get(f"/users/{user_id(owner)}/profile?date={tomorrow}").json()
     assert prof["bio"] == ""
+
+
+# ---- kid privacy: a minor's mood and status are the parents' business ---------------
+
+
+def test_minor_mood_hidden_from_other_children(owner, child, adult_child):
+    set_mood(child)
+    kid = user_id(child)
+    # Parents see it; a sibling (even a grown one) sees nothing at all.
+    assert member(owner, kid)["mood"] == {"level": "sunny", "hidden": False}
+    assert member(adult_child, kid)["mood"] is None
+    # The kid still sees their own.
+    assert member(child, kid)["mood"] is not None
+
+
+def test_grown_members_moods_stay_family_visible(owner, child, adult_child):
+    set_mood(adult_child)
+    set_mood(owner, "partly")
+    # Kid privacy narrows only the minor's own data: a minor still sees the
+    # rest of the family's moods like anyone else.
+    assert member(child, user_id(adult_child))["mood"] is not None
+    assert member(child, user_id(owner))["mood"] is not None
+
+
+def test_minor_status_hidden_from_other_children(owner, child, adult_child):
+    res = child.patch("/me/profile", json={"bio": "Lost a tooth today"})
+    assert res.status_code == 200
+    kid = user_id(child)
+
+    seen_by_parent = owner.get(f"/users/{kid}/profile?date={TODAY}").json()
+    seen_by_sibling = adult_child.get(f"/users/{kid}/profile?date={TODAY}").json()
+    assert seen_by_parent["bio"] == "Lost a tooth today"
+    assert seen_by_sibling["bio"] == ""
+    # Their own profile still shows it (that's how they edit it).
+    assert child.get(f"/users/{kid}/profile?date={TODAY}").json()["bio"] != ""
+
+
+def test_family_and_profile_carry_is_minor(owner, child):
+    # These two build their payloads by hand (unlike /auth/me), so pin that
+    # is_minor actually rides along — the client keys kid-mode UI off it.
+    kid = user_id(child)
+    assert member(owner, kid)["is_minor"] is True
+    assert owner.get(f"/users/{kid}/profile?date={TODAY}").json()["is_minor"] is True
