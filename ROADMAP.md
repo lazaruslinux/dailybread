@@ -136,9 +136,14 @@ Where dailybread is headed, in order. Done items stay for history.
 
 ## Next
 
-1. **Family chat** — messaging, then topic channels, then photo attachments;
-   channels carry explicit member lists from day one so a channel can later
-   span households.
+1. **Villages** — private circles of linked families on the same install.
+   Invitation-only (one-time codes, hashed at rest, throttled), nothing
+   discoverable, and deliberately anti-social-media: no feed, no likes, no
+   comments, ever. Exactly two things cross the family wall: recipes shared
+   onto a village shelf in the Kitchen (browse, then save an independent
+   copy), and each member's mood/status, visible across families only if
+   that member opts in — minors never. Membership shipped; shelf and
+   presence follow.
 2. **Fitness sync** — workouts flowing into the app and auto-completing
    matching board routines. Strava first (watch → Strava → server polling);
    direct Apple Health export as a self-hosted alternative path.
@@ -167,3 +172,7 @@ Where dailybread is headed, in order. Done items stay for history.
 - **Kid-mode extensions** (rewards, allowance, chore scoring) — paused; in
   practice parents manage the family board directly and kids rarely sign
   in, so the approval flow above already covers the need.
+- **Family chat** — cut in favor of Villages. Real-time messaging competes
+  with the phone's own messenger and drags in the social-media dynamics
+  this app deliberately refuses; the cross-household need it was meant to
+  serve is covered by village sharing instead.
