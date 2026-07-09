@@ -142,8 +142,12 @@ def reminder_tick(now: dt.datetime) -> int:
 
         for item in due:
             rows = comps[item.id]
+            # A pending row (kid mode: awaiting parent approval) counts as
+            # "already acted" here — the kid did the thing; don't nag them.
             if item.kind == ItemKind.routine:
-                done_today = {uid for uid, day in rows if day == today and uid is not None}
+                done_today = {
+                    uid for uid, day, _pending in rows if day == today and uid is not None
+                }
                 people = [p for p in _routine_participants(db, item) if p.id not in done_today]
             else:
                 if rows:  # dated one-shots count as done regardless of the day checked

@@ -162,11 +162,11 @@ def test_a_completed_card_is_not_reminded(owner, configured, outbox, engine_db):
 
 
 def test_routines_skip_participants_who_already_did_theirs(
-    owner, child, configured, outbox, engine_db
+    owner, adult_child, configured, outbox, engine_db
 ):
-    kid_id = user_id(child)
+    kid_id = user_id(adult_child)
     owner.put("/push/subscription", json=SUB)
-    child.put("/push/subscription", json=SUB2)
+    adult_child.put("/push/subscription", json=SUB2)
     res = owner.post(
         "/items",
         json={
@@ -179,7 +179,7 @@ def test_routines_skip_participants_who_already_did_theirs(
     )
     assert res.status_code == 201, res.text
     item_id = res.json()["id"]
-    child.post(f"/items/{item_id}/complete?date={dt.date.today().isoformat()}")
+    adult_child.post(f"/items/{item_id}/complete?date={dt.date.today().isoformat()}")
 
     assert push_engine.reminder_tick(_now_at(14, 0)) == 1
     assert outbox == [SUB["endpoint"]]  # the owner's device, not the kid's

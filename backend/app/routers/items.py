@@ -1,10 +1,11 @@
 import datetime as dt
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app import recurrence
+from app import push, recurrence
 from app.db import get_db
 from app.deps import require_family, require_parent
 from app.models import Completion, Item, ItemKind, RepeatType, Role, User, Visibility
@@ -16,9 +17,12 @@ from app.schemas import (
     FeedOut,
     ItemIn,
     ItemUpdate,
+    PendingApprovalOut,
     RepeatIn,
     RepeatOut,
 )
+
+log = logging.getLogger("dailybread.items")
 
 router = APIRouter(prefix="/items", tags=["items"])
 
@@ -254,6 +258,8 @@ def _feed_item(
     completed: bool,
     streak: int | None,
     assignee_completions: list[AssigneeCompletion] | None,
+    pending: bool = False,
+    pending_by: int | None = None,
 ) -> FeedItemOut:
     return FeedItemOut(
         id=item.id,
@@ -271,12 +277,15 @@ def _feed_item(
         repeat=_repeat_out(item),
         completed=completed,
         streak=streak,
+        pending=pending,
+        pending_by=pending_by,
         assignee_completions=assignee_completions,
     )
 
 
-# One item's completion rows, prefetched: (user_id, date_for) pairs.
-CompletionRows = list[tuple[int | None, dt.date]]
+# One item's completion rows, prefetched: (user_id, date_for, pending) triples.
+# A pending row is a minor's tap awaiting a parent — it must never read as done.
+CompletionRows = list[tuple[int | None, dt.date, bool]]
 
 
 def _completions_by_item(db: Session, items: list[Item]) -> dict[int, CompletionRows]:
@@ -289,12 +298,12 @@ def _completions_by_item(db: Session, items: list[Item]) -> dict[int, Completion
     """
     rows: dict[int, CompletionRows] = {item.id: [] for item in items}
     if rows:
-        for item_id, uid, day in db.execute(
-            select(Completion.item_id, Completion.user_id, Completion.date_for).where(
-                Completion.item_id.in_(rows)
-            )
+        for item_id, uid, day, pending in db.execute(
+            select(
+                Completion.item_id, Completion.user_id, Completion.date_for, Completion.pending
+            ).where(Completion.item_id.in_(rows))
         ):
-            rows[item_id].append((uid, day))
+            rows[item_id].append((uid, day, pending))
     return rows
 
 
@@ -316,33 +325,56 @@ def _build_feed_item(
         # date_for — checking by date would make it reappear as undone when the
         # due day arrives. An undated "anytime" task stays date-scoped so it
         # shows crossed out today and archives tomorrow.
+        # A pending row (a minor's tap awaiting a parent) never counts as done;
+        # it surfaces separately so the card can show its waiting state.
         if item.date_for is not None:
-            done = bool(completions)
+            done = any(not pend for _, _, pend in completions)
+            waiting = next((uid for uid, _, pend in completions if pend), None)
         else:
-            done = any(day == date for _, day in completions)
-        return _feed_item(item, completed=done, streak=None, assignee_completions=None)
+            done = any(day == date and not pend for _, day, pend in completions)
+            waiting = next(
+                (uid for uid, day, pend in completions if pend and day == date), None
+            )
+        return _feed_item(
+            item,
+            completed=done,
+            streak=None,
+            assignee_completions=None,
+            pending=not done and waiting is not None,
+            pending_by=waiting if not done else None,
+        )
 
     participants = _routine_participants(db, item)
     dates_by_user: dict[int, set[dt.date]] = {}
-    for uid, day in completions:
+    pending_by_user: dict[int, set[dt.date]] = {}
+    for uid, day, pend in completions:
         if uid is not None:
-            dates_by_user.setdefault(uid, set()).add(day)
+            (pending_by_user if pend else dates_by_user).setdefault(uid, set()).add(day)
 
     completions = [
         AssigneeCompletion(
             user_id=p.id,
             completed=date in dates_by_user.get(p.id, set()),
             streak=_streak(item, dates_by_user.get(p.id, set()), date),
+            pending=date in pending_by_user.get(p.id, set())
+            and date not in dates_by_user.get(p.id, set()),
         )
         for p in participants
     ]
     mine = next((c for c in completions if c.user_id == user.id), None)
     if mine is not None:
-        completed, streak = mine.completed, mine.streak
+        completed, streak, pending = mine.completed, mine.streak, mine.pending
     else:
         completed = bool(completions) and all(c.completed for c in completions)
-        streak = None
-    return _feed_item(item, completed=completed, streak=streak, assignee_completions=completions)
+        streak, pending = None, False
+    return _feed_item(
+        item,
+        completed=completed,
+        streak=streak,
+        assignee_completions=completions,
+        pending=pending,
+        pending_by=user.id if pending else None,
+    )
 
 
 # One-off cards keep nagging for this long after their date before they fall
@@ -412,7 +444,13 @@ def feed(
             fi = _build_feed_item(db, item, user, date_for, comps[item.id])
             # An undated task finished on an earlier day is archived off the
             # board; finished today it stays put, crossed out, until midnight.
-            if not fi.completed and any(day != date_for for _, day in comps[item.id]):
+            # A pending mark from an earlier day archives too — the card is
+            # out of the kid's hands and lives in the parents' approval queue.
+            if (
+                not fi.completed
+                and not fi.pending
+                and any(day != date_for for _, day, _ in comps[item.id])
+            ):
                 continue
             today.append(fi)
         elif item.date_for < date_for:
@@ -434,6 +472,35 @@ def feed(
     next7.sort(key=lambda i: (i.date_for, not i.all_day, i.time_of_day or late, i.title.lower()))
 
     return FeedOut(date=date_for, overdue=overdue, today=today, next7=next7)
+
+
+@router.get("/pending", response_model=list[PendingApprovalOut])
+def pending_approvals(
+    db: Session = Depends(get_db),
+    parent: User = Depends(require_parent),
+):
+    """Every check-off in the family still waiting on a parent, oldest first —
+    the "Waiting on you" list. Deliberately not derived from the feed: a
+    pending mark from an earlier day (yesterday's routine, an archived task)
+    wouldn't materialize there, but it still needs an answer."""
+    rows = db.execute(
+        select(Completion, Item, User)
+        .join(Item, Completion.item_id == Item.id)
+        .join(User, Completion.user_id == User.id)
+        .where(Item.family_id == parent.family_id, Completion.pending.is_(True))
+        .order_by(Completion.completed_at)
+    ).all()
+    return [
+        PendingApprovalOut(
+            item_id=item.id,
+            title=item.title,
+            kind=item.kind,
+            user=kid,
+            date_for=completion.date_for,
+            completed_at=completion.completed_at,
+        )
+        for completion, item, kid in rows
+    ]
 
 
 # A calendar request can span weeks, so it can't use the ±1-day "today" clamp;
@@ -546,6 +613,19 @@ def update_item(
 
     if "assignee_ids" in fields:
         item.assignees = _resolve_assignees(db, data.assignee_ids or [], parent.family_id)
+        # Drop pending marks from members no longer on the card: nobody could
+        # ever approve them, and the approval queue must not show ghost rows.
+        participant_ids = {a.id for a in item.assignees} or (
+            {item.owner_id} if item.owner_id is not None else set()
+        )
+        pending_rows = db.scalars(
+            select(Completion).where(
+                Completion.item_id == item.id, Completion.pending.is_(True)
+            )
+        ).all()
+        for row in pending_rows:
+            if row.user_id not in participant_ids:
+                db.delete(row)
     if "visibility" in fields and data.visibility is not None:
         item.visibility = data.visibility
     if "title" in fields and data.title is not None:
@@ -591,6 +671,31 @@ def delete_item(
     db.commit()
 
 
+def _notify_parents_of_pending(db: Session, item: Item, kid: User, date_for: dt.date) -> None:
+    """Tell every parent a kid's check-off is waiting on them. Sent inline
+    after the commit — at family scale that's a couple hundred milliseconds,
+    and the client's toggle is optimistic so nobody is watching the clock.
+    (Not a BackgroundTask: get_db's session would close before it ran.) A
+    push failure must never fail the check-off itself."""
+    if not push.enabled():
+        return
+    try:
+        first_name = kid.display_name.split()[0]
+        payload = {
+            "title": f"{first_name} finished: {item.title}",
+            "body": "Tap to review and approve",
+            "tag": f"approval-{item.id}-{kid.id}-{date_for.isoformat()}",
+            "url": "/",
+        }
+        parents = db.scalars(
+            select(User).where(User.family_id == kid.family_id, User.role == Role.parent)
+        ).all()
+        for parent in parents:
+            push.send_to_user(db, parent.id, payload)
+    except Exception:
+        log.exception("approval push failed (check-off already saved)")
+
+
 @router.post("/{item_id}/complete", response_model=FeedItemOut)
 def complete_item(
     item_id: int,
@@ -607,7 +712,7 @@ def complete_item(
     if item.kind == ItemKind.routine:
         # Per-person: the target member's own occurrence on this day.
         exists = db.scalar(
-            select(Completion.id).where(
+            select(Completion).where(
                 Completion.item_id == item.id,
                 Completion.user_id == target.id,
                 Completion.date_for == date_for,
@@ -617,17 +722,31 @@ def complete_item(
         # A dated card is a one-shot: any single completion means done, whatever
         # day it was marked. The calendar records the real day; the board's
         # overdue-clear records today. Either way, don't add a second row.
-        exists = db.scalar(select(Completion.id).where(Completion.item_id == item.id))
+        exists = db.scalar(select(Completion).where(Completion.item_id == item.id))
     else:
         # Undated task: per-day, so it can archive the day after it's checked.
         exists = db.scalar(
-            select(Completion.id).where(
+            select(Completion).where(
                 Completion.item_id == item.id, Completion.date_for == date_for
             )
         )
 
     if exists is None:
-        db.add(Completion(item_id=item.id, user_id=target.id, date_for=date_for))
+        # A minor's own tap starts pending until a parent makes it official; a
+        # parent's tap (their own card or ?for=<kid>) is official on the spot.
+        row = Completion(
+            item_id=item.id, user_id=target.id, date_for=date_for, pending=user.is_minor
+        )
+        db.add(row)
+        db.commit()
+        if row.pending:
+            _notify_parents_of_pending(db, item, user, date_for)
+    elif exists.pending and user.role == Role.parent:
+        # Approval: promote the kid's pending row in place (never a second row,
+        # so the (item, member, day) uniqueness keeps holding) and remember who
+        # made it official.
+        exists.pending = False
+        exists.approved_by_id = user.id
         db.commit()
 
     return _build_feed_item(
@@ -665,6 +784,10 @@ def uncomplete_item(
             Completion.item_id == item.id, Completion.date_for == date_for
         )
     completions = db.scalars(stmt).all()
+    if user.is_minor:
+        # A minor may only withdraw their own still-pending mark. Approved
+        # rows are a parent's word now — un-ticking them is not theirs to do.
+        completions = [c for c in completions if c.pending and c.user_id == user.id]
     for completion in completions:
         db.delete(completion)
     if completions:

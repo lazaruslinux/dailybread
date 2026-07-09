@@ -499,8 +499,8 @@ def test_weekly_routine_shows_only_on_scheduled_days(owner):
 # ---- per-person vs shared completion -----------------------------------------
 
 
-def test_routine_completion_is_per_person(owner, child):
-    dad_id, kid_id = user_id(owner), user_id(child)
+def test_routine_completion_is_per_person(owner, adult_child):
+    dad_id, kid_id = user_id(owner), user_id(adult_child)
     today_wd = dt.date.today().weekday()
     routine = make_item(
         owner,
@@ -511,9 +511,9 @@ def test_routine_completion_is_per_person(owner, child):
     )
 
     # The child checks their own occurrence.
-    assert child.post(f"/items/{routine['id']}/complete?date={TODAY}").status_code == 200
+    assert adult_child.post(f"/items/{routine['id']}/complete?date={TODAY}").status_code == 200
 
-    # On the owner's board the child is done but the owner is not.
+    # On the owner's board the adult_child is done but the owner is not.
     feed = owner.get(f"/items/feed?date={TODAY}").json()
     card = next(i for i in feed["today"] if i["id"] == routine["id"])
     states = {c["user_id"]: c["completed"] for c in card["assignee_completions"]}

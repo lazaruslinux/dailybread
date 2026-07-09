@@ -206,6 +206,9 @@ class AssigneeCompletion(BaseModel):
     user_id: int
     completed: bool
     streak: int
+    # Kid mode: this participant tapped done but a parent hasn't approved yet.
+    # Never true together with completed; the streak ignores pending marks.
+    pending: bool = False
 
 
 class FeedItemOut(BaseModel):
@@ -227,6 +230,12 @@ class FeedItemOut(BaseModel):
     # kinds, the single shared check.
     completed: bool
     streak: int | None
+    # Kid mode: a minor tapped done and the mark awaits a parent. For the
+    # tapping kid this is their own waiting state; for everyone else it flags
+    # the card as needing approval. pending_by names the kid (one-shots; a
+    # routine's per-person state lives in assignee_completions instead).
+    pending: bool = False
+    pending_by: int | None = None
     # Per-participant state for routines, so the parents' board can show each
     # member's check independently. None for non-routine kinds.
     assignee_completions: list[AssigneeCompletion] | None
@@ -251,6 +260,19 @@ class FeedOut(BaseModel):
     today: list[FeedItemOut]
     # One-off cards dated in the next seven days.
     next7: list[FeedItemOut]
+
+
+class PendingApprovalOut(BaseModel):
+    """One check-off waiting on a parent, for the "Waiting on you" list. Item
+    and kid ride along so the row renders without extra fetches, and marks
+    from earlier days (which today's feed wouldn't surface) still show up."""
+
+    item_id: int
+    title: str
+    kind: ItemKind
+    user: UserOut  # the kid who tapped it
+    date_for: dt.date
+    completed_at: dt.datetime
 
 
 class CalendarDayOut(BaseModel):
