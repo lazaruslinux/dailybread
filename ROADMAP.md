@@ -114,6 +114,26 @@ Where dailybread is headed, in order. Done items stay for history.
   relays with end-to-end encrypted payloads, so the server stays
   private-network-only with no inbound exposure.
 
+- **Kid accounts** — a birthdate on each member marks minors (unlocking
+  automatically at 18). Minors see a simplified app: no nutrition, health,
+  or diary (hidden in the UI and refused by the server), and a board limited
+  to their own cards plus read-only family-wide ones. A minor's check-off
+  waits as pending until a parent approves it — parents get a push and a
+  "Waiting on you" section on Home; the kid can withdraw a pending tick but
+  can't undo an approved one. A minor's mood, status, and journal are
+  visible only to their parents (a parent can read a minor's journal;
+  adults' journals stay readable by no one). Kids receive no notifications
+  of any kind. All of it is passive: in a household where kids don't sign
+  in, nothing changes for the parents.
+- **Timeline day nav** — chevrons on the timeline step to the previous or
+  next day as a read-only peek fed by the calendar, with a jump back to
+  today.
+- **Scheduled check-ins** — three optional daily pushes, hours configurable:
+  a morning digest (a personal good-morning with the day's card count and
+  what's next), a mid-day check with calories left (only for members who
+  log food), and an evening check-in for every adult. Each fires at most
+  once per day per member, quietly skipping anyone it doesn't apply to.
+
 ## Next
 
 1. **Family chat** — messaging, then topic channels, then photo attachments;
@@ -122,12 +142,21 @@ Where dailybread is headed, in order. Done items stay for history.
 2. **Fitness sync** — workouts flowing into the app and auto-completing
    matching board routines. Strava first (watch → Strava → server polling);
    direct Apple Health export as a self-hosted alternative path.
-3. **Morning digest** — an optional daily push summarizing the day ahead.
 
 ## Ongoing polish
 
 - Member colors, a do-not-disturb dot, loading skeletons, pull-to-refresh,
   an in-app "How to use" / FAQ section.
+- Health layer: a weight trend chart, a parent-facing UI for setting a
+  child's goals (the endpoints exist), net carbs on the diary, more
+  exercise types (the catalog is data-driven), and a projected
+  goal-arrival date.
+
+## Parked
+
+- **Dinner voting** — a parent posts a few candidate meals for a night and
+  the family votes from the Kitchen tab (the one Kitchen write kids would
+  get); the parent sees the tally and sets the plan. Not scheduled.
 
 ## Shelved
 
@@ -135,3 +164,6 @@ Where dailybread is headed, in order. Done items stay for history.
   phone calendar apps refresh subscriptions lazily (hours), which reads as
   stale on a LAN-only server; push reminders cover the real need. Cheap to
   revive if wanted.
+- **Kid-mode extensions** (rewards, allowance, chore scoring) — paused; in
+  practice parents manage the family board directly and kids rarely sign
+  in, so the approval flow above already covers the need.
