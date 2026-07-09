@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { Check, Flame, Pencil, Trash2, Undo2, X } from 'lucide-react'
+import { Check, Flame, Hourglass, Pencil, Trash2, Undo2, X } from 'lucide-react'
 import { useState } from 'react'
 import { avatarUrl, type FamilyMember, type FeedItem, type Repeat, type User } from '../lib/api'
 import { formatTime } from '../lib/moods'
@@ -183,35 +183,81 @@ export function ItemDetail({
             <div className="flex flex-col gap-2">
               {item.assignee_completions.map((ac) => {
                 const member = family?.find((m) => m.id === ac.user_id)
+                const isMe = me?.id === ac.user_id
+                const parentOnPending = ac.pending && me?.role === 'parent'
                 // You can toggle your own; a parent can toggle anyone's. When no
                 // handler is wired (a future day on the calendar), it's read-only.
+                // Kid mode: a minor can't un-tick their own approved row, and a
+                // parent answers a waiting mark with the explicit buttons below.
                 const canToggle =
-                  Boolean(onToggleFor) && Boolean(me) && (me!.id === ac.user_id || me!.role === 'parent')
+                  Boolean(onToggleFor) &&
+                  Boolean(me) &&
+                  (isMe || me!.role === 'parent') &&
+                  !parentOnPending &&
+                  !(isMe && me!.is_minor && ac.completed)
                 return (
                   <button
                     key={ac.user_id}
                     type="button"
                     disabled={!canToggle}
-                    onClick={() => onToggleFor?.(ac.user_id, !ac.completed)}
+                    // A tap on your own waiting mark withdraws it.
+                    onClick={() => onToggleFor?.(ac.user_id, ac.pending ? false : !ac.completed)}
                     className="flex items-center gap-3 rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left transition-colors enabled:hover:bg-fg/10 disabled:opacity-70"
                   >
                     <span
                       className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${
                         ac.completed
                           ? 'border-emerald-300/70 bg-emerald-400/25'
-                          : 'border-fg/30 bg-fg/5'
+                          : ac.pending
+                            ? 'border-amber-300/70 bg-amber-400/25'
+                            : 'border-fg/30 bg-fg/5'
                       }`}
                     >
                       {ac.completed && <Check className="h-3.5 w-3.5 text-emerald-300" strokeWidth={3} />}
+                      {!ac.completed && ac.pending && (
+                        <Hourglass className="h-3 w-3 text-amber-300" strokeWidth={2.5} />
+                      )}
                     </span>
                     <Avatar name={member?.display_name ?? '?'} src={member ? avatarUrl(member) : null} size="sm" />
-                    <span className="flex-1 truncate font-semibold text-fg/90">
-                      {member?.display_name ?? 'Member'}
-                    </span>
-                    {ac.streak >= 3 && (
-                      <span className="flex items-center gap-0.5 rounded-full bg-orange-400/20 px-1.5 py-px text-[10px] font-bold text-orange-300">
-                        <Flame className="h-3 w-3" /> {ac.streak}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-semibold text-fg/90">
+                        {member?.display_name ?? 'Member'}
                       </span>
+                      {ac.pending && !ac.completed && (
+                        <span className="block text-xs font-medium text-amber-300/90">
+                          Waiting for a parent
+                        </span>
+                      )}
+                    </span>
+                    {parentOnPending && onToggleFor ? (
+                      <span className="flex shrink-0 items-center gap-1.5">
+                        <span
+                          role="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onToggleFor(ac.user_id, false)
+                          }}
+                          className="rounded-full border border-fg/10 bg-fg/5 px-2 py-1 text-xs font-semibold text-fg/60 hover:bg-fg/10"
+                        >
+                          Put back
+                        </span>
+                        <span
+                          role="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onToggleFor(ac.user_id, true)
+                          }}
+                          className="rounded-full border border-emerald-300/40 bg-emerald-400/15 px-2 py-1 text-xs font-bold text-emerald-300 hover:bg-emerald-400/25"
+                        >
+                          Approve
+                        </span>
+                      </span>
+                    ) : (
+                      ac.streak >= 3 && (
+                        <span className="flex items-center gap-0.5 rounded-full bg-orange-400/20 px-1.5 py-px text-[10px] font-bold text-orange-300">
+                          <Flame className="h-3 w-3" /> {ac.streak}
+                        </span>
+                      )
                     )}
                   </button>
                 )
@@ -221,7 +267,39 @@ export function ItemDetail({
         )}
 
         <div className="mt-6 flex flex-col gap-2.5">
-          {!isRoutine && canCheck && onToggle && (
+          {/* Kid mode, one-shots: the kid's waiting mark gets a withdraw
+              button; a parent gets the same Approve / Put back pair as the
+              "Waiting on you" list. Routines handle this per person above. */}
+          {!isRoutine && item.pending && item.pending_by === me?.id && onToggle && (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={onToggle}
+              className="flex items-center justify-center gap-1.5"
+            >
+              <Hourglass className="h-4 w-4 text-amber-300" /> Undo (waiting for a parent)
+            </Button>
+          )}
+          {!isRoutine && item.pending && item.pending_by !== me?.id && me?.role === 'parent' && onToggleFor && (
+            <div className="flex gap-2.5">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => onToggleFor(item.pending_by!, false)}
+                className="flex flex-1 items-center justify-center gap-1.5"
+              >
+                <Undo2 className="h-4 w-4" /> Put back
+              </Button>
+              <Button
+                type="button"
+                onClick={() => onToggleFor(item.pending_by!, true)}
+                className="flex flex-1 items-center justify-center gap-1.5"
+              >
+                <Check className="h-4 w-4" /> Approve
+              </Button>
+            </div>
+          )}
+          {!isRoutine && !item.pending && canCheck && onToggle && (
             <Button
               type="button"
               variant={item.completed ? 'ghost' : 'primary'}

@@ -1,9 +1,11 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { CalendarClock, Plus, Rows3, Undo2 } from 'lucide-react'
+import { CalendarClock, Check, Hourglass, Plus, Rows3, Undo2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../lib/api'
+import { avatarUrl } from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { canCheckItem } from '../lib/items'
+import { Avatar } from '../components/Avatar'
 import { DayTimeline } from '../components/DayTimeline'
 import { FamilyStrip } from '../components/FamilyStrip'
 import { ItemCard, SectionDivider } from '../components/ItemCard'
@@ -41,6 +43,87 @@ function FilterChip({
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
+// "Today" / "Yesterday" / "Mon, Jul 6" for an approval row's date.
+function approvalDate(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  const today = new Date()
+  const days = Math.round(
+    (new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime() - date.getTime()) /
+      86_400_000,
+  )
+  if (days === 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+// Kid mode, the parents' side: every check-off in the family still waiting
+// on a parent, above the board where it can't be missed. Approve makes the
+// kid's mark official; Put back clears it so they can redo the thing.
+function WaitingOnYou({
+  approvals,
+  family,
+  onApprove,
+  onPutBack,
+}: {
+  approvals: api.PendingApproval[]
+  family: api.FamilyMember[]
+  onApprove: (a: api.PendingApproval) => void
+  onPutBack: (a: api.PendingApproval) => void
+}) {
+  if (approvals.length === 0) return null
+  return (
+    <motion.section
+      layout
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="glass mb-5 border border-amber-400/25 p-4"
+      data-waiting-on-you
+    >
+      <span className="mb-3 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-amber-300">
+        <Hourglass className="h-3 w-3" strokeWidth={3} /> Waiting on you
+      </span>
+      <div className="flex flex-col gap-2.5">
+        <AnimatePresence>
+          {approvals.map((a) => {
+            const kid = family.find((m) => m.id === a.user.id) ?? a.user
+            return (
+              <motion.div
+                key={`${a.item_id}-${a.user.id}-${a.date_for}`}
+                layout
+                exit={{ opacity: 0, x: 24 }}
+                className="flex items-center gap-3"
+              >
+                <Avatar name={kid.display_name} src={avatarUrl(kid)} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{a.title}</p>
+                  <p className="text-xs text-fg/50">
+                    {kid.display_name.split(/\s+/)[0]} · {approvalDate(a.date_for)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onPutBack(a)}
+                  className="shrink-0 rounded-full border border-fg/10 bg-fg/5 px-2.5 py-1.5 text-xs font-semibold text-fg/60 transition-colors hover:bg-fg/10"
+                >
+                  Put back
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onApprove(a)}
+                  className="flex shrink-0 items-center gap-1 rounded-full border border-emerald-300/40 bg-emerald-400/15 px-2.5 py-1.5 text-xs font-bold text-emerald-300 transition-colors hover:bg-emerald-400/25"
+                >
+                  <Check className="h-3.5 w-3.5" strokeWidth={3} /> Approve
+                </button>
+              </motion.div>
+            )
+          })}
+        </AnimatePresence>
+      </div>
+    </motion.section>
+  )
+}
+
 // Which slice of "today" a card belongs to, decided by the live clock. Past due
 // is only for one-offs (routines are habits, never overdue); a passed timed
 // routine just stays in Now until it's done.
@@ -63,9 +146,12 @@ export function Home({
 }) {
   const { user } = useAuth()
   const isParent = user?.role === 'parent'
+  const isMinor = user?.is_minor ?? false
 
   const [feed, setFeed] = useState<api.Feed | null>(null)
   const [family, setFamily] = useState<api.FamilyMember[]>([])
+  // Kid mode: the family's check-offs waiting on a parent. Parents only.
+  const [approvals, setApprovals] = useState<api.PendingApproval[]>([])
   const [error, setError] = useState<string | null>(null)
   const [sheet, setSheet] = useState<{ open: boolean; item: api.FeedItem | null }>({ open: false, item: null })
   // checkable rides along so the detail sheet knows whether to offer "Mark done".
@@ -97,7 +183,11 @@ export function Home({
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Could not load the board.')
     }
-  }, [])
+    if (isParent) {
+      // Separate so a hiccup here never blanks the board.
+      api.getPendingApprovals().then(setApprovals).catch(() => {})
+    }
+  }, [isParent])
 
   useEffect(() => {
     refresh()
@@ -153,7 +243,35 @@ export function Home({
                 completed: userId === user?.id ? completed : it.completed,
                 assignee_completions:
                   it.assignee_completions?.map((c) =>
-                    c.user_id === userId ? { ...c, completed } : c,
+                    // Either way the waiting state is settled: an approval
+                    // promoted it, a put-back deleted it.
+                    c.user_id === userId ? { ...c, completed, pending: false } : c,
+                  ) ?? null,
+              }
+            : it,
+        )
+      setFeed((f) =>
+        f ? { ...f, overdue: patch(f.overdue), today: patch(f.today), next7: patch(f.next7) } : f,
+      )
+      setDetail((d) => (d && d.item.id === id ? { ...d, item: patch([d.item])[0] } : d))
+    },
+    [user],
+  )
+
+  // Kid mode's optimistic half: flip the viewer's own WAITING state (their
+  // tap that a parent hasn't answered yet) without ever touching completed.
+  const setItemPending = useCallback(
+    (id: number, pending: boolean) => {
+      const patch = (items: api.FeedItem[]) =>
+        items.map((it) =>
+          it.id === id
+            ? {
+                ...it,
+                pending,
+                pending_by: pending ? (user?.id ?? null) : null,
+                assignee_completions:
+                  it.assignee_completions?.map((c) =>
+                    c.user_id === user?.id ? { ...c, pending } : c,
                   ) ?? null,
               }
             : it,
@@ -173,6 +291,31 @@ export function Home({
   }
 
   async function toggle(item: api.FeedItem) {
+    // Kid mode first: a minor's tap becomes a waiting mark, and tapping the
+    // waiting mark again withdraws it. Done stays a parent's call.
+    if (item.pending && item.pending_by === user?.id) {
+      setItemPending(item.id, false)
+      try {
+        await api.uncompleteItem(item.id)
+        refresh()
+      } catch (err) {
+        setItemPending(item.id, true)
+        setError(err instanceof api.ApiError ? err.message : 'Could not update the card.')
+      }
+      return
+    }
+    if (isMinor && !item.completed) {
+      setItemPending(item.id, true)
+      try {
+        await api.completeItem(item.id)
+        refresh()
+      } catch (err) {
+        setItemPending(item.id, false)
+        setError(err instanceof api.ApiError ? err.message : 'Could not update the card.')
+      }
+      return
+    }
+
     const next = !item.completed
     setItemCompleted(item.id, next)
     try {
@@ -189,7 +332,40 @@ export function Home({
 
   // Check a routine off for a specific member (from the detail sheet's
   // per-person list). Parents can do this for anyone; a member for themselves.
+  // For a parent this doubles as the approval control: completing over a kid's
+  // waiting mark approves it, un-checking puts it back.
   async function toggleFor(item: api.FeedItem, userId: number, done: boolean) {
+    if (isMinor && userId === user?.id) {
+      // A minor's own row follows kid-mode semantics: tap = waiting mark (or
+      // withdrawing one), never a direct Done.
+      const mine = item.assignee_completions?.find((c) => c.user_id === userId)
+      if (mine?.completed) return // approved: a parent's word, not theirs to undo
+      setItemPending(item.id, done)
+      try {
+        if (done) await api.completeItem(item.id, userId)
+        else await api.uncompleteItem(item.id, userId)
+        refresh()
+      } catch (err) {
+        setItemPending(item.id, !done)
+        setError(err instanceof api.ApiError ? err.message : 'Could not update the card.')
+      }
+      return
+    }
+    if (item.kind !== 'routine' && item.pending && item.pending_by === userId) {
+      // A parent answering a one-shot's waiting mark from the detail sheet:
+      // approve promotes it to done, put back clears it.
+      setItemPending(item.id, false)
+      setItemCompleted(item.id, done)
+      try {
+        if (done) await api.completeItem(item.id, userId)
+        else await api.uncompleteItem(item.id, userId)
+        refresh()
+      } catch (err) {
+        setError(err instanceof api.ApiError ? err.message : 'Could not update the card.')
+        refresh()
+      }
+      return
+    }
     setAssigneeCompleted(item.id, userId, done)
     try {
       if (done) await api.completeItem(item.id, userId)
@@ -234,17 +410,41 @@ export function Home({
   }
 
   const cardProps = (item: api.FeedItem) => {
-    const checkable = canCheck(item)
+    // Kid mode: once a parent has approved (completed, no waiting mark of
+    // their own), the card is settled — a minor gets no checkbox to undo it.
+    const lockedForMinor =
+      isMinor && item.completed && !(item.pending && item.pending_by === user?.id)
+    const checkable = canCheck(item) && !lockedForMinor
     return {
       item,
       canCheck: checkable,
       family,
+      viewerId: user?.id,
+      viewerIsParent: isParent,
       // The date lives inside the card for anything not dated today, so the
       // past-due and next-7-days lists read without repeated date separators.
       showDate: item.date_for != null && item.date_for !== feed?.date,
       onToggle: checkable ? () => toggle(item) : undefined,
       onOpen: () => setDetail({ item, checkable }),
       onEdit: isParent ? () => openEditor(item) : undefined,
+    }
+  }
+
+  // Answer an approval row. The row leaves the list optimistically; the
+  // refresh brings back the truth (and the card's new state with it).
+  async function answerApproval(a: api.PendingApproval, approve: boolean) {
+    setApprovals((prev) =>
+      prev.filter(
+        (p) => !(p.item_id === a.item_id && p.user.id === a.user.id && p.date_for === a.date_for),
+      ),
+    )
+    try {
+      if (approve) await api.completeItem(a.item_id, a.user.id, a.date_for)
+      else await api.uncompleteItem(a.item_id, a.user.id, a.date_for)
+      refresh()
+    } catch (err) {
+      setApprovals((prev) => [...prev, a])
+      setError(err instanceof api.ApiError ? err.message : 'Could not update the card.')
     }
   }
 
@@ -312,6 +512,15 @@ export function Home({
   return (
     <div>
       <FamilyStrip members={family} onOpen={onOpenProfile} />
+
+      {isParent && (
+        <WaitingOnYou
+          approvals={approvals}
+          family={family}
+          onApprove={(a) => answerApproval(a, true)}
+          onPutBack={(a) => answerApproval(a, false)}
+        />
+      )}
 
       <TonightCard onOpenKitchen={onOpenKitchen} />
 
@@ -441,6 +650,7 @@ export function Home({
               items={timed}
               nowMinutes={clock.getHours() * 60 + clock.getMinutes()}
               canCheck={canCheck}
+              viewerId={user?.id}
               onToggle={toggle}
               onOpen={(item) => setDetail({ item, checkable: canCheck(item) })}
             />

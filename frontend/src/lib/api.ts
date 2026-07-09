@@ -196,6 +196,8 @@ export interface AssigneeCompletion {
   user_id: number
   completed: boolean
   streak: number
+  // Kid mode: this member tapped done and a parent hasn't approved yet.
+  pending: boolean
 }
 
 export interface FeedItem {
@@ -217,6 +219,11 @@ export interface FeedItem {
   // kinds, the single shared check.
   completed: boolean
   streak: number | null
+  // Kid mode: a minor's mark waiting on a parent. For the kid it's their own
+  // waiting state; for a parent it means the card needs approval. pending_by
+  // names the kid on one-shots (routines carry it per assignee instead).
+  pending: boolean
+  pending_by: number | null
   // Per-participant state for routines; null for every other kind.
   assignee_completions: AssigneeCompletion[] | null
 }
@@ -295,6 +302,19 @@ export const completeItem = (id: number, forUserId?: number, date?: string) =>
 
 export const uncompleteItem = (id: number, forUserId?: number, date?: string) =>
   request<FeedItem>(completePath(id, forUserId, date), { method: 'DELETE' })
+
+// Kid mode: a minor's check-off waiting on a parent. Parents approve with
+// completeItem(item_id, kid_id, date) and put back with uncompleteItem(...).
+export interface PendingApproval {
+  item_id: number
+  title: string
+  kind: ItemKind
+  user: User // the kid who tapped it
+  date_for: string // "YYYY-MM-DD"
+  completed_at: string
+}
+
+export const getPendingApprovals = () => request<PendingApproval[]>('/items/pending')
 
 // ---- grocery list -----------------------------------------------------------
 

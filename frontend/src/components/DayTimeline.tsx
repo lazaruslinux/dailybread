@@ -1,4 +1,4 @@
-import { Check } from 'lucide-react'
+import { Check, Hourglass } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import * as api from '../lib/api'
 import { formatTimeRange } from '../lib/moods'
@@ -81,14 +81,18 @@ function layout(items: api.FeedItem[]): Placed[] {
 function TimelineCard({
   placed,
   canCheck,
+  viewerId,
   onToggle,
   onOpen,
 }: {
   placed: Placed
   canCheck: boolean
+  viewerId?: number
   onToggle?: () => void
   onOpen: () => void
 }) {
+  // Kid mode: the viewer's own tap awaiting a parent (tap again withdraws).
+  const myPending = placed.item.pending && placed.item.pending_by === viewerId
   const { item, top, height, col, cols } = placed
   const { Icon, tint } = KIND_STYLE[item.kind]
   const roomy = height >= 56
@@ -120,7 +124,13 @@ function TimelineCard({
       {canCheck && onToggle && (
         <button
           type="button"
-          aria-label={item.completed ? `Mark ${item.title} not done` : `Mark ${item.title} done`}
+          aria-label={
+            myPending
+              ? `Withdraw ${item.title}`
+              : item.completed
+                ? `Mark ${item.title} not done`
+                : `Mark ${item.title} done`
+          }
           onClick={(e) => {
             e.stopPropagation()
             onToggle()
@@ -129,10 +139,17 @@ function TimelineCard({
         >
           <span
             className={`flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors ${
-              item.completed ? 'border-emerald-300/70 bg-emerald-400/25' : 'border-fg/30 bg-fg/5'
+              item.completed
+                ? 'border-emerald-300/70 bg-emerald-400/25'
+                : myPending
+                  ? 'border-amber-300/70 bg-amber-400/25'
+                  : 'border-fg/30 bg-fg/5'
             }`}
           >
             {item.completed && <Check className="h-3 w-3 text-emerald-300" strokeWidth={3} />}
+            {!item.completed && myPending && (
+              <Hourglass className="h-2.5 w-2.5 text-amber-300" strokeWidth={2.5} />
+            )}
           </span>
         </button>
       )}
@@ -188,12 +205,14 @@ export function DayTimeline({
   items,
   nowMinutes,
   canCheck,
+  viewerId,
   onToggle,
   onOpen,
 }: {
   items: api.FeedItem[] // today's timed cards, open and done alike
   nowMinutes: number
   canCheck: (item: api.FeedItem) => boolean
+  viewerId?: number
   onToggle: (item: api.FeedItem) => void
   onOpen: (item: api.FeedItem) => void
 }) {
@@ -253,6 +272,7 @@ export function DayTimeline({
               key={p.item.id}
               placed={p}
               canCheck={canCheck(p.item)}
+              viewerId={viewerId}
               onToggle={canCheck(p.item) ? () => onToggle(p.item) : undefined}
               onOpen={() => onOpen(p.item)}
             />
