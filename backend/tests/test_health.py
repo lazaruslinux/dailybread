@@ -279,3 +279,21 @@ def test_member_profile_and_weight_cross_family_404(other, child):
         ).status_code
         == 404
     )
+
+
+# ---- one birthdate per member --------------------------------------------------
+
+
+def test_profile_birthdate_is_the_users_birthdate(owner):
+    """The health profile and the admin sheet share users.birthdate: writing
+    through either side is visible through the other."""
+    res = owner.put("/me/health/profile", json={"birthdate": "1988-03-05"})
+    assert res.status_code == 200
+    assert res.json()["profile"]["birthdate"] == "1988-03-05"
+    assert owner.get("/auth/me").json()["birthdate"] == "1988-03-05"
+
+    # And the other direction: an admin edit shows up in the health profile.
+    me_id = user_id(owner)
+    res = owner.patch(f"/auth/users/{me_id}", json={"birthdate": "1988-03-06"})
+    assert res.status_code == 200
+    assert owner.get("/me/health").json()["profile"]["birthdate"] == "1988-03-06"

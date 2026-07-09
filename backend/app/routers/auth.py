@@ -159,26 +159,20 @@ def mint_signup_invite(
 ):
     """Server-admin only: invite someone onto this dailybread. The response
     carries the code exactly once; the invitee redeems it on the sign-in
-    screen, picks their own password, and founds their OWN family — invites
-    never join an existing one."""
+    screen, picks their own username and password, and founds their OWN
+    family — invites never join an existing one."""
     if not admin.is_owner:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN, "Only the server admin can invite to dailybread"
         )
 
     now = dt.datetime.now(dt.timezone.utc)
-    # Hygiene: expired invites are dead weight and would squat usernames.
+    # Hygiene: expired invites are dead weight.
     db.execute(delete(SignupInvite).where(SignupInvite.expires_at < now))
-
-    if db.scalar(select(User).where(User.username == data.username)):
-        raise HTTPException(status.HTTP_409_CONFLICT, "Username already taken")
-    # Re-minting for the same person replaces their pending invite.
-    db.execute(delete(SignupInvite).where(SignupInvite.username == data.username))
 
     code = mint_code()
     invite = SignupInvite(
         code_hash=hash_code(code),
-        username=data.username,
         display_name=data.display_name,
         invited_by_id=admin.id,
         expires_at=now + SIGNUP_INVITE_TTL,
@@ -187,7 +181,6 @@ def mint_signup_invite(
     db.commit()
     return SignupInviteOut(
         code=pretty(code),
-        username=invite.username,
         display_name=invite.display_name,
         expires_at=invite.expires_at,
     )
@@ -203,36 +196,33 @@ def check_signup_invite(data: InviteCodeIn, db: Session = Depends(get_db)):
     if invite is None:
         throttle.record_failure(SIGNUP_THROTTLE_KEY)
         raise HTTPException(status.HTTP_404_NOT_FOUND, "That code isn't valid")
-    return InviteCheckOut(username=invite.username, display_name=invite.display_name)
+    return InviteCheckOut(display_name=invite.display_name)
 
 
 @router.post("/invites/redeem", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def redeem_signup_invite(
     data: InviteRedeemIn, response: Response, db: Session = Depends(get_db)
 ):
-    """Anonymous: trade a live invite code + a chosen password for a signed-in
-    account. The account starts family-less; the create-your-family wizard
-    takes it from there."""
+    """Anonymous: trade a live invite code + a chosen username and password
+    for a signed-in account. The account starts family-less; the
+    create-your-family wizard takes it from there."""
     _gate_anonymous_code_attempts()
     invite = _live_invite(db, data.code)
     if invite is None:
         throttle.record_failure(SIGNUP_THROTTLE_KEY)
         raise HTTPException(status.HTTP_404_NOT_FOUND, "That code isn't valid")
 
-    # The username was free at mint time, but an admin may have legitimately
-    # taken it since. The invite is dead either way.
-    if db.scalar(select(User).where(User.username == invite.username)):
-        db.delete(invite)
-        db.commit()
+    # The invitee picked this username themselves, so a collision is just a
+    # normal form error: the invite stays live and they try another name.
+    if db.scalar(select(User).where(User.username == data.username)):
         raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            "That username was taken in the meantime. Ask for a new invite.",
+            status.HTTP_409_CONFLICT, "That username is taken. Try another."
         )
 
     user = User(
         family_id=None,  # the create-your-family wizard fills this in
-        username=invite.username,
-        display_name=invite.display_name,
+        username=data.username,
+        display_name=(data.display_name or invite.display_name).strip(),
         password_hash=hash_password(data.password),
         role=Role.parent,
         is_admin=False,
@@ -245,8 +235,7 @@ def redeem_signup_invite(
     except IntegrityError:  # a truly concurrent taker of the same username
         db.rollback()
         raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            "That username was taken in the meantime. Ask for a new invite.",
+            status.HTTP_409_CONFLICT, "That username is taken. Try another."
         )
     db.refresh(user)
     set_session_cookie(response, str(user.id), user.token_version)

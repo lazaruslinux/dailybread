@@ -12,7 +12,9 @@ export function Login() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
-  const [invitee, setInvitee] = useState<{ username: string; display_name: string } | null>(null)
+  const [invitee, setInvitee] = useState<{ display_name: string } | null>(null)
+  const [newUsername, setNewUsername] = useState('')
+  const [newDisplayName, setNewDisplayName] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -43,7 +45,9 @@ export function Login() {
     setError(null)
     setBusy(true)
     try {
-      setInvitee(await checkInvite(code))
+      const found = await checkInvite(code)
+      setInvitee(found)
+      setNewDisplayName(found.display_name)
       switchTo('password')
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.')
@@ -54,6 +58,10 @@ export function Login() {
   async function onRedeem(e: FormEvent) {
     e.preventDefault()
     setError(null)
+    if (newUsername.trim().length < 3) {
+      setError('Username must be at least 3 characters.')
+      return
+    }
     if (newPassword.length < 8) {
       setError('Password must be at least 8 characters.')
       return
@@ -64,7 +72,7 @@ export function Login() {
     }
     setBusy(true)
     try {
-      await redeemInvite(code, newPassword)
+      await redeemInvite(code, newUsername.trim(), newDisplayName.trim(), newPassword)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.')
       setBusy(false)
@@ -105,11 +113,26 @@ export function Login() {
     const firstName = invitee.display_name.split(/\s+/)[0]
     return (
       <AuthShell>
-        <Brand subtitle={`Welcome, ${firstName}. Choose your password.`} />
-        <p className="mb-4 text-center text-sm text-fg/50">
-          You'll sign in as <span className="font-semibold text-fg/70">@{invitee.username}</span>
-        </p>
-        <form onSubmit={onRedeem} className="flex flex-col gap-4">
+        <Brand subtitle={`Welcome, ${firstName}. Make this account yours.`} />
+        <form onSubmit={onRedeem} noValidate className="flex flex-col gap-4">
+          <Field
+            label="Your name"
+            value={newDisplayName}
+            onChange={(e) => setNewDisplayName(e.target.value)}
+            maxLength={100}
+            autoComplete="name"
+            required
+          />
+          <Field
+            label="Username"
+            value={newUsername}
+            onChange={(e) => setNewUsername(e.target.value)}
+            placeholder="For signing in"
+            autoComplete="username"
+            autoCapitalize="none"
+            autoFocus
+            required
+          />
           <Field
             label="Password"
             type="password"
@@ -117,8 +140,6 @@ export function Login() {
             onChange={(e) => setNewPassword(e.target.value)}
             placeholder="At least 8 characters"
             autoComplete="new-password"
-            minLength={8}
-            autoFocus
             required
           />
           <Field

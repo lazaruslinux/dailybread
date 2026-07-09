@@ -1,6 +1,7 @@
 import { AnimatePresence } from 'framer-motion'
 import { KeyRound, LogOut, Users } from 'lucide-react'
 import { useState } from 'react'
+import { updateMyProfile } from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { JournalCard } from '../components/JournalCard'
 import { NotificationsCard } from '../components/Notifications'
@@ -15,11 +16,17 @@ const SWATCH: Record<Theme, string> = {
   dark: 'bg-[linear-gradient(135deg,#4ade80,#08090a)]',
 }
 
-function ThemePicker({ userId }: { userId: number }) {
-  const [theme, setThemeState] = useState<Theme>(() => getTheme(userId))
+function ThemePicker({ userId, stored }: { userId: number; stored: Theme | null }) {
+  // The account's stored choice wins (it followed them here); the device's
+  // localStorage is the fallback for accounts that never picked one.
+  const [theme, setThemeState] = useState<Theme>(() => stored ?? getTheme(userId))
   function pick(t: Theme) {
     setThemeState(t)
     setTheme(userId, t)
+    // Also stored on the account, so the choice follows this member onto any
+    // device at their next sign-in. Fire-and-forget: the local switch already
+    // happened, and a failed save just means device-only for now.
+    updateMyProfile({ theme: t }).catch(() => {})
   }
   return (
     <div className="glass p-4">
@@ -64,7 +71,7 @@ export function You({ onOpenAdmin }: { onOpenAdmin: () => void }) {
 
       <JournalCard />
 
-      <ThemePicker userId={user.id} />
+      <ThemePicker userId={user.id} stored={user.theme} />
 
       <NotificationsCard />
 

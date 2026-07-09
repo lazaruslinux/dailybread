@@ -79,6 +79,8 @@ export interface User {
   // get the reduced app: no Nutrition, own cards only, approval check-offs.
   birthdate: string | null
   is_minor: boolean
+  // Stored color scheme; null until the member picks one on some device.
+  theme: 'light' | 'dark' | null
 }
 
 export interface SetupState {
@@ -111,27 +113,33 @@ export const logout = () => request<void>('/auth/logout', { method: 'POST' })
 
 export interface SignupInvite {
   code: string // shown exactly once, right here
-  username: string
   display_name: string
   expires_at: string
 }
 
-export const mintInvite = (username: string, display_name: string) =>
+export const mintInvite = (display_name: string) =>
   request<SignupInvite>('/auth/invites', {
     method: 'POST',
-    body: JSON.stringify({ username, display_name }),
+    body: JSON.stringify({ display_name }),
   })
 
 export const checkInvite = (code: string) =>
-  request<{ username: string; display_name: string }>('/auth/invites/check', {
+  request<{ display_name: string }>('/auth/invites/check', {
     method: 'POST',
     body: JSON.stringify({ code }),
   })
 
-export const redeemInvite = (code: string, password: string) =>
+// The invitee picks their own username (and may adjust the display name the
+// admin typed) at redemption.
+export const redeemInvite = (
+  code: string,
+  username: string,
+  display_name: string,
+  password: string,
+) =>
   request<User>('/auth/invites/redeem', {
     method: 'POST',
-    body: JSON.stringify({ code, password }),
+    body: JSON.stringify({ code, username, display_name, password }),
   })
 
 export const changePassword = (current_password: string, new_password: string) =>
@@ -640,7 +648,7 @@ export const getFamily = () => request<FamilyMember[]>(`/users?date=${localDate(
 export const getProfile = (id: number) =>
   request<Profile>(`/users/${id}/profile?date=${localDate()}`)
 
-export const updateMyProfile = (payload: { display_name?: string; bio?: string }) =>
+export const updateMyProfile = (payload: { display_name?: string; bio?: string; theme?: 'light' | 'dark' }) =>
   request<Profile>('/me/profile', { method: 'PATCH', body: JSON.stringify(payload) })
 
 // The image URL for a member's avatar, or null when they have no photo. The

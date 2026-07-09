@@ -87,6 +87,10 @@ def my_health(db: Session = Depends(get_db), user: User = Depends(require_family
 
 def _apply_profile(db: Session, target_user_id: int, data: HealthProfileIn) -> None:
     profile = _profile(db, target_user_id, create=True)
+    # birthdate is a property backed by users.birthdate (one birthdate per
+    # member); a freshly created profile needs a flush before its user
+    # relationship can carry the write through.
+    db.flush()
     for field in data.model_fields_set:
         setattr(profile, field, getattr(data, field))
     db.commit()

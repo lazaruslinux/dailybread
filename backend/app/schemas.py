@@ -45,11 +45,15 @@ class UserOut(BaseModel):
     # frontend shows a photo when this is set and appends it as a cache-busting
     # version to the avatar image URL.
     avatar_updated_at: dt.datetime | None = None
-    # Kid mode. birthdate is admin-set; is_minor is derived (child role and
-    # under 18, or no birthdate at all) and rides along on every user payload
-    # including /auth/me, so the frontend can shape itself without extra calls.
+    # Kid mode: is_minor is derived (child role, nothing else) and rides along
+    # on every user payload including /auth/me, so the frontend can shape
+    # itself without extra calls. birthdate is optional and informational.
     birthdate: dt.date | None = None
     is_minor: bool = False
+    # The member's chosen color scheme, so it follows them onto any device.
+    # None until they pick one; deliberately absent from hand-built member
+    # payloads (other members don't need your theme).
+    theme: Literal["light", "dark"] | None = None
 
     # Let Pydantic read attributes off a SQLAlchemy User object directly.
     model_config = {"from_attributes": True}
@@ -855,13 +859,13 @@ class ProfileUpdateIn(BaseModel):
 
     display_name: str | None = Field(default=None, min_length=1, max_length=100)
     bio: str | None = Field(default=None, max_length=500)
+    theme: Literal["light", "dark"] | None = None
 
 
 # ---- signup invites --------------------------------------------------------------
 
 
 class SignupInviteIn(BaseModel):
-    username: str = Field(min_length=3, max_length=50)
     display_name: str = Field(min_length=1, max_length=100)
 
 
@@ -869,7 +873,6 @@ class SignupInviteOut(BaseModel):
     """The minted invite. `code` appears here and nowhere else, ever."""
 
     code: str
-    username: str
     display_name: str
     expires_at: dt.datetime
 
@@ -879,11 +882,15 @@ class InviteCodeIn(BaseModel):
 
 
 class InviteCheckOut(BaseModel):
-    username: str
     display_name: str
 
 
 class InviteRedeemIn(InviteCodeIn):
+    """The invitee picks their own identity: username, optionally a tweak to
+    the name the admin typed, and a password nobody else has ever seen."""
+
+    username: str = Field(min_length=3, max_length=50)
+    display_name: str | None = Field(default=None, min_length=1, max_length=100)
     password: str = Field(min_length=8, max_length=128)
 
 

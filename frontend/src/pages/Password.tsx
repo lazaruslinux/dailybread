@@ -49,7 +49,7 @@ function PasswordForm({
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-4">
+    <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
       <Field
         label={currentLabel}
         type="password"

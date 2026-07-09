@@ -220,6 +220,10 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
+    if (creating && username.trim().length < 3) {
+      setError('Username must be at least 3 characters.')
+      return
+    }
     if (creating && password.length < 8) {
       setError('Password must be at least 8 characters.')
       return
@@ -237,14 +241,14 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
           password,
           role,
           is_admin: isAdmin,
-          ...(role === 'child' && birthdate ? { birthdate } : {}),
+          ...(birthdate ? { birthdate } : {}),
         })
       } else {
         await api.updateUser(member.id, {
           display_name: displayName,
           role,
           is_admin: isAdmin,
-          ...(role === 'child' ? { birthdate: birthdate || null } : {}),
+          birthdate: birthdate || null,
           ...(password ? { password } : {}),
         })
       }
@@ -268,7 +272,7 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
           </button>
         </div>
 
-        <form onSubmit={onSubmit} className="flex flex-col gap-4">
+        <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
           <Field
             label="Name"
             value={displayName}
@@ -315,27 +319,26 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
           </div>
 
           {role === 'child' && (
-            <>
-              <p className="-mt-1 text-xs leading-relaxed text-fg/45">
-                Child accounts have the Nutrition tab disabled, view-only access to the family
-                calendar except their own assigned tasks, and a mood and journal only parents
-                can see. Most families create one so parents can track a kid's routines and
-                activities, rather than for the child to use the app themselves.
-              </p>
-              <div>
-                <Field
-                  label="Birthdate"
-                  type="date"
-                  value={birthdate}
-                  onChange={(e) => setBirthdate(e.target.value)}
-                  onClear={() => setBirthdate('')}
-                />
-                <p className="mt-1.5 text-xs text-fg/40">
-                  Optional. Just for the family's reference.
-                </p>
-              </div>
-            </>
+            <p className="-mt-1 text-xs leading-relaxed text-fg/45">
+              Child accounts have the Nutrition tab disabled, view-only access to the family
+              calendar except their own assigned tasks, and a mood and journal only parents
+              can see. Most families create one so parents can track a kid's routines and
+              activities, rather than for the child to use the app themselves.
+            </p>
           )}
+
+          <div>
+            <Field
+              label="Birthdate"
+              type="date"
+              value={birthdate}
+              onChange={(e) => setBirthdate(e.target.value)}
+              onClear={() => setBirthdate('')}
+            />
+            <p className="mt-1.5 text-xs text-fg/40">
+              Optional. Shared with their Nutrition health profile.
+            </p>
+          </div>
 
           <label
             className={`flex items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 ${
@@ -462,7 +465,6 @@ function DeleteConfirm({
 // and password; they name their family on first sign-in.
 function InviteHouseholdSheet({ onClose }: { onClose: () => void }) {
   const [displayName, setDisplayName] = useState('')
-  const [username, setUsername] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [invite, setInvite] = useState<api.SignupInvite | null>(null)
@@ -473,7 +475,7 @@ function InviteHouseholdSheet({ onClose }: { onClose: () => void }) {
     setError(null)
     setBusy(true)
     try {
-      setInvite(await api.mintInvite(username, displayName))
+      setInvite(await api.mintInvite(displayName))
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Something went wrong. Try again.')
       setBusy(false)
@@ -508,9 +510,9 @@ function InviteHouseholdSheet({ onClose }: { onClose: () => void }) {
           <div className="flex flex-col gap-4">
             <p className="text-sm leading-relaxed text-fg/70">
               Give this code to <span className="font-semibold text-fg">{invite.display_name}</span>.
-              On the sign-in screen they tap "Enter invite code", pick their own password, and set
-              up their own family. It works once and expires in 15 minutes; if it lapses, just
-              mint another.
+              On the sign-in screen they tap "Enter invite code", pick their own username and
+              password, and set up their own family. It works once and expires in 15 minutes; if
+              it lapses, just mint another.
             </p>
             <div className="flex items-center justify-center gap-3 rounded-xl border border-fg/10 bg-fg/5 p-4">
               <span className="select-all font-mono text-2xl font-bold tracking-widest text-fg/90">
@@ -529,7 +531,7 @@ function InviteHouseholdSheet({ onClose }: { onClose: () => void }) {
             <Button onClick={onClose}>Done</Button>
           </div>
         ) : (
-          <form onSubmit={onSubmit} className="flex flex-col gap-4">
+          <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
             <p className="text-xs leading-relaxed text-fg/50">
               This invites someone to start their own family on this dailybread, with their own
               board, completely separate from yours. Use "Add family member" instead if you're
@@ -540,14 +542,6 @@ function InviteHouseholdSheet({ onClose }: { onClose: () => void }) {
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               autoFocus
-              required
-            />
-            <Field
-              label="Username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              autoCapitalize="none"
-              minLength={3}
               required
             />
             <FormError message={error} />

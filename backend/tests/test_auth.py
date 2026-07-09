@@ -208,3 +208,15 @@ def test_update_sets_and_clears_birthdate(owner, child):
     assert res.json()["birthdate"] is None
     assert res.json()["is_minor"] is True
 
+
+
+# ---- stored theme preference ---------------------------------------------------
+
+
+def test_theme_follows_the_account(owner):
+    assert owner.get("/auth/me").json()["theme"] is None
+    res = owner.patch("/me/profile", json={"theme": "dark"})
+    assert res.status_code == 200
+    assert owner.get("/auth/me").json()["theme"] == "dark"
+    # Only the two real schemes are accepted.
+    assert owner.patch("/me/profile", json={"theme": "hotdog"}).status_code == 422

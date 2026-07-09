@@ -86,8 +86,8 @@ class VillageFamily(Base):
 
 class SignupInvite(Base):
     """A pending invitation onto the install itself. The server owner mints
-    one with the invitee's name and username; the invitee redeems the code on
-    the sign-in screen, chooses their own password, and lands in the
+    one with the invitee's name; the invitee redeems the code on the sign-in
+    screen, chooses their own username and password, and lands in the
     create-your-family wizard — invites found NEW households, they never join
     an existing family. Codes live 15 minutes (they're redeemable by anonymous
     visitors, unlike village codes) and only their hash is stored."""
@@ -96,8 +96,8 @@ class SignupInvite(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     code_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    # Pre-claimed: one pending invite per username; re-minting replaces it.
-    username: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    # The invitee picks their own username (and can adjust this name) at
+    # redemption; the invite carries only who it's meant for.
     display_name: Mapped[str] = mapped_column(String(100))
     invited_by_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
@@ -177,10 +177,13 @@ class User(Base):
     must_change_password: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
-    # Admin-set, informational only (kid mode follows role — see is_minor).
-    # Deliberately independent from health_profiles.birthdate, which is a
-    # self-reported BMR input.
+    # Optional, informational (kid mode follows role — see is_minor). The ONE
+    # birthdate per member: the admin sheet and the health profile both read
+    # and write this same column (HealthProfile.birthdate is a property view).
     birthdate: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    # The member's chosen color scheme ("light"/"dark"), so a preference
+    # follows the account onto any device. NULL = never picked (client default).
+    theme: Mapped[str | None] = mapped_column(String(8), nullable=True)
     # Cross-family presence: has this member elected to share their mood and
     # daily status with the family's villages? Off by default. Minors are
     # excluded from village presence server-side regardless of this flag.
@@ -725,7 +728,6 @@ class HealthProfile(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
-    birthdate: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     sex: Mapped[Sex | None] = mapped_column(SAEnum(Sex, name="sex"), nullable=True)
     height_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
     activity_level: Mapped[ActivityLevel | None] = mapped_column(
@@ -738,6 +740,22 @@ class HealthProfile(Base):
     goal_weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Informational second lens on the goal; the math stays weight-driven.
     goal_body_fat_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    user: Mapped[User] = relationship()
+
+    # There is ONE birthdate per member (users.birthdate) — the admin sheet
+    # and the health profile read and write the same value, so they can never
+    # disagree. Exposed here as a property so the calorie math and the API
+    # keep their original shape.
+    @property
+    def birthdate(self) -> dt.date | None:
+        return self.user.birthdate if self.user is not None else None
+
+    @birthdate.setter
+    def birthdate(self, value: dt.date | None) -> None:
+        if self.user is None:
+            raise ValueError("profile must be flushed before setting birthdate")
+        self.user.birthdate = value
 
 
 class WeightEntry(Base):

@@ -56,10 +56,12 @@ function AppShell() {
     if (isMinor && tab === 'nutrition') setTab('home')
   }, [isMinor, tab])
 
-  // Apply this member's saved theme once we know who they are.
+  // Apply this member's saved theme once we know who they are: the one
+  // stored on the account wins (it follows them across devices); the
+  // device-local choice is the fallback for accounts that never picked.
   useEffect(() => {
-    applyTheme(getTheme(user?.id))
-  }, [user?.id])
+    applyTheme(user?.theme ?? getTheme(user?.id))
+  }, [user?.id, user?.theme])
 
   const switchTab = (next: Tab) => {
     setOverlay(null)

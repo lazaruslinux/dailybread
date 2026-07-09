@@ -36,7 +36,7 @@ interface AuthState {
     familyName: string,
   ) => Promise<void>
   createFamily: (name: string) => Promise<void>
-  redeemInvite: (code: string, password: string) => Promise<void>
+  redeemInvite: (code: string, username: string, displayName: string, password: string) => Promise<void>
   changePassword: (current: string, next: string) => Promise<void>
   logout: () => Promise<void>
 }
@@ -92,12 +92,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Trading an invite code for a fresh account signs you in; the tour flag
   // makes the create-family screen open with the welcome tour first.
-  const redeemInvite = useCallback(async (code: string, password: string) => {
-    const me = await api.redeemInvite(code, password)
-    sessionStorage.setItem('db-invite-tour', '1')
-    setUser(me)
-    setScreen(screenForUser(me))
-  }, [])
+  const redeemInvite = useCallback(
+    async (code: string, username: string, displayName: string, password: string) => {
+      const me = await api.redeemInvite(code, username, displayName, password)
+      sessionStorage.setItem('db-invite-tour', '1')
+      setUser(me)
+      setScreen(screenForUser(me))
+    },
+    [],
+  )
 
   // A fresh new-household account names its family; the backend promotes them
   // to parent + admin of it. Re-fetch so we pick up the new family_id/role.

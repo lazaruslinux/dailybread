@@ -20,7 +20,12 @@ export function Setup() {
     setError(null)
 
     // Client-side checks mirror the backend rules so people get instant
-    // feedback. The backend still enforces everything; this is just UX.
+    // feedback (the forms run noValidate: iOS blocks native-invalid submits
+    // silently, so our own messages are the only ones a phone ever shows).
+    if (username.trim().length < 3) {
+      setError('Username must be at least 3 characters.')
+      return
+    }
     if (password.length < 8) {
       setError('Password must be at least 8 characters.')
       return
@@ -44,7 +49,7 @@ export function Setup() {
   return (
     <AuthShell>
       <Brand subtitle="Welcome. Set up the family account to get started." />
-      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+      <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
         <Field
           label="Your name"
           value={displayName}
