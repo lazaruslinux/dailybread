@@ -223,8 +223,14 @@ export function SharedRecipesBox() {
 
   useEffect(() => {
     refresh()
+    // Village membership changes AND shares made elsewhere (a recipe's own
+    // detail sheet) both land here without a tab-away round trip.
     window.addEventListener('db:villages', refresh)
-    return () => window.removeEventListener('db:villages', refresh)
+    window.addEventListener('db:recipes-changed', refresh)
+    return () => {
+      window.removeEventListener('db:villages', refresh)
+      window.removeEventListener('db:recipes-changed', refresh)
+    }
   }, [refresh])
 
   if (villages.length === 0) return null
@@ -334,7 +340,8 @@ export function SharedRecipesBox() {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold text-fg/80">{s.name}</span>
                   <span className="block truncate text-xs text-fg/40">
-                    {villages.length > 1 ? `${s.village_name} · ` : ''}Last updated{' '}
+                    Shared by {s.shared_by ?? s.family_name}
+                    {villages.length > 1 && ` · ${s.village_name}`} · Last updated{' '}
                     {compactStamp(s.updated_at)}
                   </span>
                 </span>

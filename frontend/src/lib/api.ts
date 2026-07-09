@@ -1121,9 +1121,8 @@ export interface VillageParent {
   // family wall (nothing else is).
   avatar_updated_at: string | null
   // Present only when that parent opted in (village_presence) and the mood
-  // isn't hidden; hidden reads exactly like unset.
+  // isn't hidden; hidden reads exactly like unset. Statuses never cross.
   mood: Mood | null
-  status: string
 }
 
 export interface VillageFamily {

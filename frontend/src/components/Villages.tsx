@@ -272,10 +272,10 @@ function PresenceToggle({ initial, onChanged }: { initial: boolean; onChanged: (
     >
       <span className="min-w-0 pr-2">
         <span className="block text-sm font-semibold text-fg/85">
-          Share my mood & status with your villages
+          Share my mood to other villages
         </span>
         <span className="block text-xs text-fg/45">
-          Off means village families see only your name and photo
+          Off means village families see only your name and photo, never how your day is going
         </span>
       </span>
       <span
@@ -410,11 +410,6 @@ export function VillagesCard() {
                           <span className="w-full truncate text-center text-[10px] text-fg/55">
                             {p.display_name.split(/\s+/)[0]}
                           </span>
-                          {p.status && (
-                            <span className="w-full truncate text-center text-[9px] italic text-fg/40">
-                              {p.status}
-                            </span>
-                          )}
                         </span>
                       )
                     })}

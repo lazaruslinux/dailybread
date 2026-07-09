@@ -410,7 +410,7 @@ def test_shelf_is_village_scoped(owner, other):
 # ---- presence: opt-in mood/status on the village card -----------------------------
 
 
-def test_presence_is_opt_in_and_hidden_stays_hidden(village, owner, other):
+def test_presence_is_opt_in_hidden_stays_hidden_and_status_stays_home(village, owner, other):
     from tests.conftest import user_id
 
     today = dt.date.today().isoformat()
@@ -424,21 +424,18 @@ def test_presence_is_opt_in_and_hidden_stays_hidden(village, owner, other):
 
     # Not opted in: nothing crosses, even with a visible mood set.
     row = owner_row(other)
-    assert row["mood"] is None and row["status"] == ""
+    assert row["mood"] is None
 
     assert owner.patch("/me/profile", json={"village_presence": True}).status_code == 200
     row = owner_row(other)
-    assert row["mood"] == {"level": "sunny", "hidden": True} or row["mood"] == {
-        "level": "sunny",
-        "hidden": False,
-    }
-    assert row["status"] == "Baking day"
+    assert row["mood"] == {"level": "sunny", "hidden": False}
+    # Statuses never cross the wall at all — mood is the whole share.
+    assert "status" not in row
 
     # A hidden mood reads exactly like no mood, opt-in or not.
     owner.put("/me/mood", json={"date_for": today, "level": "stormy", "hidden": True})
     row = owner_row(other)
     assert row["mood"] is None
-    assert row["status"] == "Baking day"
 
 
 def test_presence_flag_round_trips(owner):

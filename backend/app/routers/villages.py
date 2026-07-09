@@ -99,9 +99,8 @@ def _village_out(db: Session, village: Village, viewer_family_id: int) -> Villag
     # The faces of the village: every member family's PARENTS. Children are
     # never shown across the family wall, whatever their birthdate says.
     # A parent who opted in (village_presence) also shares today's mood
-    # (unless hidden — hidden reads exactly like unset) and daily status.
+    # (unless hidden — hidden reads exactly like unset). Statuses stay home.
     from app.models import Mood
-    from app.routers.users import _daily_status
 
     parents_by_family: dict[int, list[VillageParentOut]] = {}
     family_ids = [family.id for _, family in rows]
@@ -132,7 +131,6 @@ def _village_out(db: Session, village: Village, viewer_family_id: int) -> Villag
                         if sharing and mood is not None and not mood.hidden
                         else None
                     ),
-                    status=_daily_status(user, today) if sharing else "",
                 )
             )
     active = _invite_active(village, _utcnow())

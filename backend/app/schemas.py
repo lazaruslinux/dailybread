@@ -1066,7 +1066,6 @@ class VillageParentOut(BaseModel):
     display_name: str
     avatar_updated_at: dt.datetime | None = None
     mood: MoodOut | None = None
-    status: str = ""
 
 
 class VillageFamilyOut(BaseModel):
