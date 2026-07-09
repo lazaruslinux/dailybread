@@ -170,6 +170,30 @@ def _plan_out(db: Session, family_id: int, date_for: dt.date) -> DinnerPlanOut:
     )
 
 
+@router.get("/plan/week", response_model=list[DinnerPlanOut])
+def dinner_plan_week(
+    start: dt.date = Query(),
+    end: dt.date = Query(),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_family),
+):
+    """The week planner's view: each day in the span that has votes. Same
+    per-day shape as /plan so the client renders both with one code path."""
+    if end < start or (end - start).days > 45:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Span too large")
+    days = sorted(
+        set(
+            db.scalars(
+                select(DinnerVote.date_for).where(
+                    DinnerVote.family_id == user.family_id,
+                    DinnerVote.date_for.between(start, end),
+                )
+            )
+        )
+    )
+    return [_plan_out(db, user.family_id, d) for d in days]
+
+
 @router.get("/plan", response_model=DinnerPlanOut)
 def dinner_plan(
     date_for: dt.date = Query(alias="date"),

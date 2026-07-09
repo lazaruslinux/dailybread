@@ -92,3 +92,16 @@ def test_first_pick_of_the_day_nudges_once(owner, parent, child, configured, out
     vote(owner, "delivery", "Pizza")  # changes stay quiet
     vote(parent, "homemade")  # later picks stay quiet too
     assert outbox == ["https://push.example/p1"]
+
+
+def test_week_view_carries_future_preselections(owner, parent):
+    friday = (dt.date.today() + dt.timedelta(days=3)).isoformat()
+    res = owner.put(f"/meals/plan?date={friday}", json={"choice": "delivery", "detail": "Pizza"})
+    assert res.status_code == 200
+    start, end = TODAY, (dt.date.today() + dt.timedelta(days=6)).isoformat()
+    week = parent.get(f"/meals/plan/week?start={start}&end={end}").json()
+    assert [w["date_for"] for w in week] == [friday]
+    assert week[0]["votes"][0]["detail"] == "Pizza"
+    # And when "that day comes up", the standing block reads the same votes.
+    day = parent.get(f"/meals/plan?date={friday}").json()
+    assert day["votes"][0]["choice"] == "delivery"

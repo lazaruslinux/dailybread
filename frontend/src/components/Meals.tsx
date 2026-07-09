@@ -1,7 +1,6 @@
-import { AnimatePresence, motion } from 'framer-motion'
-import { Bike, Car, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CookingPot, Pencil, Plus, Utensils, UtensilsCrossed, X } from 'lucide-react'
+import { AnimatePresence } from 'framer-motion'
+import { Bike, Car, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CookingPot, Pencil, Plus, Utensils, UtensilsCrossed } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { createPortal } from 'react-dom'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { Sheet } from './Recipes'
@@ -55,154 +54,12 @@ function MacroPills({ ps }: { ps: api.RecipeMacros }) {
 }
 
 // Pick a night's dinner: one of the saved recipes, or a typed title.
-function MealSheet({
-  dayISO,
-  current,
-  onClose,
-  onSaved,
-}: {
-  dayISO: string
-  current: api.Meal | undefined
-  onClose: () => void
-  onSaved: () => void
-}) {
-  const [recipes, setRecipes] = useState<api.Recipe[]>([])
-  const [custom, setCustom] = useState(current?.custom_title ?? '')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    api.getRecipes().then(setRecipes).catch(() => {})
-  }, [])
-
-  async function choose(recipeId: number) {
-    setBusy(true)
-    setError(null)
-    try {
-      await api.setMeal({ date_for: dayISO, recipe_id: recipeId })
-      onSaved()
-    } catch (err) {
-      setError(err instanceof api.ApiError ? err.message : 'Could not plan the night.')
-      setBusy(false)
-    }
-  }
-
-  async function submitCustom(e: FormEvent) {
-    e.preventDefault()
-    if (!custom.trim()) return
-    setBusy(true)
-    setError(null)
-    try {
-      await api.setMeal({ date_for: dayISO, custom_title: custom.trim() })
-      onSaved()
-    } catch (err) {
-      setError(err instanceof api.ApiError ? err.message : 'Could not plan the night.')
-      setBusy(false)
-    }
-  }
-
-  async function clear() {
-    setBusy(true)
-    try {
-      await api.clearMeal(dayISO)
-      onSaved()
-    } catch (err) {
-      setError(err instanceof api.ApiError ? err.message : 'Could not clear the night.')
-      setBusy(false)
-    }
-  }
-
-  const heading = new Date(`${dayISO}T00:00:00`).toLocaleDateString(undefined, {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  })
-
-  return createPortal(
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <motion.div
-        initial={{ opacity: 0, y: 40 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-        className="sheet-card max-h-[90svh] w-full max-w-sm overflow-y-auto p-6"
-        role="dialog"
-        aria-modal="true"
-      >
-        <div className="mb-1 flex items-center justify-between">
-          <span className="text-xs font-semibold uppercase tracking-wide text-accent-bright">
-            Dinner
-          </span>
-          <button onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-fg/50 hover:bg-fg/10 hover:text-fg">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        <p className="mb-4 font-display text-lg font-semibold tracking-[-0.01em]">{heading}</p>
-
-        <FormError message={error} />
-
-        {recipes.length > 0 && (
-          <div className="mb-4">
-            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-fg/40">
-              Your recipes
-            </span>
-            <div className="flex flex-col">
-              {recipes.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => choose(r.id)}
-                  className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-fg/10"
-                >
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{r.name}</span>
-                  {current?.recipe_id === r.id && (
-                    <Check className="h-4 w-4 shrink-0 text-emerald-400" strokeWidth={3} />
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <form onSubmit={submitCustom} className="flex items-center gap-2">
-          <input
-            value={custom}
-            onChange={(e) => setCustom(e.target.value)}
-            maxLength={120}
-            placeholder={recipes.length > 0 ? 'Or type it (Pizza out)' : 'Type it (Pizza out)'}
-            className="field"
-          />
-          <Button type="submit" disabled={busy || !custom.trim()} className="shrink-0">
-            Set
-          </Button>
-        </form>
-
-        {mealTitle(current) && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={clear}
-            className="mt-3 w-full text-center text-sm font-semibold text-danger hover:opacity-80"
-          >
-            Clear this night
-          </button>
-        )}
-      </motion.div>
-    </motion.div>,
-    document.body,
-  )
-}
-
 // The Dinner Plan: four standing modes, always on for today until dinner is
-// set. Adults tap a pick (highlighted like the calendar-card selection); the
-// other adult sees your avatar and your short detail on that row. Kid-mode
-// avatars ride the leading choice — they eat whatever wins, they never vote.
+// set, and the same four modes behind every day of the week planner — a pick
+// made for Friday is simply Friday's vote, preselected when Friday arrives.
+// Adults tap a pick; each voter's typed detail rides WITH their name, so two
+// competing restaurants read as two people's picks. Kid-mode avatars ride the
+// leading choice, faded — they eat whatever wins, they never vote.
 
 const CHOICES: {
   id: api.DinnerChoice
@@ -216,6 +73,19 @@ const CHOICES: {
   { id: 'delivery', label: 'Delivery', hint: 'Order in', Icon: Bike },
 ]
 
+const EMPTY_PLAN = (dayISO: string): api.DinnerPlan => ({
+  date_for: dayISO,
+  votes: [],
+  kids: [],
+})
+
+function leaderOf(plan: api.DinnerPlan): api.DinnerChoice | null {
+  const counts = new Map<api.DinnerChoice, number>()
+  for (const v of plan.votes) counts.set(v.choice, (counts.get(v.choice) ?? 0) + 1)
+  const max = Math.max(0, ...counts.values())
+  return max > 0 ? (CHOICES.find((c) => (counts.get(c.id) ?? 0) === max)?.id ?? null) : null
+}
+
 function VoterBubble({ voter, faded }: { voter: api.DinnerVoter; faded?: boolean }) {
   const url = api.avatarUrl(voter)
   return url ? (
@@ -223,18 +93,33 @@ function VoterBubble({ voter, faded }: { voter: api.DinnerVoter; faded?: boolean
       src={url}
       alt=""
       title={voter.display_name}
-      className={`h-6 w-6 rounded-full border border-fg/15 object-cover ${faded ? 'opacity-50' : ''}`}
+      className={`h-5 w-5 rounded-full border border-fg/15 object-cover ${faded ? 'opacity-50' : ''}`}
     />
   ) : (
     <span
       title={voter.display_name}
-      className={`flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-accent-bright/60 to-accent-strong/60 text-[9px] font-bold text-fg ${faded ? 'opacity-50' : ''}`}
+      className={`flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-accent-bright/60 to-accent-strong/60 text-[8px] font-bold text-fg ${faded ? 'opacity-50' : ''}`}
     >
       {voter.display_name
         .split(/\s+/)
         .slice(0, 2)
         .map((w) => w[0]?.toUpperCase() ?? '')
         .join('')}
+    </span>
+  )
+}
+
+// A voter with their own typed detail attached: "Alex · Chipotle". Two
+// people, two restaurants, two chips — nobody's pick masquerades as the row's.
+function VoterChip({ vote }: { vote: api.DinnerVote }) {
+  const extra = vote.detail || vote.recipe_name
+  return (
+    <span className="flex items-center gap-1.5 rounded-full border border-fg/10 bg-fg/10 py-0.5 pl-0.5 pr-2">
+      <VoterBubble voter={vote.user} />
+      <span className="max-w-36 truncate text-[11px] font-semibold text-fg/70">
+        {vote.user.display_name.split(/\s+/)[0]}
+        {extra && <span className="font-normal text-fg/50"> · {extra}</span>}
+      </span>
     </span>
   )
 }
@@ -333,6 +218,67 @@ function DetailSheet({
   )
 }
 
+// One option card: header row (icon, label, hint, Lock it in), then the
+// voters' chips on their own line so every pick sits beside its person.
+function ChoiceRow({
+  choice,
+  plan,
+  mine,
+  isParent,
+  leader,
+  onTap,
+  onLock,
+}: {
+  choice: (typeof CHOICES)[number]
+  plan: api.DinnerPlan
+  mine: boolean
+  isParent: boolean
+  leader: api.DinnerChoice | null
+  onTap: () => void
+  onLock: (() => void) | null
+}) {
+  const voters = plan.votes.filter((v) => v.choice === choice.id)
+  return (
+    <div
+      className={`rounded-xl border px-3 py-2.5 ${
+        mine ? 'border-accent-bright/60 bg-accent-bright/15' : 'border-fg/10 bg-fg/5'
+      }`}
+    >
+      <div className="flex items-center gap-2.5">
+        <button
+          type="button"
+          onClick={onTap}
+          className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+        >
+          <choice.Icon className="h-4 w-4 shrink-0 text-accent-bright" />
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-semibold text-fg/90">{choice.label}</span>
+            <span className="block truncate text-xs italic text-fg/40">{choice.hint}</span>
+          </span>
+        </button>
+        {isParent && onLock && voters.length > 0 && (
+          <button
+            type="button"
+            onClick={onLock}
+            className="shrink-0 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-2.5 py-1 text-[11px] font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
+          >
+            Lock it in
+          </button>
+        )}
+      </div>
+      {(voters.length > 0 || (leader === choice.id && plan.kids.length > 0)) && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          {voters.map((v) => (
+            <VoterChip key={v.user.id} vote={v} />
+          ))}
+          {leader === choice.id &&
+            plan.kids.map((k) => <VoterBubble key={k.id} voter={k} faded />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function DinnerPlanBlock({
   plan,
   isParent,
@@ -349,13 +295,7 @@ function DinnerPlanBlock({
   const [detailFor, setDetailFor] = useState<(typeof CHOICES)[number] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const myVote = plan.votes.find((v) => v.user.id === me) ?? null
-
-  // Kids ride the leading choice (ties break by the fixed row order).
-  const counts = new Map<api.DinnerChoice, number>()
-  for (const v of plan.votes) counts.set(v.choice, (counts.get(v.choice) ?? 0) + 1)
-  const max = Math.max(0, ...counts.values())
-  const leader =
-    max > 0 ? (CHOICES.find((c) => (counts.get(c.id) ?? 0) === max)?.id ?? null) : null
+  const leader = leaderOf(plan)
 
   async function voteFor(choice: api.DinnerChoice, detail = '', recipeId: number | null = null) {
     setError(null)
@@ -409,54 +349,18 @@ function DinnerPlanBlock({
   return (
     <div className="mt-3 rounded-xl border border-accent-bright/25 bg-accent-bright/5 p-3" data-dinner-plan>
       <div className="flex flex-col gap-1.5">
-        {CHOICES.map((c) => {
-          const voters = plan.votes.filter((v) => v.choice === c.id)
-          const mine = myVote?.choice === c.id
-          const details = voters
-            .map((v) => v.detail || v.recipe_name)
-            .filter(Boolean)
-            .join(' · ')
-          return (
-            <div
-              key={c.id}
-              className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 ${
-                mine ? 'border-accent-bright/60 bg-accent-bright/15' : 'border-fg/10 bg-fg/5'
-              }`}
-            >
-              <button
-                type="button"
-                onClick={() => tapped(c)}
-                className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
-              >
-                <c.Icon className="h-4 w-4 shrink-0 text-accent-bright" />
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-semibold text-fg/90">
-                    {c.label}
-                  </span>
-                  <span className="block truncate text-xs italic text-fg/45">
-                    {details || c.hint}
-                  </span>
-                </span>
-              </button>
-              <span className="flex shrink-0 items-center -space-x-1.5">
-                {voters.map((v) => (
-                  <VoterBubble key={v.user.id} voter={v.user} />
-                ))}
-                {leader === c.id &&
-                  plan.kids.map((k) => <VoterBubble key={k.id} voter={k} faded />)}
-              </span>
-              {isParent && voters.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => lockIn(c)}
-                  className="shrink-0 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-2.5 py-1 text-[11px] font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
-                >
-                  Lock it in
-                </button>
-              )}
-            </div>
-          )
-        })}
+        {CHOICES.map((c) => (
+          <ChoiceRow
+            key={c.id}
+            choice={c}
+            plan={plan}
+            mine={myVote?.choice === c.id}
+            isParent={isParent}
+            leader={leader}
+            onTap={() => tapped(c)}
+            onLock={() => lockIn(c)}
+          />
+        ))}
       </div>
       <FormError message={error} />
 
@@ -475,6 +379,129 @@ function DinnerPlanBlock({
   )
 }
 
+// The week planner's +Set: the same four modes for a future day. A pick here
+// is simply that day's vote; no locking from a distance, no typing dinners in.
+function DayPlanSheet({
+  dayISO,
+  plan,
+  lockedTitle,
+  me,
+  onClose,
+  onChanged,
+}: {
+  dayISO: string
+  plan: api.DinnerPlan
+  lockedTitle: string | null
+  me: number | undefined
+  onClose: () => void
+  onChanged: () => void
+}) {
+  const [detailFor, setDetailFor] = useState<(typeof CHOICES)[number] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const myVote = plan.votes.find((v) => v.user.id === me) ?? null
+  const leader = leaderOf(plan)
+  const dayLabel = new Date(dayISO + 'T12:00:00').toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+  })
+
+  async function voteFor(choice: api.DinnerChoice, detail = '', recipeId: number | null = null) {
+    setError(null)
+    try {
+      await api.castDinnerVote(dayISO, { choice, detail, recipe_id: recipeId })
+      setDetailFor(null)
+      onChanged()
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Something went wrong.')
+      throw err
+    }
+  }
+
+  async function retract() {
+    await api.retractDinnerVote(dayISO)
+    setDetailFor(null)
+    onChanged()
+  }
+
+  if (lockedTitle) {
+    return (
+      <Sheet onClose={onClose}>
+        <h3 className="mb-1 text-lg font-bold">{dayLabel}</h3>
+        <p className="mb-4 text-sm text-fg/70">
+          Planned: <span className="font-semibold text-fg/90">{lockedTitle}</span>
+        </p>
+        <FormError message={error} />
+        <Button
+          type="button"
+          variant="ghost"
+          className="w-full"
+          onClick={async () => {
+            try {
+              await api.clearMeal(dayISO)
+              onChanged()
+            } catch (err) {
+              setError(err instanceof api.ApiError ? err.message : 'Something went wrong.')
+            }
+          }}
+        >
+          Unlock this day
+        </Button>
+      </Sheet>
+    )
+  }
+
+  return (
+    <Sheet onClose={onClose}>
+      <h3 className="mb-1 text-lg font-bold">{dayLabel}</h3>
+      <p className="mb-4 text-sm text-fg/60">
+        Make your pick — it'll be waiting in the Dinner Plan when the day comes.
+      </p>
+      <div className="flex flex-col gap-1.5">
+        {CHOICES.map((c) => (
+          <ChoiceRow
+            key={c.id}
+            choice={c}
+            plan={plan}
+            mine={myVote?.choice === c.id}
+            isParent
+            leader={leader}
+            onTap={() => {
+              if (c.id === 'self_serve') {
+                if (myVote?.choice === 'self_serve') retract()
+                else voteFor('self_serve').catch(() => {})
+              } else setDetailFor(c)
+            }}
+            onLock={null}
+          />
+        ))}
+      </div>
+      <FormError message={error} />
+      {myVote && (
+        <button
+          type="button"
+          onClick={retract}
+          className="mt-2 w-full text-center text-xs font-semibold text-fg/40 hover:text-fg/60"
+        >
+          Remove my pick
+        </button>
+      )}
+
+      <AnimatePresence>
+        {detailFor && (
+          <DetailSheet
+            choice={detailFor}
+            current={myVote?.choice === detailFor.id ? myVote : null}
+            onClose={() => setDetailFor(null)}
+            onVote={(detail, recipeId) => voteFor(detailFor.id, detail, recipeId)}
+            onRetract={myVote?.choice === detailFor.id ? retract : null}
+          />
+        )}
+      </AnimatePresence>
+    </Sheet>
+  )
+}
+
 export function DinnerPlanner() {
   const { user } = useAuth()
   const isParent = user?.role === 'parent'
@@ -482,7 +509,8 @@ export function DinnerPlanner() {
   const [weekStart, setWeekStart] = useState(() => weekStartOf(new Date()))
   const [meals, setMeals] = useState<api.Meal[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [planning, setPlanning] = useState<string | null>(null) // dayISO in the sheet
+  const [planning, setPlanning] = useState<string | null>(null) // dayISO in the DayPlanSheet
+  const [weekPlans, setWeekPlans] = useState<Record<string, api.DinnerPlan>>({})
   const [showWeek, setShowWeek] = useState(false)
   const [plan, setPlan] = useState<api.DinnerPlan | null>(null)
 
@@ -501,6 +529,8 @@ export function DinnerPlanner() {
       const seen = new Set(week.map((m) => `${m.date_for}:${m.slot}`))
       setMeals([...week, ...tonight.filter((m) => !seen.has(`${m.date_for}:${m.slot}`))])
       setPlan(await api.getDinnerPlan(todayISO))
+      const ranged = await api.getDinnerPlanRange(toISO(days[0]), toISO(days[6]))
+      setWeekPlans(Object.fromEntries(ranged.map((p) => [p.date_for, p])))
       setError(null)
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Could not load the menu.')
@@ -541,15 +571,6 @@ export function DinnerPlanner() {
             {mealTitle(tonight) ?? 'Dinner Plan'}
           </h2>
         </div>
-        {isParent && (
-          <button
-            type="button"
-            onClick={() => setPlanning(todayISO)}
-            className="shrink-0 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-3 py-1.5 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
-          >
-            {mealTitle(tonight) ? 'Change' : 'Plan'}
-          </button>
-        )}
       </div>
 
       {tonight?.per_serving && <MacroPills ps={tonight.per_serving} />}
@@ -563,7 +584,7 @@ export function DinnerPlanner() {
           onChanged={refresh}
         />
       )}
-      {mealTitle(tonight) && isParent && plan && plan.votes.length > 0 && (
+      {mealTitle(tonight) && isParent && (
         <button
           type="button"
           onClick={async () => {
@@ -616,6 +637,18 @@ export function DinnerPlanner() {
               const title = mealTitle(meal)
               const cal = meal?.per_serving?.calories
               const isToday = iso === todayISO
+              const dayPlan = weekPlans[iso]
+              const dayLeader = dayPlan ? leaderOf(dayPlan) : null
+              const leaderChoice = CHOICES.find((c) => c.id === dayLeader)
+              const leaderVotes = dayPlan && dayLeader
+                ? dayPlan.votes.filter((v) => v.choice === dayLeader)
+                : []
+              const summary = leaderChoice
+                ? leaderChoice.label +
+                  (leaderVotes.map((v) => v.detail || v.recipe_name).find(Boolean)
+                    ? ' · ' + leaderVotes.map((v) => v.detail || v.recipe_name).find(Boolean)
+                    : '')
+                : null
               const dayLabel = (
                 <span
                   className={`w-10 shrink-0 text-xs font-semibold uppercase ${
@@ -629,14 +662,15 @@ export function DinnerPlanner() {
                 return (
                   <div key={iso} className="flex items-center gap-3 rounded-lg bg-fg/5 px-2.5 py-2">
                     {dayLabel}
-                    <span className={`min-w-0 flex-1 truncate text-sm ${title ? 'text-fg/90' : 'text-fg/35'}`}>
-                      {title ?? '—'}
+                    <span className={`min-w-0 flex-1 truncate text-sm ${title ?? summary ? 'text-fg/90' : 'text-fg/35'}`}>
+                      {title ?? summary ?? '—'}
                     </span>
                   </div>
                 )
               }
-              // Parents: a planned night reads as editable (pencil), an empty
-              // one invites a pick — filling the week ahead should feel easy.
+              // Parents: a locked night reads as set (tap to unlock), a night
+              // with picks shows where the wind is blowing, an empty one
+              // invites the four choices.
               return title ? (
                 <button
                   key={iso}
@@ -656,12 +690,27 @@ export function DinnerPlanner() {
                   key={iso}
                   type="button"
                   onClick={() => setPlanning(iso)}
-                  className="flex w-full items-center gap-3 rounded-lg border border-dashed border-fg/20 px-2.5 py-2 text-left transition-colors hover:border-accent-bright/40 hover:bg-fg/5"
+                  className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors ${
+                    summary
+                      ? 'bg-fg/5 hover:bg-fg/10'
+                      : 'border border-dashed border-fg/20 hover:border-accent-bright/40 hover:bg-fg/5'
+                  }`}
                 >
                   {dayLabel}
-                  <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-sm font-semibold text-accent-bright">
-                    <Plus className="h-3.5 w-3.5" /> Add dinner
-                  </span>
+                  {summary ? (
+                    <>
+                      <span className="min-w-0 flex-1 truncate text-sm text-fg/80">{summary}</span>
+                      <span className="flex shrink-0 items-center -space-x-1">
+                        {(dayPlan?.votes ?? []).map((v) => (
+                          <VoterBubble key={v.user.id} voter={v.user} />
+                        ))}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-sm font-semibold text-accent-bright">
+                      <Plus className="h-3.5 w-3.5" /> Set
+                    </span>
+                  )}
                 </button>
               )
             })}
@@ -671,14 +720,13 @@ export function DinnerPlanner() {
 
       <AnimatePresence>
         {planning && (
-          <MealSheet
+          <DayPlanSheet
             dayISO={planning}
-            current={dinnerOn(planning)}
+            plan={weekPlans[planning] ?? (planning === todayISO && plan ? plan : EMPTY_PLAN(planning))}
+            lockedTitle={mealTitle(dinnerOn(planning))}
+            me={user?.id}
             onClose={() => setPlanning(null)}
-            onSaved={() => {
-              setPlanning(null)
-              refresh()
-            }}
+            onChanged={refresh}
           />
         )}
       </AnimatePresence>

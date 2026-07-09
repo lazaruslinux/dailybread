@@ -148,6 +148,10 @@ export const castDinnerVote = (
 export const retractDinnerVote = (date: string) =>
   request<DinnerPlan>(`/meals/plan?date=${date}`, { method: 'DELETE' })
 
+// The week planner's view: every day in the span that has picks.
+export const getDinnerPlanRange = (start: string, end: string) =>
+  request<DinnerPlan[]>(`/meals/plan/week?start=${start}&end=${end}`)
+
 // ---- the village recipe shelf -----------------------------------------------------
 
 export interface SharedRecipe {
