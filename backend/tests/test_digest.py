@@ -210,7 +210,7 @@ def test_midday_over_budget_says_so(owner, configured, push_outbox, engine_db):
     assert push_outbox[0][1]["body"] == "What's for lunch? 100 calories over so far."
 
 
-def test_food_pushes_skip_non_trackers_for_good(owner, parent, configured, push_outbox, engine_db):
+def test_midday_skips_non_trackers_for_good(owner, parent, configured, push_outbox, engine_db):
     # The second parent never logs food: no lunch nudge — and starting to log
     # AFTER noon doesn't trigger a belated one either (the claim landed).
     owner.put("/push/subscription", json=SUB)
@@ -223,24 +223,23 @@ def test_food_pushes_skip_non_trackers_for_good(owner, parent, configured, push_
     assert [ep for ep, _ in push_outbox] == [SUB["endpoint"]]
 
 
-def test_evening_checkin_says_goodnight(owner, configured, push_outbox, engine_db):
+def test_evening_checkin_asks_about_the_day(owner, parent, configured, push_outbox, engine_db):
+    # Everyone's push, tracker or not - the day's sign-off.
     owner.put("/push/subscription", json=SUB)
-    log_food(owner)
+    parent.put("/push/subscription", json=SUB2)
 
-    assert push_engine.digest_tick(at(17)) == 1
-    endpoint, payload = push_outbox[0]
-    assert payload["title"] == "Evening check-in"
-    assert payload["body"] == (
-        "Take a minute to log today's food. Going quiet now, have a good night!"
-    )
-    # Once per evening; and never so late it stops making sense.
-    assert push_engine.digest_tick(at(18)) == 0
-    assert len(push_outbox) == 1
+    assert push_engine.digest_tick(at(17)) == 0  # not yet: evenings start at 7
+    assert push_engine.digest_tick(at(19)) == 2
+    for _endpoint, payload in push_outbox:
+        assert payload["title"] == "Evening check-in"
+        assert payload["body"] == "How was your day?"
+    # Once per evening.
+    assert push_engine.digest_tick(at(20)) == 0
+    assert len(push_outbox) == 2
 
 
 def test_evening_window_closes_at_ten(owner, configured, push_outbox, engine_db):
     owner.put("/push/subscription", json=SUB)
-    log_food(owner)
 
     assert push_engine.digest_tick(at(22)) == 0
     assert push_engine.digest_tick(at(21, 59)) == 1
@@ -253,6 +252,6 @@ def test_all_three_land_on_a_trackers_day(owner, configured, push_outbox, engine
 
     assert push_engine.digest_tick(at(7)) == 1
     assert push_engine.digest_tick(at(12, 30)) == 1
-    assert push_engine.digest_tick(at(17)) == 1
+    assert push_engine.digest_tick(at(19)) == 1
     titles = [p["title"] for _, p in push_outbox]
     assert titles == ["Good morning, Owner!", "Mid-day check", "Evening check-in"]

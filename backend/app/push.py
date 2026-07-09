@@ -330,10 +330,10 @@ def digest_tick(now: dt.datetime) -> int:
     catches up while the message makes sense — and never later.
 
     morning (digest_hour → noon): a personal summary of the day's board.
-    midday (midday_hour → evening): lunch nudge with calories left; only for
+    midday (midday_hour → 17:00): lunch nudge with calories left; only for
     members actually using the food diary.
-    evening (evening_hour → 22:00): log-your-food reminder and a good night —
-    the last scheduled word of the day (card reminders still fire as needed).
+    evening (evening_hour → 22:00): "How was your day?" for every adult —
+    the day's sign-off, pointing at mood, status, and journal.
 
     Empty boards and non-trackers stay quiet, but still claim their row, so
     a card added at 9:01 doesn't ring a belated good-morning."""
@@ -362,7 +362,7 @@ def digest_tick(now: dt.datetime) -> int:
                     },
                 )
 
-        if settings.midday_hour <= now.hour < settings.evening_hour:
+        if settings.midday_hour <= now.hour < 17:
             due = _due_users(db, today, "midday")
             trackers = {u.id for u in _food_trackers(db, due, today)}
             for user in due:
@@ -388,20 +388,15 @@ def digest_tick(now: dt.datetime) -> int:
                 )
 
         if settings.evening_hour <= now.hour < 22:
-            due = _due_users(db, today, "evening")
-            trackers = {u.id for u in _food_trackers(db, due, today)}
-            for user in due:
+            for user in _due_users(db, today, "evening"):
                 if not _claim_digest(db, user.id, today, "evening"):
-                    continue
-                if user.id not in trackers:
                     continue
                 sent += send_to_user(
                     db,
                     user.id,
                     {
                         "title": "Evening check-in",
-                        "body": "Take a minute to log today's food."
-                        " Going quiet now, have a good night!",
+                        "body": "How was your day?",
                         "tag": f"evening-{today.isoformat()}",
                         "url": "/",
                     },

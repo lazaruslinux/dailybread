@@ -42,12 +42,12 @@ class Settings(BaseSettings):
     # How many minutes before a timed card its reminder goes out.
     reminder_lead_minutes: int = 15
     # Local hours (0-23) for the day's three scheduled pushes. Each has a
-    # window it may send in (morning until noon, midday until the evening
-    # hour, evening until 22), so a server that was down at the slot still
-    # catches up while the message makes sense - and never later.
+    # window it may send in (morning until noon, midday until 17, evening
+    # until 22), so a server that was down at the slot still catches up
+    # while the message makes sense - and never later.
     digest_hour: int = 7
     midday_hour: int = 12
-    evening_hour: int = 17
+    evening_hour: int = 19
 
 
 settings = Settings()
