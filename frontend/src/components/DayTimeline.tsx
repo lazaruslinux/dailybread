@@ -206,28 +206,39 @@ export function DayTimeline({
   nowMinutes,
   canCheck,
   viewerId,
+  isToday = true,
   onToggle,
   onOpen,
 }: {
-  items: api.FeedItem[] // today's timed cards, open and done alike
+  items: api.FeedItem[] // the day's timed cards, open and done alike
   nowMinutes: number
   canCheck: (item: api.FeedItem) => boolean
   viewerId?: number
+  // False when peeking another day: no now line (it belongs to today alone),
+  // and the panel opens on the day's first card instead of the clock.
+  isToday?: boolean
   onToggle: (item: api.FeedItem) => void
   onOpen: (item: api.FeedItem) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const placed = layout(items)
 
   // The day scrolls inside this panel, never the page: switching to Timeline
   // keeps the header and family strip right where they were. The panel opens
-  // an hour above the now line for context; after that the reader owns it.
+  // an hour above the now line (or the peeked day's first card) for context;
+  // after that the reader owns it.
   useEffect(() => {
     const el = scrollRef.current
-    if (el) el.scrollTop = Math.max(nowMinutes * PX_PER_MIN - HOUR_PX, 0)
+    if (!el) return
+    const anchor = isToday
+      ? nowMinutes * PX_PER_MIN
+      : placed.length > 0
+        ? Math.min(...placed.map((p) => p.top))
+        : 8 * HOUR_PX
+    el.scrollTop = Math.max(anchor - HOUR_PX, 0)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const placed = layout(items)
   const nowY = nowMinutes * PX_PER_MIN
 
   return (
@@ -261,11 +272,13 @@ export function DayTimeline({
             />
           ))}
 
-          {/* now line */}
-          <div className="absolute -left-1.5 right-0 z-10" style={{ top: nowY }} data-now-line>
-            <span className="absolute -top-[3px] left-0 h-1.5 w-1.5 rounded-full bg-accent-bright" />
-            <div className="border-t-2 border-accent-bright/70" />
-          </div>
+          {/* now line (today only; another day has no "now") */}
+          {isToday && (
+            <div className="absolute -left-1.5 right-0 z-10" style={{ top: nowY }} data-now-line>
+              <span className="absolute -top-[3px] left-0 h-1.5 w-1.5 rounded-full bg-accent-bright" />
+              <div className="border-t-2 border-accent-bright/70" />
+            </div>
+          )}
 
           {placed.map((p) => (
             <TimelineCard

@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { CalendarClock, Check, Hourglass, Plus, Rows3, Undo2 } from 'lucide-react'
+import { CalendarClock, Check, ChevronLeft, ChevronRight, Hourglass, Plus, Rows3, Undo2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../lib/api'
 import { avatarUrl } from '../lib/api'
@@ -43,8 +43,9 @@ function FilterChip({
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
-// "Today" / "Yesterday" / "Mon, Jul 6" for an approval row's date.
-function approvalDate(dateStr: string): string {
+// "Today" / "Yesterday" / "Tomorrow" / "Mon, Jul 6" for approval rows and the
+// timeline's day header.
+function relativeDay(dateStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number)
   const date = new Date(y, m - 1, d)
   const today = new Date()
@@ -54,7 +55,15 @@ function approvalDate(dateStr: string): string {
   )
   if (days === 0) return 'Today'
   if (days === 1) return 'Yesterday'
+  if (days === -1) return 'Tomorrow'
   return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+// ISO date arithmetic in local time (new Date('YYYY-MM-DD') would parse UTC).
+function shiftDay(iso: string, delta: number): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  const next = new Date(y, m - 1, d + delta)
+  return `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())}`
 }
 
 // Kid mode, the parents' side: every check-off in the family still waiting
@@ -98,7 +107,7 @@ function WaitingOnYou({
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{a.title}</p>
                   <p className="text-xs text-fg/50">
-                    {kid.display_name.split(/\s+/)[0]} · {approvalDate(a.date_for)}
+                    {kid.display_name.split(/\s+/)[0]} · {relativeDay(a.date_for)}
                   </p>
                 </div>
                 <button
@@ -165,6 +174,10 @@ export function Home({
   // How today's timed cards are drawn: stacked list, or laid on a day timeline.
   // Remembered per member, like the theme.
   const [view, setView] = useState<'list' | 'timeline'>('list')
+  // The day the timeline shows. null = today (the live board); any other day
+  // is a read-only peek fetched from the calendar endpoint.
+  const [timelineDate, setTimelineDate] = useState<string | null>(null)
+  const [peekItems, setPeekItems] = useState<api.FeedItem[] | null>(null)
   useEffect(() => {
     if (!user) return
     setView(localStorage.getItem(`db_board_view_${user.id}`) === 'timeline' ? 'timeline' : 'list')
@@ -172,7 +185,29 @@ export function Home({
   const pickView = (v: 'list' | 'timeline') => {
     setView(v)
     if (user) localStorage.setItem(`db_board_view_${user.id}`, v)
+    if (v === 'list') setTimelineDate(null) // the list is always today
   }
+
+  // Fetch the peeked day's cards whenever the timeline leaves today (and
+  // refetch after any board refresh, so an edit shows up in the peek too).
+  useEffect(() => {
+    if (!timelineDate) {
+      setPeekItems(null)
+      return
+    }
+    let stale = false
+    api
+      .getCalendar(timelineDate, timelineDate)
+      .then((cal) => {
+        if (!stale) setPeekItems(cal.days[0]?.items ?? [])
+      })
+      .catch(() => {
+        if (!stale) setPeekItems([])
+      })
+    return () => {
+      stale = true
+    }
+  }, [timelineDate, feed])
 
   const refresh = useCallback(async () => {
     try {
@@ -571,7 +606,7 @@ export function Home({
         </p>
       )}
 
-      {feed && filter.length === 0 && todayEmpty && (
+      {feed && filter.length === 0 && todayEmpty && view === 'list' && (
         isParent ? (
           // Empty board is the natural place to start one: tap to open the editor.
           <button
@@ -628,24 +663,115 @@ export function Home({
         </>
       )}
 
-      {feed && !todayEmpty && view === 'timeline' && (
+      {feed && view === 'timeline' && (
         <>
-          {pastDueOffTimeline.length > 0 && (
+          {!timelineDate && pastDueOffTimeline.length > 0 && (
             <>
               <SectionDivider label="Past due" />
               {renderCards(pastDueOffTimeline)}
             </>
           )}
 
-          {allDayOpen.length > 0 && (
+          {!timelineDate && allDayOpen.length > 0 && (
             <>
               <SectionDivider label="All day" />
               {renderCards(allDayOpen)}
             </>
           )}
 
-          <SectionDivider label="Today" accent />
-          {timed.length > 0 ? (
+          {/* Day header: the divider grew chevrons. Any day but today is a
+              read-only peek; the label taps back to today. */}
+          <div className="mb-2 mt-6 flex items-center gap-2 py-0.5 first:mt-0" data-timeline-nav>
+            <button
+              type="button"
+              aria-label="Previous day"
+              onClick={() => setTimelineDate(shiftDay(timelineDate ?? api.localDate(), -1))}
+              className="rounded-lg p-1 text-fg/45 transition-colors hover:bg-fg/10 hover:text-fg"
+            >
+              <ChevronLeft className="h-4 w-4" strokeWidth={2.5} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setTimelineDate(null)}
+              disabled={!timelineDate}
+              className={`text-[10px] font-bold uppercase tracking-widest ${
+                timelineDate ? 'text-fg/70 underline decoration-fg/30 underline-offset-4' : 'text-accent-bright'
+              }`}
+            >
+              {relativeDay(timelineDate ?? feed.date)}
+            </button>
+            <button
+              type="button"
+              aria-label="Next day"
+              onClick={() => setTimelineDate(shiftDay(timelineDate ?? api.localDate(), 1))}
+              className="rounded-lg p-1 text-fg/45 transition-colors hover:bg-fg/10 hover:text-fg"
+            >
+              <ChevronRight className="h-4 w-4" strokeWidth={2.5} />
+            </button>
+            <span className="h-px flex-1 bg-gradient-to-r from-accent-bright/70 to-transparent" />
+            {timelineDate && (
+              <button
+                type="button"
+                onClick={() => setTimelineDate(null)}
+                className="rounded-full border border-fg/10 bg-fg/5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-fg/60 transition-colors hover:bg-fg/10"
+              >
+                Back to today
+              </button>
+            )}
+          </div>
+
+          {timelineDate ? (
+            peekItems === null ? (
+              <p className="px-1 text-sm text-fg/40">Loading…</p>
+            ) : (
+              <>
+                {/* Peeked days are for looking: no checkboxes (a toggle would
+                    record the wrong date), cards still open their detail. */}
+                {(() => {
+                  const peekAllDay = peekItems.filter((i) => i.all_day)
+                  const peekTimed = peekItems.filter((i) => i.time_of_day && !i.all_day)
+                  return (
+                    <>
+                      {peekAllDay.length > 0 && (
+                        <div className="mb-3 flex flex-col gap-3">
+                          <AnimatePresence>
+                            {peekAllDay.map((item, i) => (
+                              <ItemCard
+                                key={item.id}
+                                index={i}
+                                item={item}
+                                canCheck={false}
+                                family={family}
+                                viewerId={user?.id}
+                                viewerIsParent={isParent}
+                                onOpen={() => setDetail({ item, checkable: false })}
+                              />
+                            ))}
+                          </AnimatePresence>
+                        </div>
+                      )}
+                      {peekTimed.length > 0 ? (
+                        <DayTimeline
+                          key={timelineDate}
+                          items={peekTimed}
+                          nowMinutes={clock.getHours() * 60 + clock.getMinutes()}
+                          isToday={false}
+                          canCheck={() => false}
+                          viewerId={user?.id}
+                          onToggle={() => {}}
+                          onOpen={(item) => setDetail({ item, checkable: false })}
+                        />
+                      ) : (
+                        <p className="px-1 text-sm text-fg/40">
+                          Nothing with a time on {relativeDay(timelineDate).toLowerCase()}.
+                        </p>
+                      )}
+                    </>
+                  )
+                })()}
+              </>
+            )
+          ) : timed.length > 0 ? (
             <DayTimeline
               items={timed}
               nowMinutes={clock.getHours() * 60 + clock.getMinutes()}
@@ -658,14 +784,14 @@ export function Home({
             <p className="px-1 text-sm text-fg/40">Nothing with a time today.</p>
           )}
 
-          {anytimeCards.length > 0 && (
+          {!timelineDate && anytimeCards.length > 0 && (
             <>
               <SectionDivider label="Anytime" />
               {renderCards(anytimeCards)}
             </>
           )}
 
-          {doneOffTimeline.length > 0 && (
+          {!timelineDate && doneOffTimeline.length > 0 && (
             <>
               <SectionDivider label="Done" />
               {renderCards(doneOffTimeline)}
