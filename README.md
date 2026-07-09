@@ -6,20 +6,33 @@ control.
 
 ## Status
 
-Early development. Not yet usable. See `docs/` for the plan.
+In daily use by a real family. See [ROADMAP.md](ROADMAP.md) for what exists
+and what's next.
 
-## What it does (planned)
+## What it does
 
-- A home screen where today's routines, pending to-dos, and scheduled blocks
-  appear as cards at the top.
-- Routines: recurring daily tasks (exercise, brush teeth, breakfast) that you
-  check off each day.
-- To-dos: one-off items (call the dentist, pick up groceries).
-- Schedule: time blocks for meetings and focused work.
-- Nutrition: calorie, macro, and micronutrient tracking.
-- Strava: pull in your workouts.
-- Multiple family members, each with their own login and view. Parents can
-  manage accounts and see their kids' day.
+- A family board that knows what time it is: routines, tasks, activities, and
+  appointments (one-off or repeating, like a weekly work meeting), with
+  recurrence, multiple assignees, streaks, a member filter, and a List or
+  Timeline view of the day. A calendar keeps honest day-by-day history.
+- Real phone notifications: reminders shortly before anything timed, plus an
+  optional morning digest, mid-day food check, and evening check-in. Standard
+  Web Push with encrypted payloads; the server needs no inbound exposure.
+- Nutrition: a private per-member food diary (search, barcodes, custom foods),
+  recipes with computed per-serving nutrition, a weight log and health profile
+  that auto-adjust a daily calorie target, and an exercise log that earns
+  calories back.
+- The Kitchen: per-store grocery lists, a recipe box, and a week of planned
+  dinners that surface on the board.
+- Family accounts with parent and child roles. Child accounts are simplified
+  and parent-supervised: no nutrition area, a narrowed board, check-offs that
+  wait for approval, and a mood, status, and journal only parents see.
+- Villages: private circles of linked families, invitation-only and
+  undiscoverable, for sharing across households without any social-media
+  mechanics. No feed, no likes, ever.
+- Onboarding by invite code: the server admin mints a short-lived code; the
+  invitee picks their own username and password and founds their own family.
+- Per-member themes, daily moods rendered as weather, and a private journal.
 
 ## Privacy
 
@@ -54,12 +67,13 @@ docs/       architecture and decisions
 
 ## Development
 
-A real quickstart will go here once the stack runs. Planned shape:
-
 ```
 cp .env.example .env     # then edit values
-docker compose up        # starts database, backend, and frontend
+docker compose up        # starts database, backend, and frontend on one port
 ```
+
+Backend tests: `cd backend && python -m pytest`. Frontend build:
+`cd frontend && npm run build`. Both run in CI on every push.
 
 ## Built with AI assistance
 
