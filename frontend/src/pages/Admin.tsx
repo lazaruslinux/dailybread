@@ -3,6 +3,7 @@ import { Copy, Home, KeyRound, Pencil, Plus, ShieldCheck, Trash2, X } from 'luci
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
+import { Sheet } from '../components/Recipes'
 import { Button, Field, FormError } from '../components/ui'
 
 // Admin dashboard v1: family member management. List, add, edit, reset
@@ -329,18 +330,26 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
           </div>
 
           {role === 'child' && (
-            <div>
-              <Field
-                label="Birthdate"
-                type="date"
-                value={birthdate}
-                onChange={(e) => setBirthdate(e.target.value)}
-                onClear={() => setBirthdate('')}
-              />
-              <p className="mt-1.5 text-xs text-fg/40">
-                Used to switch off kid mode at 18. Leave empty to keep kid mode on.
+            <>
+              <p className="-mt-1 text-xs leading-relaxed text-fg/45">
+                Child accounts have the Nutrition tab disabled, view-only access to the family
+                calendar except their own assigned tasks, and a mood and journal only parents
+                can see. Most families create one so parents can track a kid's routines and
+                activities, rather than for the child to use the app themselves.
               </p>
-            </div>
+              <div>
+                <Field
+                  label="Birthdate"
+                  type="date"
+                  value={birthdate}
+                  onChange={(e) => setBirthdate(e.target.value)}
+                  onClear={() => setBirthdate('')}
+                />
+                <p className="mt-1.5 text-xs text-fg/40">
+                  Optional. Just for the family's reference.
+                </p>
+              </div>
+            </>
           )}
 
           <label
@@ -595,11 +604,65 @@ function InviteHouseholdSheet({ onClose }: { onClose: () => void }) {
   )
 }
 
+// ---- rename the family ---------------------------------------------------------
+
+function RenameFamilySheet({
+  current,
+  onClose,
+  onRenamed,
+}: {
+  current: string
+  onClose: () => void
+  onRenamed: () => void
+}) {
+  const [name, setName] = useState(current)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      await api.renameFamily(name.trim())
+      onRenamed()
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Something went wrong')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Sheet onClose={onClose}>
+      <h3 className="mb-1 text-lg font-bold">Family name</h3>
+      <p className="mb-4 text-sm text-fg/60">
+        This is how your family appears across the app, and to families you link with in a
+        village. Lots of families share a last name, so a fun, custom name works best.
+      </p>
+      <form onSubmit={submit} className="flex flex-col gap-4">
+        <Field
+          label="Family name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          maxLength={80}
+          autoFocus
+          required
+        />
+        <FormError message={error} />
+        <Button type="submit" disabled={busy || !name.trim()}>
+          {busy ? 'Saving…' : 'Save'}
+        </Button>
+      </form>
+    </Sheet>
+  )
+}
+
 // ---- the dashboard ------------------------------------------------------------
 
 export function Admin() {
   const { user } = useAuth()
   const [members, setMembers] = useState<api.User[] | null>(null)
+  const [family, setFamily] = useState<api.Family | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [sheet, setSheet] = useState<{ open: boolean; member: api.User | null }>({
     open: false,
@@ -607,10 +670,12 @@ export function Admin() {
   })
   const [deleting, setDeleting] = useState<api.User | null>(null)
   const [inviting, setInviting] = useState(false)
+  const [renaming, setRenaming] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
       setMembers(await api.listUsers())
+      setFamily(await api.getMyFamily())
       setLoadError(null)
     } catch (err) {
       setLoadError(err instanceof api.ApiError ? err.message : 'Could not load family members.')
@@ -626,7 +691,15 @@ export function Admin() {
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold tracking-tight">Family members</h2>
-          <p className="text-sm text-fg/50">Accounts on this dailybread</p>
+          <button
+            type="button"
+            onClick={() => setRenaming(true)}
+            className="group flex items-center gap-1.5 text-sm text-fg/50 transition-colors hover:text-fg/80"
+            aria-label="Rename family"
+          >
+            {family?.name ?? '…'}
+            <Pencil className="h-3 w-3 text-fg/30 transition-colors group-hover:text-fg/60" />
+          </button>
         </div>
         <Button onClick={() => setSheet({ open: true, member: null })} className="flex items-center gap-1.5">
           <Plus className="h-4 w-4" /> Add
@@ -697,6 +770,16 @@ export function Admin() {
           />
         )}
         {inviting && <InviteHouseholdSheet onClose={() => setInviting(false)} />}
+        {renaming && family && (
+          <RenameFamilySheet
+            current={family.name}
+            onClose={() => setRenaming(false)}
+            onRenamed={() => {
+              setRenaming(false)
+              refresh()
+            }}
+          />
+        )}
       </AnimatePresence>
     </div>
   )

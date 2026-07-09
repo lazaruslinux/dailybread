@@ -79,20 +79,26 @@ def test_parents_read_a_minors_journal(owner, parent, child):
         assert [e["body"] for e in entries] == ["Rode my bike"]
 
 
-def test_grown_journals_stay_closed_to_everyone(owner, parent, adult_child):
-    adult_child.put("/me/journal", json={"date_for": TODAY, "body": "private"})
-    # An of-age child's journal 404s for parents exactly like an unknown id:
+def test_adult_journals_stay_closed_to_everyone(owner, parent):
+    parent.put("/me/journal", json={"date_for": TODAY, "body": "private"})
+    # An adult's journal 404s for anyone else exactly like an unknown id:
     # the response doesn't even confirm a journal exists.
-    assert owner.get(f"/members/{user_id(adult_child)}/journal").status_code == 404
     assert owner.get(f"/members/{user_id(parent)}/journal").status_code == 404
     assert owner.get("/members/99999/journal").status_code == 404
 
 
-def test_children_cannot_use_the_member_journal_door(owner, child, adult_child):
+def test_child_with_adult_birthdate_journal_is_parent_readable(owner, grown_child):
+    # Kid mode follows the role, so the parent door opens for every child
+    # account regardless of age.
+    grown_child.put("/me/journal", json={"date_for": TODAY, "body": "Rode my bike"})
+    entries = owner.get(f"/members/{user_id(grown_child)}/journal").json()
+    assert [e["body"] for e in entries] == ["Rode my bike"]
+
+
+def test_children_cannot_use_the_member_journal_door(owner, child):
     child.put("/me/journal", json={"date_for": TODAY, "body": "secret"})
     kid = user_id(child)
-    # Not other kids, not grown children — parents only (403 via require_parent).
-    assert adult_child.get(f"/members/{kid}/journal").status_code == 403
+    # Parents only (403 via require_parent).
     assert child.get(f"/members/{kid}/journal").status_code == 403
 
 

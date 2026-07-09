@@ -2,9 +2,18 @@
 
 import datetime as dt
 
-from tests.conftest import user_id
+from tests.conftest import login, user_id
 
 TODAY = dt.date.today().isoformat()
+
+SIB = {"username": "sib", "display_name": "Sibling", "password": "sib-pass-12345"}
+
+
+def make_sibling(app, owner):
+    """A second child in the family — the 'other kid' for privacy checks."""
+    res = owner.post("/auth/users", json={**SIB, "role": "child"})
+    assert res.status_code == 201, res.text
+    return login(app, SIB)
 
 
 def set_mood(client, level="sunny", hidden=False):
@@ -79,32 +88,34 @@ def test_status_clears_overnight(owner, child):
 # ---- kid privacy: a minor's mood and status are the parents' business ---------------
 
 
-def test_minor_mood_hidden_from_other_children(owner, child, adult_child):
+def test_minor_mood_hidden_from_other_children(app, owner, child):
+    sibling = make_sibling(app, owner)
     set_mood(child)
     kid = user_id(child)
-    # Parents see it; a sibling (even a grown one) sees nothing at all.
+    # Parents see it; a sibling sees nothing at all.
     assert member(owner, kid)["mood"] == {"level": "sunny", "hidden": False}
-    assert member(adult_child, kid)["mood"] is None
+    assert member(sibling, kid)["mood"] is None
     # The kid still sees their own.
     assert member(child, kid)["mood"] is not None
 
 
-def test_grown_members_moods_stay_family_visible(owner, child, adult_child):
-    set_mood(adult_child)
+def test_parents_moods_stay_family_visible(owner, parent, child):
+    set_mood(parent)
     set_mood(owner, "partly")
     # Kid privacy narrows only the minor's own data: a minor still sees the
     # rest of the family's moods like anyone else.
-    assert member(child, user_id(adult_child))["mood"] is not None
+    assert member(child, user_id(parent))["mood"] is not None
     assert member(child, user_id(owner))["mood"] is not None
 
 
-def test_minor_status_hidden_from_other_children(owner, child, adult_child):
+def test_minor_status_hidden_from_other_children(app, owner, child):
+    sibling = make_sibling(app, owner)
     res = child.patch("/me/profile", json={"bio": "Lost a tooth today"})
     assert res.status_code == 200
     kid = user_id(child)
 
     seen_by_parent = owner.get(f"/users/{kid}/profile?date={TODAY}").json()
-    seen_by_sibling = adult_child.get(f"/users/{kid}/profile?date={TODAY}").json()
+    seen_by_sibling = sibling.get(f"/users/{kid}/profile?date={TODAY}").json()
     assert seen_by_parent["bio"] == "Lost a tooth today"
     assert seen_by_sibling["bio"] == ""
     # Their own profile still shows it (that's how they edit it).

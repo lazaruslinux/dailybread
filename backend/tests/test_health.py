@@ -193,25 +193,28 @@ def test_health_data_is_self_only_between_adults(owner, parent):
     assert res.status_code == 404
 
 
-def test_children_cannot_set_their_own_goal(adult_child):
-    setup_profile(adult_child, weight_kg=45.0)
-    res = adult_child.put("/me/health/goal", json={"goal": "lose", "rate_lbs_per_week": 1.0})
-    assert res.status_code == 403
-
-
-def test_a_parent_manages_a_childs_goal(owner, adult_child):
-    setup_profile(adult_child, weight_kg=45.0)
-    kid = user_id(adult_child)
-    # The parent can see the child's health section and set the goal.
-    assert owner.get(f"/members/{kid}/health").status_code == 200
+def test_a_parent_manages_a_childs_goal(owner, child):
+    kid = user_id(child)
+    # Children can't touch their own health area at all, so everything goes
+    # through the parent-managed endpoints: profile, weigh-in, then goal.
+    res = owner.put(
+        f"/members/{kid}/health/profile",
+        json={"birthdate": "2016-03-05", "sex": "female", "height_cm": 130.0,
+              "activity_level": "light"},
+    )
+    assert res.status_code == 200, res.text
+    res = owner.put(
+        f"/members/{kid}/health/weight",
+        json={"date_for": TODAY, "weight_kg": 45.0},
+    )
+    assert res.status_code == 200, res.text
     res = owner.put(f"/members/{kid}/health/goal", json={"goal": "maintain"})
     assert res.status_code == 200, res.text
-    assert adult_child.get("/me/health").json()["profile"]["goal"] == "maintain"
+    assert owner.get(f"/members/{kid}/health").json()["profile"]["goal"] == "maintain"
 
 
-def test_cross_family_child_is_invisible(other, adult_child):
-    setup_profile(adult_child, weight_kg=45.0)
-    kid = user_id(adult_child)
+def test_cross_family_child_is_invisible(owner, other, child):
+    kid = user_id(child)
     assert other.get(f"/members/{kid}/health").status_code == 404
     assert other.put(f"/members/{kid}/health/goal", json={"goal": "maintain"}).status_code == 404
 

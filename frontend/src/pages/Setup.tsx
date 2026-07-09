@@ -8,6 +8,7 @@ import { AuthShell, Brand, Button, Field, FormError } from '../components/ui'
 export function Setup() {
   const { bootstrap } = useAuth()
   const [displayName, setDisplayName] = useState('')
+  const [familyName, setFamilyName] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -31,7 +32,7 @@ export function Setup() {
 
     setBusy(true)
     try {
-      await bootstrap(username, displayName, password)
+      await bootstrap(username, displayName, password, familyName)
     } catch (err) {
       // 403 here means someone else initialized the install between page
       // load and submit; anything else is a validation or server problem.
@@ -63,6 +64,20 @@ export function Setup() {
           minLength={3}
           required
         />
+        <div>
+          <Field
+            label="Family name"
+            value={familyName}
+            onChange={(e) => setFamilyName(e.target.value)}
+            placeholder="The Breakfast Club"
+            maxLength={80}
+            required
+          />
+          <p className="mt-1.5 text-xs leading-relaxed text-fg/40">
+            Lots of families share a last name. A fun, custom name keeps yours recognizable
+            when villages link families together. You can change it later.
+          </p>
+        </div>
         <Field
           label="Password"
           type="password"

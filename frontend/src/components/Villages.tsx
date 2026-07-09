@@ -1,5 +1,5 @@
 import { AnimatePresence } from 'framer-motion'
-import { Copy, Handshake, Plus } from 'lucide-react'
+import { Copy, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import {
@@ -19,6 +19,29 @@ import { Button, Field, FormError } from './ui'
 // membership UI — founding, joining by code, regenerating a code, leaving.
 // The code itself appears exactly once (the server stores only a hash), so
 // the sheet that shows it is the owner's one chance to pass it along.
+
+// Two huts side by side: an old village. Drawn in lucide's visual language
+// (24-grid, 2px stroke, round caps) so it sits naturally among the real icons.
+function VillageIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M2 12l4.5-4L11 12" />
+      <path d="M3.5 11v7h6v-7" />
+      <path d="M12.5 9.5L17.5 5 22 9.5" />
+      <path d="M14 8.5V18h7V8.5" />
+      <path d="M17.5 18v-3.5" />
+    </svg>
+  )
+}
 
 function expiresIn(iso: string | null): string {
   if (!iso) return ''
@@ -110,8 +133,8 @@ function CreateSheet({
     <Sheet onClose={onClose}>
       <h3 className="mb-1 text-lg font-bold">New village</h3>
       <p className="mb-4 text-sm text-fg/60">
-        A village links your family with others you invite. Boards, kitchens, and calendars stay
-        private to each family; a village only ever shares what a member chooses to put in it.
+        Creating a village links your family to other families you can invite via a code.
+        Boards, kitchens, and calendars stay private to each family.
       </p>
       <form onSubmit={submit} className="flex flex-col gap-4">
         <Field
@@ -154,7 +177,7 @@ function JoinSheet({ onClose, onJoined }: { onClose: () => void; onJoined: () =>
     <Sheet onClose={onClose}>
       <h3 className="mb-1 text-lg font-bold">Join a village</h3>
       <p className="mb-4 text-sm text-fg/60">
-        Enter the invite code another family's admin gave you.
+        Enter the invite code given to you by another family to join their village.
       </p>
       <form onSubmit={submit} className="flex flex-col gap-4">
         <Field
@@ -241,16 +264,17 @@ export function VillagesCard() {
       <div className="flex flex-col gap-4">
         {villages.length === 0 && (
           <p className="text-sm text-fg/55">
-            A village links your family with another (grandparents, cousins, close friends)
-            without opening your board, kitchen, or calendar to anyone. Families you don't
-            invite can never find you.
+            <span className="font-semibold text-fg/70">"It takes a village"</span> - Villages
+            link your family to another to share recipes or plan get-togethers. Your family's
+            board, nutrition, and Kitchen data is never shared with them. Shared
+            recipes/activities appear in separate sections.
           </p>
         )}
 
         {villages.map((v) => (
           <div key={v.id} className="rounded-xl border border-fg/10 bg-fg/5 p-4">
             <div className="mb-2 flex items-center gap-2">
-              <Handshake className="h-4 w-4 shrink-0 text-accent-bright" />
+              <VillageIcon className="h-4 w-4 shrink-0 text-accent-bright" />
               <span className="min-w-0 truncate font-semibold text-fg/90">{v.name}</span>
             </div>
             <div className="flex flex-wrap gap-1.5">

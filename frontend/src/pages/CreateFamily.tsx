@@ -31,15 +31,21 @@ export function CreateFamily() {
     <AuthShell>
       <Brand subtitle={`Welcome, ${firstName}. Let's set up your household.`} />
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
-        <Field
-          label="Family name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="The Smiths, Home, ..."
-          maxLength={80}
-          autoFocus
-          required
-        />
+        <div>
+          <Field
+            label="Family name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="The Breakfast Club"
+            maxLength={80}
+            autoFocus
+            required
+          />
+          <p className="mt-1.5 text-xs leading-relaxed text-fg/40">
+            Lots of families share a last name. A fun, custom name keeps yours recognizable
+            when villages link families together. You can change it later.
+          </p>
+        </div>
         <FormError message={error} />
         <Button type="submit" disabled={busy || !name.trim()} className="mt-1">
           {busy ? 'Creating' : 'Create our family'}

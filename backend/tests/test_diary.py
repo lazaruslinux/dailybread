@@ -41,8 +41,8 @@ def day(client, date=TODAY):
 # ---- logging and totals ---------------------------------------------------------
 
 
-def test_logging_a_food_snapshots_served_nutrition(adult_child):
-    res = log(adult_child, amount=200, time_of_day="07:30")
+def test_logging_a_food_snapshots_served_nutrition(parent):
+    res = log(parent, amount=200, time_of_day="07:30")
     assert res.status_code == 201, res.text
     entry = res.json()
     # 200 g of a per-100g food = 2x the label.
@@ -51,34 +51,34 @@ def test_logging_a_food_snapshots_served_nutrition(adult_child):
     assert entry["slot"] == "breakfast"
     assert entry["time_of_day"] == "07:30:00"
 
-    d = day(adult_child)
+    d = day(parent)
     assert d["consumed"]["calories"] == 200.0
     assert d["consumed"]["carbs_g"] == 40.0
     assert len(d["entries"]) == 1
 
 
-def test_totals_sum_across_entries_and_days_stay_separate(adult_child):
-    log(adult_child, amount=100)
-    log(adult_child, amount=50, slot="lunch")
-    d = day(adult_child)
+def test_totals_sum_across_entries_and_days_stay_separate(parent):
+    log(parent, amount=100)
+    log(parent, amount=50, slot="lunch")
+    d = day(parent)
     assert d["consumed"]["calories"] == 150.0
 
     other_day = (dt.date.today() - dt.timedelta(days=3)).isoformat()
-    log(adult_child, amount=100, date_for=other_day)
-    assert day(adult_child)["consumed"]["calories"] == 150.0
-    assert day(adult_child, other_day)["consumed"]["calories"] == 100.0
+    log(parent, amount=100, date_for=other_day)
+    assert day(parent)["consumed"]["calories"] == 150.0
+    assert day(parent, other_day)["consumed"]["calories"] == 100.0
 
 
-def test_mass_food_refuses_volume_units(adult_child):
-    res = log(adult_child, amount=1, unit="cup")
+def test_mass_food_refuses_volume_units(parent):
+    res = log(parent, amount=1, unit="cup")
     assert res.status_code == 400
 
 
-def test_future_dates_are_refused_beyond_clock_tolerance(adult_child):
+def test_future_dates_are_refused_beyond_clock_tolerance(parent):
     far = (dt.date.today() + dt.timedelta(days=3)).isoformat()
-    assert log(adult_child, date_for=far).status_code == 400
+    assert log(parent, date_for=far).status_code == 400
     near = (dt.date.today() + dt.timedelta(days=1)).isoformat()
-    assert log(adult_child, date_for=near).status_code == 201
+    assert log(parent, date_for=near).status_code == 201
 
 
 def test_logging_a_recipe_by_servings(owner):
@@ -128,9 +128,9 @@ def test_deleting_the_recipe_keeps_the_logged_entry(owner):
     assert res.json()["calories"] == 300.0
 
 
-def test_editing_amount_slot_and_time(adult_child):
-    entry = log(adult_child, amount=100).json()
-    res = adult_child.patch(
+def test_editing_amount_slot_and_time(parent):
+    entry = log(parent, amount=100).json()
+    res = parent.patch(
         f"/diary/{entry['id']}",
         json={"amount": 50, "slot": "snack", "time_of_day": "15:10"},
     )
@@ -140,27 +140,27 @@ def test_editing_amount_slot_and_time(adult_child):
     assert body["slot"] == "snack"
 
 
-def test_deleting_an_entry(adult_child):
-    entry = log(adult_child).json()
-    assert adult_child.delete(f"/diary/{entry['id']}").status_code == 204
-    assert day(adult_child)["entries"] == []
+def test_deleting_an_entry(parent):
+    entry = log(parent).json()
+    assert parent.delete(f"/diary/{entry['id']}").status_code == 204
+    assert day(parent)["entries"] == []
 
 
 # ---- privacy: a diary belongs to one person --------------------------------------
 
 
-def test_family_members_never_see_each_others_entries(app, owner, adult_child):
-    log(adult_child, amount=100)
+def test_family_members_never_see_each_others_entries(app, owner, parent):
+    log(parent, amount=100)
     assert day(owner)["entries"] == []
 
-    kid_entry = day(adult_child)["entries"][0]
+    kid_entry = day(parent)["entries"][0]
     # Even a family admin can't read, edit, or delete a member's entry.
     assert owner.patch(f"/diary/{kid_entry['id']}", json={"amount": 1}).status_code == 404
     assert owner.delete(f"/diary/{kid_entry['id']}").status_code == 404
 
 
-def test_cross_family_entries_are_invisible(adult_child, other):
-    entry = log(adult_child).json()
+def test_cross_family_entries_are_invisible(parent, other):
+    entry = log(parent).json()
     assert other.patch(f"/diary/{entry['id']}", json={"amount": 1}).status_code == 404
     assert day(other)["entries"] == []
 
@@ -180,8 +180,8 @@ def test_cross_family_recipe_cannot_be_logged(owner, other):
 # ---- targets ---------------------------------------------------------------------
 
 
-def test_targets_default_until_set(adult_child):
-    d = day(adult_child)
+def test_targets_default_until_set(parent):
+    d = day(parent)
     t = d["targets"]
     assert t["calories"] == 2000
     assert (t["protein_pct"], t["carbs_pct"], t["fat_pct"]) == (30, 40, 30)
@@ -191,32 +191,32 @@ def test_targets_default_until_set(adult_child):
     assert round(t["fat_g"], 1) == 66.7
 
 
-def test_setting_your_own_targets(adult_child):
-    res = adult_child.put(
+def test_setting_your_own_targets(parent):
+    res = parent.put(
         "/diary/targets",
         json={"calories": 1800, "protein_pct": 40, "carbs_pct": 30, "fat_pct": 30},
     )
     assert res.status_code == 200, res.text
-    t = day(adult_child)["targets"]
+    t = day(parent)["targets"]
     assert t["calories"] == 1800
     assert t["protein_g"] == 180.0
 
 
-def test_targets_must_sum_to_one_hundred(adult_child):
-    res = adult_child.put(
+def test_targets_must_sum_to_one_hundred(parent):
+    res = parent.put(
         "/diary/targets",
         json={"calories": 2000, "protein_pct": 50, "carbs_pct": 40, "fat_pct": 30},
     )
     assert res.status_code == 400
 
 
-def test_targets_are_per_member(app, owner, adult_child):
-    adult_child.put(
+def test_targets_are_per_member(app, owner, parent):
+    parent.put(
         "/diary/targets",
         json={"calories": 1600, "protein_pct": 35, "carbs_pct": 35, "fat_pct": 30},
     )
     assert day(owner)["targets"]["calories"] == 2000
-    assert day(adult_child)["targets"]["calories"] == 1600
+    assert day(parent)["targets"]["calories"] == 1600
 
 
 # ---- kid mode ---------------------------------------------------------------------

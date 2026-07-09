@@ -155,8 +155,9 @@ class User(Base):
     must_change_password: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
-    # Admin-set, drives kid mode (see is_minor). Deliberately independent from
-    # health_profiles.birthdate, which is a self-reported BMR input.
+    # Admin-set, informational only (kid mode follows role — see is_minor).
+    # Deliberately independent from health_profiles.birthdate, which is a
+    # self-reported BMR input.
     birthdate: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     # Cross-family presence: has this member elected to share their mood and
     # daily status with the family's villages? Off by default. Minors are
@@ -168,22 +169,15 @@ class User(Base):
 
     @property
     def is_minor(self) -> bool:
-        """Kid mode: child accounts under 18 get the shepherded experience —
-        no nutrition/health area, only their own slice of the board, and
-        check-offs that wait for a parent. No birthdate means minor, so a kid
-        is never accidentally unrestricted; restrictions lift by themselves on
-        the 18th birthday (role stays child). Same server-local clock as the
-        rest of the app's day math."""
-        if self.role != Role.child:
-            return False
-        if self.birthdate is None:
-            return True
-        today = dt.date.today()
-        try:
-            eighteenth = self.birthdate.replace(year=self.birthdate.year + 18)
-        except ValueError:  # born Feb 29; turns 18 on Mar 1 of a common year
-            eighteenth = self.birthdate.replace(year=self.birthdate.year + 18, month=3, day=1)
-        return today < eighteenth
+        """Kid mode follows the role, nothing else: a Child account gets the
+        shepherded experience — no nutrition/health area, only their own slice
+        of the board, check-offs that wait for a parent, and a mood/status/
+        journal only parents see. A child account is usually a surface parents
+        track a kid THROUGH rather than an account the kid signs into, so
+        there's no age-based unlock; if a member should have full access, give
+        them the parent role. (Age drove this before 2026-07-09; birthdate is
+        informational now.)"""
+        return self.role == Role.child
 
 
 class ItemKind(str, enum.Enum):

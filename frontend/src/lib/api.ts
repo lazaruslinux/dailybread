@@ -92,10 +92,15 @@ export const getMe = () => request<User>('/auth/me')
 export const login = (username: string, password: string) =>
   request<User>('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) })
 
-export const bootstrap = (username: string, display_name: string, password: string) =>
+export const bootstrap = (
+  username: string,
+  display_name: string,
+  password: string,
+  family_name: string,
+) =>
   request<User>('/auth/bootstrap', {
     method: 'POST',
-    body: JSON.stringify({ username, display_name, password }),
+    body: JSON.stringify({ username, display_name, password, family_name }),
   })
 
 export const logout = () => request<void>('/auth/logout', { method: 'POST' })
@@ -114,7 +119,7 @@ export interface CreateUserPayload {
   password: string
   role: Role
   is_admin?: boolean
-  // "YYYY-MM-DD". Empty on a child account keeps kid mode on.
+  // "YYYY-MM-DD". Informational only — kid mode follows the Child role.
   birthdate?: string | null
   // True creates a family-less parent account: whoever signs in with it
   // founds their own separate household via the create-family wizard. Used
@@ -127,7 +132,7 @@ export interface UpdateUserPayload {
   role?: Role
   is_admin?: boolean
   password?: string
-  // Omitted = unchanged; explicit null clears the birthdate (kid mode back on).
+  // Omitted = unchanged; explicit null clears the birthdate.
   birthdate?: string | null
 }
 
@@ -163,6 +168,12 @@ export interface Family {
 // becomes its head (parent + admin). One family per account, ever.
 export const createFamily = (name: string) =>
   request<Family>('/families', { method: 'POST', body: JSON.stringify({ name }) })
+
+export const getMyFamily = () => request<Family>('/families/me')
+
+// Admin-only. Villages show this name to linked families.
+export const renameFamily = (name: string) =>
+  request<Family>('/families/me', { method: 'PATCH', body: JSON.stringify({ name }) })
 
 // ---- items and the home feed --------------------------------------------------
 

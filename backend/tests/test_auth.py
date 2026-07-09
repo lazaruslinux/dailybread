@@ -166,10 +166,11 @@ def test_parent_is_never_a_minor(owner):
     assert owner.get("/auth/me").json()["is_minor"] is False
 
 
-def test_grown_child_is_not_a_minor(adult_child):
-    me = adult_child.get("/auth/me").json()
+def test_child_with_adult_birthdate_is_still_a_minor(grown_child):
+    # Kid mode follows the role: age never unlocks it.
+    me = grown_child.get("/auth/me").json()
     assert me["birthdate"] is not None
-    assert me["is_minor"] is False
+    assert me["is_minor"] is True
 
 
 def test_create_accepts_birthdate(owner):
@@ -195,30 +196,15 @@ def test_update_sets_and_clears_birthdate(owner, child):
 
     res = owner.patch(f"/auth/users/{kid_id}", json={"birthdate": grown})
     assert res.status_code == 200
-    assert res.json()["is_minor"] is False
+    assert res.json()["is_minor"] is True  # informational only: still a child
 
     # Omitting the field leaves it alone...
     res = owner.patch(f"/auth/users/{kid_id}", json={"display_name": "Still Grown"})
     assert res.json()["birthdate"] == grown
 
-    # ...while an explicit null clears it, putting kid mode back on.
+    # ...while an explicit null clears it.
     res = owner.patch(f"/auth/users/{kid_id}", json={"birthdate": None})
     assert res.status_code == 200
     assert res.json()["birthdate"] is None
     assert res.json()["is_minor"] is True
 
-
-def test_minor_flag_flips_exactly_on_the_18th_birthday(owner, child):
-    kid_id = user_id(child)
-    today = dt.date.today()
-
-    # 18 years old as of today: the birthday itself already counts as grown.
-    on_the_day = today.replace(year=today.year - 18).isoformat()
-    res = owner.patch(f"/auth/users/{kid_id}", json={"birthdate": on_the_day})
-    assert res.json()["is_minor"] is False
-
-    # One day short of 18 (born tomorrow's date 18 years ago): still a minor.
-    tomorrow = today + dt.timedelta(days=1)
-    almost = tomorrow.replace(year=tomorrow.year - 18).isoformat()
-    res = owner.patch(f"/auth/users/{kid_id}", json={"birthdate": almost})
-    assert res.json()["is_minor"] is True

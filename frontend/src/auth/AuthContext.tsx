@@ -29,7 +29,12 @@ interface AuthState {
   screen: Screen
   user: api.User | null
   login: (username: string, password: string) => Promise<void>
-  bootstrap: (username: string, displayName: string, password: string) => Promise<void>
+  bootstrap: (
+    username: string,
+    displayName: string,
+    password: string,
+    familyName: string,
+  ) => Promise<void>
   createFamily: (name: string) => Promise<void>
   changePassword: (current: string, next: string) => Promise<void>
   logout: () => Promise<void>
@@ -76,8 +81,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const bootstrap = useCallback(
-    async (username: string, displayName: string, password: string) => {
-      const me = await api.bootstrap(username, displayName, password)
+    async (username: string, displayName: string, password: string, familyName: string) => {
+      const me = await api.bootstrap(username, displayName, password, familyName)
       setUser(me)
       setScreen(screenForUser(me))
     },

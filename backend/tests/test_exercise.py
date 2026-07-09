@@ -109,9 +109,9 @@ def test_deleting_an_exercise_entry(owner):
 # ---- privacy ---------------------------------------------------------------------
 
 
-def test_exercise_is_self_only(owner, adult_child):
-    setup_profile(adult_child, weight_kg=45.0)
-    entry = log_run(adult_child, minutes=30, activity="walking").json()
+def test_exercise_is_self_only(owner, parent):
+    setup_profile(parent, weight_kg=45.0)
+    entry = log_run(parent, minutes=30, activity="walking").json()
     assert owner.get(f"/diary?date={TODAY}").json()["exercise"] == []
     assert owner.patch(f"/me/exercise/{entry['id']}", json={"minutes": 5}).status_code == 404
     assert owner.delete(f"/me/exercise/{entry['id']}").status_code == 404

@@ -499,8 +499,8 @@ def test_weekly_routine_shows_only_on_scheduled_days(owner):
 # ---- per-person vs shared completion -----------------------------------------
 
 
-def test_routine_completion_is_per_person(owner, adult_child):
-    dad_id, kid_id = user_id(owner), user_id(adult_child)
+def test_routine_completion_is_per_person(owner, parent):
+    dad_id, kid_id = user_id(owner), user_id(parent)
     today_wd = dt.date.today().weekday()
     routine = make_item(
         owner,
@@ -510,10 +510,10 @@ def test_routine_completion_is_per_person(owner, adult_child):
         repeat={"type": "weekly", "days": [today_wd]},
     )
 
-    # The child checks their own occurrence.
-    assert adult_child.post(f"/items/{routine['id']}/complete?date={TODAY}").status_code == 200
+    # The second parent checks their own occurrence.
+    assert parent.post(f"/items/{routine['id']}/complete?date={TODAY}").status_code == 200
 
-    # On the owner's board the adult_child is done but the owner is not.
+    # On the owner's board the other parent is done but the owner is not.
     feed = owner.get(f"/items/feed?date={TODAY}").json()
     card = next(i for i in feed["today"] if i["id"] == routine["id"])
     states = {c["user_id"]: c["completed"] for c in card["assignee_completions"]}
@@ -609,12 +609,13 @@ def test_minor_cannot_see_family_cards_assigned_to_others(owner, child):
     assert mom_card["id"] not in calendar_ids(child)
     # Hidden means gone: completing it 404s like the card doesn't exist.
     assert child.post(f"/items/{mom_card['id']}/complete?date={TODAY}").status_code == 404
-    # The parent still sees their own card, and a GROWN family member still
-    # sees any family card - the narrowing applies to minors alone.
+    # The parent still sees their own card - the narrowing applies to
+    # child accounts alone.
     assert mom_card["id"] in feed_ids(owner)
 
 
-def test_grown_child_still_sees_the_whole_family_board(owner, adult_child):
+def test_child_with_adult_birthdate_gets_the_narrowed_board(owner, grown_child):
+    # Kid mode follows the role, so age never widens the board.
     mom_card = make_item(
         owner,
         title="Family dinner",
@@ -622,7 +623,7 @@ def test_grown_child_still_sees_the_whole_family_board(owner, adult_child):
         assignee_ids=[user_id(owner)],
         date_for=TODAY,
     )
-    assert mom_card["id"] in feed_ids(adult_child)
+    assert mom_card["id"] not in feed_ids(grown_child)
 
 
 def test_minor_sees_own_and_assigned_cards(owner, child):

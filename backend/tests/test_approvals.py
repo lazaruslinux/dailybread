@@ -98,12 +98,13 @@ def test_minor_tap_on_a_one_shot_is_pending(owner, child):
     assert body["pending_by"] == kid_id
 
 
-def test_grown_child_completes_directly(owner, adult_child):
-    task = make_item(owner, assignee_ids=[user_id(adult_child)], date_for=TODAY.isoformat())
-    body = complete(adult_child, task["id"]).json()
-    assert body["completed"] is True
-    assert body["pending"] is False
-    assert owner.get("/items/pending").json() == []
+def test_child_with_adult_birthdate_still_needs_approval(owner, grown_child):
+    # The headline of role-driven kid mode: age never bypasses the queue.
+    task = make_item(owner, assignee_ids=[user_id(grown_child)], date_for=TODAY.isoformat())
+    body = complete(grown_child, task["id"]).json()
+    assert body["completed"] is False
+    assert body["pending"] is True
+    assert owner.get("/items/pending").json() != []
 
 
 def test_kid_tap_pushes_to_every_parent_device(owner, parent, child, configured, outbox):
@@ -203,9 +204,8 @@ def test_kid_cannot_untick_an_approved_completion(owner, child):
 # ---- the waiting-on-you list --------------------------------------------------------
 
 
-def test_pending_list_is_parent_only(owner, parent, child, adult_child):
+def test_pending_list_is_parent_only(owner, parent, child):
     assert child.get("/items/pending").status_code == 403
-    assert adult_child.get("/items/pending").status_code == 403
     # Any parent, admin or not, answers approvals.
     assert parent.get("/items/pending").status_code == 200
     assert owner.get("/items/pending").status_code == 200

@@ -29,7 +29,7 @@ OWNER = {"username": "owner", "display_name": "Owner Parent", "password": "owner
 PARENT = {"username": "parent2", "display_name": "Second Parent", "password": "parent-pass-123"}
 CHILD = {"username": "kid", "display_name": "The Kid", "password": "child-pass-123"}
 # A child-role account past 18: child on the board, but not a minor.
-ADULT_CHILD = {"username": "grownkid", "display_name": "Grown Kid", "password": "grown-pass-123"}
+GROWN_CHILD = {"username": "grownkid", "display_name": "Grown Kid", "password": "grown-pass-123"}
 # A second household, for cross-family isolation checks.
 JOSH = {"username": "josh", "display_name": "Josh", "password": "josh-pass-1234"}
 
@@ -134,12 +134,13 @@ def child(app, owner) -> TestClient:
 
 
 @pytest.fixture()
-def adult_child(app, owner) -> TestClient:
-    """Child role, 20 years old: proves restrictions key off age, not role."""
+def grown_child(app, owner) -> TestClient:
+    """Child role with an of-age birthdate: STILL a minor — kid mode follows
+    the role, not age. Kept to pin exactly that."""
     birthdate = (dt.date.today() - dt.timedelta(days=20 * 366)).isoformat()
-    res = owner.post("/auth/users", json={**ADULT_CHILD, "role": "child", "birthdate": birthdate})
+    res = owner.post("/auth/users", json={**GROWN_CHILD, "role": "child", "birthdate": birthdate})
     assert res.status_code == 201, res.text
-    return login(app, ADULT_CHILD)
+    return login(app, GROWN_CHILD)
 
 
 @pytest.fixture()
