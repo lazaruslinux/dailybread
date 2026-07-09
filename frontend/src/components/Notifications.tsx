@@ -1,5 +1,6 @@
 import { Bell, BellOff } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useAuth } from '../auth/AuthContext'
 import * as api from '../lib/api'
 
 // The You-tab "Notifications" card: turn card reminders on or off for THIS
@@ -39,6 +40,7 @@ type State =
   | { kind: 'on'; endpoint: string }
 
 export function NotificationsCard() {
+  const { user } = useAuth()
   const [state, setState] = useState<State>({ kind: 'checking' })
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<string | null>(null)
@@ -132,6 +134,9 @@ export function NotificationsCard() {
   }
 
   const on = state.kind === 'on'
+
+  // Kid mode: no notifications for minors at all, so no card offering them.
+  if (user?.is_minor) return null
 
   return (
     <div className="glass p-4" data-notifications>

@@ -154,6 +154,9 @@ def reminder_tick(now: dt.datetime) -> int:
                 if rows:  # dated one-shots count as done regardless of the day checked
                     continue
                 people = _recipients(db, item)
+            # Kid mode: no notifications for minors at all — their day is the
+            # parents' to run, and the phone in question is a parent's anyway.
+            people = [p for p in people if not p.is_minor]
             if not people:
                 continue
             if _already_reminded(db, item, today):
@@ -187,15 +190,42 @@ def _is_recipient(item: Item, user: User) -> bool:
     return item.owner_id == user.id
 
 
-def _claim_digest(db: Session, user_id: int, day: dt.date) -> bool:
-    """Claim the (member, day) pair; False means someone else already has."""
-    db.add(DigestLog(user_id=user_id, date_for=day))
+def _claim_digest(db: Session, user_id: int, day: dt.date, kind: str) -> bool:
+    """Claim the (member, day, push) triple; False means someone already has."""
+    db.add(DigestLog(user_id=user_id, date_for=day, kind=kind))
     try:
         db.commit()
         return True
     except IntegrityError:
         db.rollback()
         return False
+
+
+def _due_users(db: Session, today: dt.date, kind: str) -> list[User]:
+    """Adults with a subscribed device whose `kind` push hasn't been handled
+    today. Minors never receive anything scheduled — the board is the
+    parents' to run."""
+    subscribed = (
+        db.scalars(
+            select(User)
+            .join(PushSubscription, PushSubscription.user_id == User.id)
+            .distinct()
+        )
+        .unique()
+        .all()
+    )
+    handled = set(
+        db.scalars(
+            select(DigestLog.user_id).where(
+                DigestLog.date_for == today, DigestLog.kind == kind
+            )
+        )
+    )
+    return [
+        u
+        for u in subscribed
+        if u.id not in handled and u.family_id is not None and not u.is_minor
+    ]
 
 
 def _todays_board(db: Session, user: User, now: dt.datetime) -> tuple[int, Item | None]:
@@ -253,54 +283,129 @@ def _todays_board(db: Session, user: User, now: dt.datetime) -> tuple[int, Item 
     return len(open_items), next_item
 
 
-def digest_tick(now: dt.datetime) -> int:
-    """Once each morning, per adult with a subscribed device: a personal
-    good-morning summary of their day. Runs from digest_hour on, so a server
-    that was down at 7 still greets people when it comes back — but never
-    after noon, when "good morning" has stopped being one. Empty boards stay
-    quiet (the claim still lands, so a card added at 9 doesn't ping at 9:01)."""
-    if not (settings.digest_hour <= now.hour < 12):
-        return 0
+def _food_trackers(db: Session, users: list[User], today: dt.date) -> list[User]:
+    """The members actually using the food diary (an entry in the last week),
+    so the lunch and evening nudges never bother someone who doesn't track."""
+    from app.models import DiaryEntry
 
+    active = set(
+        db.scalars(
+            select(DiaryEntry.user_id)
+            .where(DiaryEntry.date_for >= today - dt.timedelta(days=7))
+            .distinct()
+        )
+    )
+    return [u for u in users if u.id in active]
+
+
+def _calories_left(db: Session, user: User, today: dt.date) -> int:
+    """The same number the Nutrition tab shows: the day's calorie budget
+    (auto or manual target, raised by logged exercise) minus what's logged."""
+    from app.models import DiaryEntry, ExerciseEntry, NutritionTarget
+    from app.routers.diary import _targets_out
+
+    eaten = sum(
+        e.calories or 0.0
+        for e in db.scalars(
+            select(DiaryEntry).where(
+                DiaryEntry.user_id == user.id, DiaryEntry.date_for == today
+            )
+        )
+    )
+    burned = sum(
+        w.kcal
+        for w in db.scalars(
+            select(ExerciseEntry).where(
+                ExerciseEntry.user_id == user.id, ExerciseEntry.date_for == today
+            )
+        )
+    )
+    targets = _targets_out(db, user.id, db.get(NutritionTarget, user.id), round(burned, 1))
+    return int(round(targets.calories - eaten))
+
+
+def digest_tick(now: dt.datetime) -> int:
+    """The day's scheduled pushes, each once per adult with a subscribed
+    device, each within a window so a server that was down at the slot still
+    catches up while the message makes sense — and never later.
+
+    morning (digest_hour → noon): a personal summary of the day's board.
+    midday (midday_hour → evening): lunch nudge with calories left; only for
+    members actually using the food diary.
+    evening (evening_hour → 22:00): log-your-food reminder and a good night —
+    the last scheduled word of the day (card reminders still fire as needed).
+
+    Empty boards and non-trackers stay quiet, but still claim their row, so
+    a card added at 9:01 doesn't ring a belated good-morning."""
     today = now.date()
     sent = 0
     with SessionLocal() as db:
-        subscribed = (
-            db.scalars(
-                select(User)
-                .join(PushSubscription, PushSubscription.user_id == User.id)
-                .distinct()
-            )
-            .unique()
-            .all()
-        )
-        handled = set(
-            db.scalars(select(DigestLog.user_id).where(DigestLog.date_for == today))
-        )
-        due = [
-            u
-            for u in subscribed
-            # Kid mode: minors get no digest — the board is the parents' to run.
-            if u.id not in handled and u.family_id is not None and not u.is_minor
-        ]
+        if settings.digest_hour <= now.hour < 12:
+            for user in _due_users(db, today, "morning"):
+                if not _claim_digest(db, user.id, today, "morning"):
+                    continue
+                count, next_item = _todays_board(db, user, now)
+                if count == 0:
+                    continue
+                body = f"{count} item{'' if count == 1 else 's'} on today's board."
+                if next_item is not None:
+                    body += f" Next up: {next_item.title} at {_fmt(next_item.time_of_day)}."
+                body += " Tap to review & read your Daily Bread!"
+                sent += send_to_user(
+                    db,
+                    user.id,
+                    {
+                        "title": f"Good morning, {user.display_name.split()[0]}!",
+                        "body": body,
+                        "tag": f"digest-{today.isoformat()}",
+                        "url": "/",
+                    },
+                )
 
-        for user in due:
-            if not _claim_digest(db, user.id, today):
-                continue
-            count, next_item = _todays_board(db, user, now)
-            if count == 0:
-                continue
-            body = f"{count} item{'' if count == 1 else 's'} on today's board."
-            if next_item is not None:
-                body += f" Next up: {next_item.title} at {_fmt(next_item.time_of_day)}."
-            body += " Tap to review. Read your daily verses."
-            payload = {
-                "title": f"Good morning, {user.display_name.split()[0]}.",
-                "body": body,
-                "tag": f"digest-{today.isoformat()}",
-                "url": "/",
-            }
-            sent += send_to_user(db, user.id, payload)
+        if settings.midday_hour <= now.hour < settings.evening_hour:
+            due = _due_users(db, today, "midday")
+            trackers = {u.id for u in _food_trackers(db, due, today)}
+            for user in due:
+                if not _claim_digest(db, user.id, today, "midday"):
+                    continue
+                if user.id not in trackers:
+                    continue  # claimed quietly: logging lunch later won't ping
+                left = _calories_left(db, user, today)
+                budget = (
+                    f"{left:,} calories left for the day."
+                    if left >= 0
+                    else f"{-left:,} calories over so far."
+                )
+                sent += send_to_user(
+                    db,
+                    user.id,
+                    {
+                        "title": "Mid-day check",
+                        "body": f"What's for lunch? {budget}",
+                        "tag": f"midday-{today.isoformat()}",
+                        "url": "/",
+                    },
+                )
+
+        if settings.evening_hour <= now.hour < 22:
+            due = _due_users(db, today, "evening")
+            trackers = {u.id for u in _food_trackers(db, due, today)}
+            for user in due:
+                if not _claim_digest(db, user.id, today, "evening"):
+                    continue
+                if user.id not in trackers:
+                    continue
+                sent += send_to_user(
+                    db,
+                    user.id,
+                    {
+                        "title": "Evening check-in",
+                        "body": "Take a minute to log today's food."
+                        " Going quiet now, have a good night!",
+                        "tag": f"evening-{today.isoformat()}",
+                        "url": "/",
+                    },
+                )
     return sent
 
 

@@ -774,15 +774,19 @@ class ReminderLog(Base):
 
 
 class DigestLog(Base):
-    """One row per member per day the morning digest was handled (sent, or
-    deliberately not — an empty board claims its row too), so a restart or a
-    racing tick never greets the same phone twice."""
+    """One row per member per day per scheduled push (morning digest, mid-day
+    check, evening check-in) once it was handled — sent, or deliberately not:
+    an empty board claims its row too. Restarts and racing ticks can then
+    never hit the same phone twice."""
 
     __tablename__ = "digest_log"
-    __table_args__ = (UniqueConstraint("user_id", "date_for", name="uq_digest_user_day"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "date_for", "kind", name="uq_digest_user_day_kind"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     date_for: Mapped[dt.date] = mapped_column(Date)
+    kind: Mapped[str] = mapped_column(String(10), default="morning", server_default="morning")

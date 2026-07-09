@@ -1,10 +1,11 @@
-"""The morning digest: one personal good-morning push per adult per day.
+"""The day's scheduled pushes: morning digest, mid-day check, evening check-in.
 
-"Good morning, <name>. X items on today's board. Next up: <card> at <time>.
-Tap to review. Read your daily verses." — open items only (completed things
-never count), Next up is the next undone card whose time is still ahead,
-minors and empty boards stay silent, and the claim log keeps it to one per
-member per day whatever the server does.
+Morning: "Good morning, <name>! X items on today's board. Next up: <card> at
+<time>. Tap to review & read your Daily Bread!" — open items only, Next up is
+the next undone card whose time is still ahead. Midday and evening go only to
+members actually using the food diary. Minors and empty boards stay silent,
+and the claim log keeps each push to one per member per day whatever the
+server does.
 """
 
 import datetime as dt
@@ -62,11 +63,11 @@ def test_digest_summarizes_the_morning(owner, configured, push_outbox, engine_db
     assert push_engine.digest_tick(at(7)) == 1
     endpoint, payload = push_outbox[0]
     assert endpoint == SUB["endpoint"]
-    assert payload["title"] == "Good morning, Owner."
+    assert payload["title"] == "Good morning, Owner!"
     # The 6 AM run already passed, so it counts but is never "next up".
     assert payload["body"] == (
         "3 items on today's board. Next up: Dentist at 3:00 PM."
-        " Tap to review. Read your daily verses."
+        " Tap to review & read your Daily Bread!"
     )
 
 
@@ -115,13 +116,13 @@ def test_each_adult_gets_their_own(owner, parent, configured, push_outbox, engin
     assert push_engine.digest_tick(at(7)) == 2
     by_endpoint = dict(push_outbox)
     assert "2 items" in by_endpoint[SUB["endpoint"]]["body"]
-    assert by_endpoint[SUB["endpoint"]]["title"] == "Good morning, Owner."
+    assert by_endpoint[SUB["endpoint"]]["title"] == "Good morning, Owner!"
     # The second parent sees only the family card — singular, and no Next up
     # since nothing of theirs carries a time.
     assert by_endpoint[SUB2["endpoint"]]["body"] == (
-        "1 item on today's board. Tap to review. Read your daily verses."
+        "1 item on today's board. Tap to review & read your Daily Bread!"
     )
-    assert by_endpoint[SUB2["endpoint"]]["title"] == "Good morning, Second."
+    assert by_endpoint[SUB2["endpoint"]]["title"] == "Good morning, Second!"
 
 
 def test_minors_get_no_digest(owner, child, configured, push_outbox, engine_db):
@@ -155,3 +156,103 @@ def test_unsubscribed_members_are_skipped_but_not_burned(
     parent.put("/push/subscription", json=SUB2)
     assert push_engine.digest_tick(at(8)) == 1
     assert push_outbox[1][0] == SUB2["endpoint"]
+
+
+# ---- the mid-day check and the evening check-in -------------------------------------
+
+OATS = {
+    "source": "usda",
+    "source_id": "111222",
+    "name": "Rolled Oats",
+    "brand": "",
+    "calories": 100.0,
+    "protein_g": 10.0,
+    "carbs_g": 20.0,
+    "fat_g": 2.0,
+    "sugar_g": 1.0,
+}
+
+
+def log_food(client, amount=100):
+    res = client.post(
+        "/diary",
+        json={
+            "date_for": TODAY.isoformat(),
+            "slot": "breakfast",
+            "amount": amount,
+            "unit": "g",
+            **OATS,
+        },
+    )
+    assert res.status_code == 201, res.text
+
+
+def test_midday_check_counts_calories_left(owner, configured, push_outbox, engine_db):
+    owner.put("/push/subscription", json=SUB)
+    log_food(owner, amount=100)  # 100 kcal against the default 2,000 target
+
+    assert push_engine.digest_tick(at(12)) == 1
+    endpoint, payload = push_outbox[0]
+    assert payload["title"] == "Mid-day check"
+    assert payload["body"] == "What's for lunch? 1,900 calories left for the day."
+
+
+def test_midday_over_budget_says_so(owner, configured, push_outbox, engine_db):
+    owner.put("/push/subscription", json=SUB)
+    res = owner.put(
+        "/diary/targets",
+        json={"calories": 500, "protein_pct": 30, "carbs_pct": 40, "fat_pct": 30},
+    )
+    assert res.status_code == 200, res.text
+    log_food(owner, amount=600)  # 600 kcal against a 500 target
+
+    push_engine.digest_tick(at(12))
+    assert push_outbox[0][1]["body"] == "What's for lunch? 100 calories over so far."
+
+
+def test_food_pushes_skip_non_trackers_for_good(owner, parent, configured, push_outbox, engine_db):
+    # The second parent never logs food: no lunch nudge — and starting to log
+    # AFTER noon doesn't trigger a belated one either (the claim landed).
+    owner.put("/push/subscription", json=SUB)
+    parent.put("/push/subscription", json=SUB2)
+    log_food(owner)
+
+    assert push_engine.digest_tick(at(12)) == 1
+    log_food(parent)
+    assert push_engine.digest_tick(at(13)) == 0
+    assert [ep for ep, _ in push_outbox] == [SUB["endpoint"]]
+
+
+def test_evening_checkin_says_goodnight(owner, configured, push_outbox, engine_db):
+    owner.put("/push/subscription", json=SUB)
+    log_food(owner)
+
+    assert push_engine.digest_tick(at(17)) == 1
+    endpoint, payload = push_outbox[0]
+    assert payload["title"] == "Evening check-in"
+    assert payload["body"] == (
+        "Take a minute to log today's food. Going quiet now, have a good night!"
+    )
+    # Once per evening; and never so late it stops making sense.
+    assert push_engine.digest_tick(at(18)) == 0
+    assert len(push_outbox) == 1
+
+
+def test_evening_window_closes_at_ten(owner, configured, push_outbox, engine_db):
+    owner.put("/push/subscription", json=SUB)
+    log_food(owner)
+
+    assert push_engine.digest_tick(at(22)) == 0
+    assert push_engine.digest_tick(at(21, 59)) == 1
+
+
+def test_all_three_land_on_a_trackers_day(owner, configured, push_outbox, engine_db):
+    owner.put("/push/subscription", json=SUB)
+    seed_day(owner)
+    log_food(owner)
+
+    assert push_engine.digest_tick(at(7)) == 1
+    assert push_engine.digest_tick(at(12, 30)) == 1
+    assert push_engine.digest_tick(at(17)) == 1
+    titles = [p["title"] for _, p in push_outbox]
+    assert titles == ["Good morning, Owner!", "Mid-day check", "Evening check-in"]

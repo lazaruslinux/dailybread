@@ -41,10 +41,13 @@ class Settings(BaseSettings):
     vapid_subject: str = "mailto:admin@example.com"
     # How many minutes before a timed card its reminder goes out.
     reminder_lead_minutes: int = 15
-    # Local hour (0-23) the morning digest goes out. Must be before noon:
-    # a digest that misses its slot (server down) still sends late in the
-    # morning, but never past 12 - nobody wants "Good morning" at 3 PM.
+    # Local hours (0-23) for the day's three scheduled pushes. Each has a
+    # window it may send in (morning until noon, midday until the evening
+    # hour, evening until 22), so a server that was down at the slot still
+    # catches up while the message makes sense - and never later.
     digest_hour: int = 7
+    midday_hour: int = 12
+    evening_hour: int = 17
 
 
 settings = Settings()

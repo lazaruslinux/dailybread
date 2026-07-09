@@ -96,10 +96,10 @@ def _now_at(hour: int, minute: int) -> dt.datetime:
 
 
 def test_reminds_assignees_before_a_timed_card(
-    owner, child, configured, outbox, engine_db
+    owner, adult_child, configured, outbox, engine_db
 ):
-    kid_id = user_id(child)
-    child.put("/push/subscription", json=SUB)
+    kid_id = user_id(adult_child)
+    adult_child.put("/push/subscription", json=SUB)
     res = owner.post(
         "/items",
         json={
@@ -177,10 +177,10 @@ def test_routines_skip_participants_who_already_did_theirs(
 
 
 def test_family_visible_unassigned_cards_notify_the_household(
-    owner, parent, child, configured, outbox, engine_db
+    owner, parent, adult_child, configured, outbox, engine_db
 ):
     owner.put("/push/subscription", json=SUB)
-    child.put("/push/subscription", json=SUB2)
+    adult_child.put("/push/subscription", json=SUB2)
     res = owner.post(
         "/items",
         json={
@@ -195,3 +195,24 @@ def test_family_visible_unassigned_cards_notify_the_household(
     assert res.status_code == 201, res.text
     assert push_engine.reminder_tick(_now_at(14, 0)) == 2
     assert sorted(outbox) == [SUB["endpoint"], SUB2["endpoint"]]
+
+
+def test_minors_get_no_card_reminders(owner, child, configured, outbox, engine_db):
+    # Kid mode: nothing pushes to a minor, even one with a subscribed device
+    # and a card of their own coming up.
+    kid_id = user_id(child)
+    child.put("/push/subscription", json=SUB2)
+    res = owner.post(
+        "/items",
+        json={
+            "kind": "appointment",
+            "title": "Piano lesson",
+            "date_for": dt.date.today().isoformat(),
+            "time_of_day": "14:10:00",
+            "end_time": "15:00:00",
+            "assignee_ids": [kid_id],
+        },
+    )
+    assert res.status_code == 201, res.text
+    assert push_engine.reminder_tick(_now_at(14, 0)) == 0
+    assert outbox == []
