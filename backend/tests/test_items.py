@@ -364,7 +364,7 @@ def test_family_board_card_is_visible_to_all(owner, child):
 
 
 def test_family_board_card_is_read_only_for_non_assignees(owner, child):
-    # The "Alex Run" case: a routine the owner does alone, shown to the whole
+    # The "solo run" case: a routine the owner does alone, shown to the whole
     # family. Everyone sees it; only the owner (its sole participant) checks it.
     today_wd = dt.date.today().weekday()
     run = make_item(
