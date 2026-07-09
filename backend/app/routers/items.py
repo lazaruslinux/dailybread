@@ -161,25 +161,21 @@ def _validate_item(item: Item) -> None:
             _bad("Routines recur; they take no date")
         if item.repeat_type is None:
             _bad("Routines need a repeat schedule")
-        if item.repeat_type == RepeatType.weekly and not item.repeat_days:
-            _bad("Weekly routine needs at least one day")
-        if item.repeat_type == RepeatType.monthly and not item.repeat_month_day:
-            _bad("Monthly routine needs a day of the month")
-        if (item.repeat_interval or 1) < 1:
-            _bad("Repeat interval must be at least 1")
+        _validate_repeat(item)
         if item.end_time is not None or item.all_day:
             _bad("Routines don't take an end time or all-day")
         return
 
-    if item.repeat_type is not None:
-        _bad("Only routines repeat")
-
     if item.kind == ItemKind.task:
+        if item.repeat_type is not None:
+            _bad("Tasks don't repeat")
         if item.end_time is not None or item.all_day:
             _bad("Tasks don't take an end time or all-day")
         return
 
     if item.kind == ItemKind.activity:
+        if item.repeat_type is not None:
+            _bad("Activities don't repeat")
         if item.all_day:
             _bad("Activities can't be all-day")
         if item.date_for is None or item.time_of_day is None or item.end_time is None:
@@ -188,8 +184,16 @@ def _validate_item(item: Item) -> None:
             _bad("End time must be after the start time")
         return
 
-    # appointment
-    if item.date_for is None:
+    # appointment — a one-off on its date, or (the weekly work meeting) a
+    # repeating one that recurs like a routine but keeps its shared check
+    # and its start–end times.
+    if item.repeat_type is not None:
+        if item.date_for is not None:
+            _bad("A repeating appointment recurs; it takes no date")
+        if item.all_day:
+            _bad("A repeating appointment needs times, not all-day")
+        _validate_repeat(item)
+    elif item.date_for is None:
         _bad("Appointments need a date")
     if item.all_day:
         if item.time_of_day is not None or item.end_time is not None:
@@ -199,6 +203,15 @@ def _validate_item(item: Item) -> None:
             _bad("Appointments need a start and end time, or mark them all-day")
         if item.end_time <= item.time_of_day:
             _bad("End time must be after the start time")
+
+
+def _validate_repeat(item: Item) -> None:
+    if item.repeat_type == RepeatType.weekly and not item.repeat_days:
+        _bad("Weekly repeat needs at least one day")
+    if item.repeat_type == RepeatType.monthly and not item.repeat_month_day:
+        _bad("Monthly repeat needs a day of the month")
+    if (item.repeat_interval or 1) < 1:
+        _bad("Repeat interval must be at least 1")
 
 
 def _resolve_assignees(db: Session, ids: list[int], family_id: int) -> list[User]:
@@ -431,9 +444,10 @@ def feed(
     next7: list[FeedItemOut] = []
 
     for item in visible:
-        if item.kind == ItemKind.routine:
-            # Routines are habits, not one-offs: a missed day is never "overdue"
-            # (streaks already record the miss); they only ever land on today.
+        if item.repeat_type is not None:
+            # Recurring cards (routines, repeating appointments) land only on
+            # their scheduled days and are never "overdue" — a missed one isn't
+            # carried forward, the next occurrence simply comes around.
             if _occurs(item, date_for):
                 today.append(_build_feed_item(db, item, user, date_for, comps[item.id]))
             continue

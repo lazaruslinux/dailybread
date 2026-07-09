@@ -216,3 +216,51 @@ def test_minors_get_no_card_reminders(owner, child, configured, outbox, engine_d
     assert res.status_code == 201, res.text
     assert push_engine.reminder_tick(_now_at(14, 0)) == 0
     assert outbox == []
+
+
+def test_repeating_appointment_reminds_only_on_its_day(
+    owner, parent, configured, outbox, engine_db
+):
+    parent.put("/push/subscription", json=SUB)
+    today_wd = dt.date.today().weekday()
+    off_day = (today_wd + 3) % 7
+    res = owner.post(
+        "/items",
+        json={
+            "kind": "appointment",
+            "title": "Weekly work meeting",
+            "time_of_day": "14:10:00",
+            "end_time": "15:00:00",
+            "assignee_ids": [user_id(parent)],
+            "repeat": {"type": "weekly", "days": [off_day]},
+        },
+    )
+    assert res.status_code == 201, res.text
+    # Not scheduled today: silence (this used to fire daily for anything
+    # with a repeat before repeating appointments existed).
+    assert push_engine.reminder_tick(_now_at(14, 0)) == 0
+
+    owner.patch(f"/items/{res.json()['id']}", json={"repeat": {"type": "weekly", "days": [today_wd]}})
+    assert push_engine.reminder_tick(_now_at(14, 0)) == 1
+    assert outbox == [SUB["endpoint"]]
+
+
+def test_repeating_appointment_checked_today_stays_quiet(
+    owner, parent, configured, outbox, engine_db
+):
+    parent.put("/push/subscription", json=SUB)
+    today_wd = dt.date.today().weekday()
+    res = owner.post(
+        "/items",
+        json={
+            "kind": "appointment",
+            "title": "Standup",
+            "time_of_day": "14:10:00",
+            "end_time": "14:30:00",
+            "assignee_ids": [user_id(parent)],
+            "repeat": {"type": "weekly", "days": [today_wd]},
+        },
+    )
+    assert res.status_code == 201, res.text
+    parent.post(f"/items/{res.json()['id']}/complete?date={dt.date.today().isoformat()}")
+    assert push_engine.reminder_tick(_now_at(14, 0)) == 0

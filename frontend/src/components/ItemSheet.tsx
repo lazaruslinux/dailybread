@@ -82,7 +82,9 @@ export function ItemSheet({
   const [assignees, setAssignees] = useState<number[]>(item?.assignees?.map((a) => a.id) ?? [])
   const [familyBoard, setFamilyBoard] = useState(item?.visibility === 'family')
 
-  // Recurrence (routines only). A new routine starts as a plain daily one.
+  // Recurrence: routines always repeat; appointments may (a weekly work
+  // meeting). A new routine starts as a plain daily one.
+  const [repeats, setRepeats] = useState(Boolean(item?.repeat) && item?.kind === 'appointment')
   const [repeatType, setRepeatType] = useState<api.RepeatType>(item?.repeat?.type ?? 'weekly')
   const [days, setDays] = useState<number[]>(item?.repeat?.days ?? EVERY_DAY)
   const [interval, setInterval] = useState(item?.repeat?.interval ?? 1)
@@ -109,21 +111,25 @@ export function ItemSheet({
 
   const isRoutine = kind === 'routine'
   const isEvent = kind === 'activity' || kind === 'appointment'
-  const allDayAppt = kind === 'appointment' && allDay
-  const weeklyReady = !isRoutine || repeatType !== 'weekly' || days.length > 0
+  const repeatingAppt = kind === 'appointment' && repeats
+  const recurs = isRoutine || repeatingAppt
+  const allDayAppt = kind === 'appointment' && allDay && !repeatingAppt
+  const weeklyReady = !recurs || repeatType !== 'weekly' || days.length > 0
   // "HH:MM" strings compare correctly, so end > start is a plain comparison.
   const timesOk = allDayAppt || (Boolean(time) && Boolean(endTime) && endTime > time)
   const scheduleReady = isRoutine
     ? weeklyReady
     : kind === 'task'
       ? true
-      : Boolean(date) && timesOk
+      : repeatingAppt
+        ? weeklyReady && timesOk
+        : Boolean(date) && timesOk
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
     setBusy(true)
-    const repeat: api.RepeatInput | null = isRoutine
+    const repeat: api.RepeatInput | null = recurs
       ? repeatType === 'weekly'
         ? { type: 'weekly', days, interval }
         : { type: 'monthly', month_day: monthDay, interval }
@@ -136,8 +142,8 @@ export function ItemSheet({
       visibility: familyBoard ? 'family' : 'private',
       time_of_day: allDayAppt ? null : time || null,
       end_time: isEvent && !allDayAppt ? endTime || null : null,
-      all_day: kind === 'appointment' ? allDay : false,
-      date_for: isRoutine ? null : date || null,
+      all_day: kind === 'appointment' && !repeatingAppt ? allDay : false,
+      date_for: recurs ? null : date || null,
       repeat,
     }
     try {
@@ -230,7 +236,22 @@ export function ItemSheet({
           <Field label="Title" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} required />
           <Field label="Notes (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={300} />
 
-          {isRoutine && (
+          {kind === 'appointment' && (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={repeats}
+              onClick={() => setRepeats((v) => !v)}
+              className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left"
+            >
+              <span className="text-sm font-semibold text-fg/85">Repeats</span>
+              <span className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${repeats ? 'bg-accent' : 'bg-fg/15'}`}>
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-fg transition-all ${repeats ? 'left-[1.125rem]' : 'left-0.5'}`} />
+              </span>
+            </button>
+          )}
+
+          {recurs && (
             <div>
               <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
                 Repeats
@@ -382,8 +403,10 @@ export function ItemSheet({
             </div>
           ) : (
             <div className="flex flex-col gap-3">
-              <Field label="Date" type="date" value={date} onChange={(e) => setDate(e.target.value)} onClear={() => setDate('')} required />
-              {kind === 'appointment' && (
+              {!repeatingAppt && (
+                <Field label="Date" type="date" value={date} onChange={(e) => setDate(e.target.value)} onClear={() => setDate('')} required />
+              )}
+              {kind === 'appointment' && !repeatingAppt && (
                 <button
                   type="button"
                   role="switch"

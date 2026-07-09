@@ -135,7 +135,10 @@ def reminder_tick(now: dt.datetime) -> int:
         due = [
             item
             for item in items
-            if item.kind != ItemKind.routine or _occurs(item, today)
+            # Anything recurring (routines, repeating appointments) is due only
+            # on a day its schedule lands on; dated one-offs came in via the
+            # date_for == today filter above.
+            if item.repeat_type is None or _occurs(item, today)
         ]
         if not due:
             return 0
@@ -150,8 +153,14 @@ def reminder_tick(now: dt.datetime) -> int:
                     uid for uid, day, _pending in rows if day == today and uid is not None
                 }
                 people = [p for p in _routine_participants(db, item) if p.id not in done_today]
-            else:
+            elif item.date_for is not None:
                 if rows:  # dated one-shots count as done regardless of the day checked
+                    continue
+                people = _recipients(db, item)
+            else:
+                # A repeating appointment: this occurrence is done only if a
+                # check landed on today itself.
+                if any(day == today for _uid, day, _pending in rows):
                     continue
                 people = _recipients(db, item)
             # Kid mode: no notifications for minors at all — their day is the
@@ -255,7 +264,9 @@ def _todays_board(db: Session, user: User, now: dt.datetime) -> tuple[int, Item 
         item
         for item in items
         if _is_recipient(item, user)
-        and (item.kind != ItemKind.routine or _occurs(item, today))
+        # Recurring cards (routines, repeating appointments) count only on
+        # days their schedule lands on.
+        and (item.repeat_type is None or _occurs(item, today))
     ]
     comps = _completions_by_item(db, mine)
 
@@ -268,6 +279,9 @@ def _todays_board(db: Session, user: User, now: dt.datetime) -> tuple[int, Item 
         elif item.date_for is not None:
             # Dated one-shots are done once anyone checked them, whatever day.
             acted = any(not pend for _uid, _day, pend in rows)
+        elif item.repeat_type is not None:
+            # A repeating appointment: only a check on today's occurrence counts.
+            acted = any(day == today and not pend for _uid, day, pend in rows)
         else:
             # Undated tasks: any check (today = done, earlier = archived).
             acted = any(not pend for _uid, _day, pend in rows)

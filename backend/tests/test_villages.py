@@ -241,3 +241,17 @@ def test_village_ids_404_for_non_members(owner, other):
     ):
         assert res.status_code == 404
         assert res.json()["detail"] in ("No such village",)
+
+
+def test_village_mates_cannot_open_each_others_profiles(village, owner, other):
+    """Being linked in a village opens NOTHING personal: profiles, moods,
+    status, and boards stay family-only, so a village-mate's id answers like
+    it doesn't exist."""
+    from tests.conftest import user_id
+
+    today = dt.date.today().isoformat()
+    owner_id = user_id(owner)
+    assert other.get(f"/users/{owner_id}/profile?date={today}").status_code == 404
+    # And the family strip never mixes families, village or not.
+    strip = other.get(f"/users?date={today}").json()
+    assert all(m["family_id"] == strip[0]["family_id"] for m in strip)

@@ -640,3 +640,58 @@ def test_minor_sees_own_and_assigned_cards(owner, child):
     ids = feed_ids(child)
     assert mine["id"] in ids
     assert shared["id"] in ids
+
+
+# ---- repeating appointments -----------------------------------------------------
+
+
+def all_days():
+    return {"type": "weekly", "days": [0, 1, 2, 3, 4, 5, 6]}
+
+
+def test_repeating_appointment_lands_on_its_days(owner):
+    today_wd = dt.date.today().weekday()
+    meeting = make_item(
+        owner, kind="appointment", title="Team standup",
+        time_of_day="09:00", end_time="09:30",
+        repeat={"type": "weekly", "days": [today_wd]},
+    )
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    assert any(i["id"] == meeting["id"] for i in feed["today"])
+    # On a day the schedule skips, the card simply isn't there — and it is
+    # never "overdue".
+    tomorrow = (dt.date.today() + dt.timedelta(days=1)).isoformat()
+    feed = owner.get(f"/items/feed?date={tomorrow}").json()
+    assert not any(i["id"] == meeting["id"] for i in feed["today"])
+    assert not any(i["id"] == meeting["id"] for i in feed["overdue"])
+
+
+def test_repeating_appointment_completes_per_occurrence(owner):
+    meeting = make_item(
+        owner, kind="appointment", title="Daily sync",
+        time_of_day="09:00", end_time="09:30", repeat=all_days(),
+    )
+    assert owner.post(f"/items/{meeting['id']}/complete?date={TODAY}").json()["completed"] is True
+    # Yesterday's occurrence is untouched by today's check.
+    yesterday = (dt.date.today() - dt.timedelta(days=1)).isoformat()
+    cal = owner.get(f"/items/calendar?start={yesterday}&end={yesterday}").json()
+    row = next(i for i in cal["days"][0]["items"] if i["id"] == meeting["id"])
+    assert row["completed"] is False
+
+
+def test_repeating_appointment_validation(owner):
+    base = {"kind": "appointment", "title": "Bad", "repeat": all_days()}
+    # Repeats and a fixed date are mutually exclusive.
+    res = owner.post("/items", json={**base, "date_for": TODAY,
+                                     "time_of_day": "09:00", "end_time": "09:30"})
+    assert res.status_code == 400
+    # A repeating appointment needs times, and can't be all-day.
+    assert owner.post("/items", json=base).status_code == 400
+    assert owner.post("/items", json={**base, "all_day": True}).status_code == 400
+    # Tasks and activities still don't repeat.
+    assert owner.post("/items", json={"kind": "task", "title": "No", "repeat": all_days()}).status_code == 400
+    assert owner.post(
+        "/items",
+        json={"kind": "activity", "title": "No", "date_for": TODAY,
+              "time_of_day": "09:00", "end_time": "10:00", "repeat": all_days()},
+    ).status_code == 400

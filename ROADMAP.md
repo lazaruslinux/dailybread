@@ -114,6 +114,10 @@ Where dailybread is headed, in order. Done items stay for history.
   relays with end-to-end encrypted payloads, so the server stays
   private-network-only with no inbound exposure.
 
+- **Repeating appointments** — an appointment can carry the same weekly or
+  monthly schedule a routine does (the standing work meeting), keeping its
+  start and end times and its shared check-off, completed per occurrence; a
+  missed one is never "overdue", the next simply comes around.
 - **Kid accounts** — the Child role is the switch (birthdate is optional,
   informational only). Child accounts see a simplified app: no nutrition,
   health, or diary (hidden in the UI and refused by the server), and a board
@@ -155,7 +159,10 @@ Where dailybread is headed, in order. Done items stay for history.
    copy), and each member's mood/status, visible across families only if
    that member opts in — minors never. Membership shipped; shelf and
    presence follow.
-2. **Fitness sync** — workouts flowing into the app and auto-completing
+2. **Dinner voting** — once recipes are shared, family members vote on
+   dinner candidates a parent posts; the parent sees the tally and sets the
+   plan.
+3. **Fitness sync** — workouts flowing into the app and auto-completing
    matching board routines. Strava first (watch → Strava → server polling);
    direct Apple Health export as a self-hosted alternative path.
 
@@ -172,9 +179,6 @@ Where dailybread is headed, in order. Done items stay for history.
 
 - **Adult member role** — parent permissions without admin, for grown members
   who aren't heads of household. Today the roles are Parent and Child only.
-- **Dinner voting** — a parent posts a few candidate meals for a night and
-  the family votes from the Kitchen tab (the one Kitchen write kids would
-  get); the parent sees the tally and sets the plan. Not scheduled.
 
 ## Shelved
 
