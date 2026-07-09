@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Pencil, Plus, UtensilsCrossed, X } from 'lucide-react'
+import { Bike, Car, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CookingPot, Pencil, Plus, Utensils, UtensilsCrossed, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '../lib/api'
@@ -199,53 +199,75 @@ function MealSheet({
   )
 }
 
-// "What should we have?" — the two-person-friendly face of dinner voting: a
-// parent poses 2-3 choices, the others get a push and tap a pick, names (not
-// tallies) show who wants what, and one tap crowns the winner as dinner.
-function AskSheet({
-  dayISO,
+// The Dinner Plan: four standing modes, always on for today until dinner is
+// set. Adults tap a pick (highlighted like the calendar-card selection); the
+// other adult sees your avatar and your short detail on that row. Kid-mode
+// avatars ride the leading choice — they eat whatever wins, they never vote.
+
+const CHOICES: {
+  id: api.DinnerChoice
+  label: string
+  hint: string
+  Icon: typeof Utensils
+}[] = [
+  { id: 'self_serve', label: 'Self-Serve', hint: 'Everyone fends for themselves', Icon: Utensils },
+  { id: 'homemade', label: 'Homemade', hint: 'Cooked at home', Icon: CookingPot },
+  { id: 'go_out', label: 'Go Out', hint: 'Pick a restaurant', Icon: Car },
+  { id: 'delivery', label: 'Delivery', hint: 'Order in', Icon: Bike },
+]
+
+function VoterBubble({ voter, faded }: { voter: api.DinnerVoter; faded?: boolean }) {
+  const url = api.avatarUrl(voter)
+  return url ? (
+    <img
+      src={url}
+      alt=""
+      title={voter.display_name}
+      className={`h-6 w-6 rounded-full border border-fg/15 object-cover ${faded ? 'opacity-50' : ''}`}
+    />
+  ) : (
+    <span
+      title={voter.display_name}
+      className={`flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-accent-bright/60 to-accent-strong/60 text-[9px] font-bold text-fg ${faded ? 'opacity-50' : ''}`}
+    >
+      {voter.display_name
+        .split(/\s+/)
+        .slice(0, 2)
+        .map((w) => w[0]?.toUpperCase() ?? '')
+        .join('')}
+    </span>
+  )
+}
+
+function DetailSheet({
+  choice,
+  current,
   onClose,
-  onAsked,
+  onVote,
+  onRetract,
 }: {
-  dayISO: string
+  choice: (typeof CHOICES)[number]
+  current: api.DinnerVote | null
   onClose: () => void
-  onAsked: () => void
+  onVote: (detail: string, recipeId: number | null) => Promise<void>
+  onRetract: (() => Promise<void>) | null
 }) {
-  const [choices, setChoices] = useState<{ title: string; recipe_id: number | null }[]>([
-    { title: '', recipe_id: null },
-    { title: '', recipe_id: null },
-    { title: '', recipe_id: null },
-  ])
+  const [detail, setDetail] = useState(current?.detail ?? '')
+  const [recipeId, setRecipeId] = useState<number | null>(current?.recipe_id ?? null)
   const [recipes, setRecipes] = useState<api.Recipe[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    api.getRecipes().then(setRecipes).catch(() => {})
-  }, [])
-
-  function setChoice(i: number, title: string, recipeId: number | null = null) {
-    setChoices((prev) => prev.map((c, j) => (j === i ? { title, recipe_id: recipeId } : c)))
-  }
-
-  function addRecipe(r: api.Recipe) {
-    const slot = choices.findIndex((c) => !c.title.trim())
-    if (slot === -1) return
-    setChoice(slot, r.name, r.id)
-  }
-
-  const filled = choices.filter((c) => c.title.trim())
+    if (choice.id === 'homemade') api.getRecipes().then(setRecipes).catch(() => {})
+  }, [choice.id])
 
   async function submit(e: FormEvent) {
     e.preventDefault()
     setBusy(true)
     setError(null)
     try {
-      await api.openBallot(
-        dayISO,
-        filled.map((c) => ({ title: c.title.trim(), recipe_id: c.recipe_id })),
-      )
-      onAsked()
+      await onVote(detail.trim(), recipeId)
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Something went wrong.')
       setBusy(false)
@@ -254,33 +276,38 @@ function AskSheet({
 
   return (
     <Sheet onClose={onClose}>
-      <h3 className="mb-1 text-lg font-bold">Ask about dinner</h3>
-      <p className="mb-4 text-sm text-fg/60">
-        Give the family two or three choices. Everyone gets a nudge and taps a pick; you set
-        the winner.
-      </p>
+      <h3 className="mb-1 text-lg font-bold">{choice.label}</h3>
+      <p className="mb-4 text-sm text-fg/60">{choice.hint}</p>
       <form onSubmit={submit} noValidate className="flex flex-col gap-3">
-        {choices.map((c, i) => (
-          <Field
-            key={i}
-            label={`Choice ${i + 1}${i === 2 ? ' (optional)' : ''}`}
-            value={c.title}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setChoice(i, e.target.value)}
-            maxLength={120}
-          />
-        ))}
-        {recipes.length > 0 && (
+        <Field
+          label={choice.id === 'homemade' ? 'What are we making? (optional)' : 'Where? (optional)'}
+          value={detail}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+            setDetail(e.target.value)
+            setRecipeId(null)
+          }}
+          maxLength={30}
+          autoFocus
+        />
+        {choice.id === 'homemade' && recipes.length > 0 && (
           <div>
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
-              From your recipes
+              Or a recipe
             </span>
             <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto">
               {recipes.map((r) => (
                 <button
                   key={r.id}
                   type="button"
-                  onClick={() => addRecipe(r)}
-                  className="rounded-full border border-fg/10 bg-fg/5 px-2.5 py-1 text-xs font-semibold text-fg/70 transition-colors hover:bg-fg/10"
+                  onClick={() => {
+                    setRecipeId(r.id)
+                    setDetail(r.name.slice(0, 30))
+                  }}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                    recipeId === r.id
+                      ? 'border-accent-bright/60 bg-accent-bright/20 text-fg'
+                      : 'border-fg/10 bg-fg/5 text-fg/70 hover:bg-fg/10'
+                  }`}
                 >
                   {r.name}
                 </button>
@@ -289,113 +316,161 @@ function AskSheet({
           </div>
         )}
         <FormError message={error} />
-        <Button type="submit" disabled={busy || filled.length < 2}>
-          {busy ? 'Asking…' : 'Ask the family'}
+        <Button type="submit" disabled={busy}>
+          {busy ? 'Saving…' : current ? 'Change my pick' : 'This is my pick'}
         </Button>
+        {onRetract && (
+          <button
+            type="button"
+            onClick={onRetract}
+            className="text-center text-xs font-semibold text-fg/40 hover:text-fg/60"
+          >
+            Remove my vote
+          </button>
+        )}
       </form>
     </Sheet>
   )
 }
 
-function DinnerQuestion({
-  ballot,
+function DinnerPlanBlock({
+  plan,
   isParent,
+  me,
   dayISO,
   onChanged,
 }: {
-  ballot: api.DinnerBallot
+  plan: api.DinnerPlan
   isParent: boolean
+  me: number | undefined
   dayISO: string
   onChanged: () => void
 }) {
+  const [detailFor, setDetailFor] = useState<(typeof CHOICES)[number] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [busyId, setBusyId] = useState<number | null>(null)
+  const myVote = plan.votes.find((v) => v.user.id === me) ?? null
 
-  async function pick(o: api.DinnerOption) {
-    setBusyId(o.id)
+  // Kids ride the leading choice (ties break by the fixed row order).
+  const counts = new Map<api.DinnerChoice, number>()
+  for (const v of plan.votes) counts.set(v.choice, (counts.get(v.choice) ?? 0) + 1)
+  const max = Math.max(0, ...counts.values())
+  const leader =
+    max > 0 ? (CHOICES.find((c) => (counts.get(c.id) ?? 0) === max)?.id ?? null) : null
+
+  async function voteFor(choice: api.DinnerChoice, detail = '', recipeId: number | null = null) {
     setError(null)
     try {
-      await api.castVote(o.id)
+      await api.castDinnerVote(dayISO, { choice, detail, recipe_id: recipeId })
+      setDetailFor(null)
       onChanged()
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Something went wrong.')
-    }
-    setBusyId(null)
-  }
-
-  async function crown(o: api.DinnerOption) {
-    setBusyId(o.id)
-    setError(null)
-    try {
-      await api.setMeal(
-        o.recipe_id != null
-          ? { date_for: dayISO, recipe_id: o.recipe_id }
-          : { date_for: dayISO, custom_title: o.title },
-      )
-      await api.closeBallot(dayISO)
-      onChanged()
-    } catch (err) {
-      setError(err instanceof api.ApiError ? err.message : 'Something went wrong.')
-      setBusyId(null)
+      throw err
     }
   }
 
-  async function drop() {
+  async function retract() {
+    setError(null)
+    await api.retractDinnerVote(dayISO)
+    setDetailFor(null)
+    onChanged()
+  }
+
+  async function lockIn(c: (typeof CHOICES)[number]) {
+    setError(null)
     try {
-      await api.closeBallot(dayISO)
+      const winners = plan.votes.filter((v) => v.choice === c.id)
+      const withRecipe = winners.find((v) => v.recipe_id != null)
+      if (c.id === 'homemade' && withRecipe?.recipe_id != null) {
+        await api.setMeal({ date_for: dayISO, recipe_id: withRecipe.recipe_id })
+      } else {
+        const detail = winners.map((v) => v.detail).find(Boolean) ?? ''
+        await api.setMeal({
+          date_for: dayISO,
+          custom_title: detail ? `${c.label} · ${detail}` : c.label,
+        })
+      }
       onChanged()
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Something went wrong.')
     }
+  }
+
+  function tapped(c: (typeof CHOICES)[number]) {
+    if (!isParent) return
+    if (c.id === 'self_serve') {
+      if (myVote?.choice === 'self_serve') retract()
+      else voteFor('self_serve').catch(() => {})
+      return
+    }
+    setDetailFor(c)
   }
 
   return (
-    <div className="mt-3 rounded-xl border border-accent-bright/25 bg-accent-bright/5 p-3">
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-accent-bright">
-        What should we have?
-      </p>
+    <div className="mt-3 rounded-xl border border-accent-bright/25 bg-accent-bright/5 p-3" data-dinner-plan>
       <div className="flex flex-col gap-1.5">
-        {ballot.options.map((o) => (
-          <div
-            key={o.id}
-            className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${
-              o.my_vote ? 'border-accent-bright/60 bg-accent-bright/15' : 'border-fg/10 bg-fg/5'
-            }`}
-          >
-            <button
-              type="button"
-              disabled={busyId !== null}
-              onClick={() => pick(o)}
-              className="min-w-0 flex-1 text-left"
+        {CHOICES.map((c) => {
+          const voters = plan.votes.filter((v) => v.choice === c.id)
+          const mine = myVote?.choice === c.id
+          const details = voters
+            .map((v) => v.detail || v.recipe_name)
+            .filter(Boolean)
+            .join(' · ')
+          return (
+            <div
+              key={c.id}
+              className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 ${
+                mine ? 'border-accent-bright/60 bg-accent-bright/15' : 'border-fg/10 bg-fg/5'
+              }`}
             >
-              <span className="block truncate text-sm font-semibold text-fg/90">{o.title}</span>
-              <span className="block truncate text-xs italic text-fg/45">
-                {o.voters.length ? o.voters.join(', ') : 'No picks yet'}
-              </span>
-            </button>
-            {isParent && (
               <button
                 type="button"
-                disabled={busyId !== null}
-                onClick={() => crown(o)}
-                className="shrink-0 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-2.5 py-1 text-[11px] font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
+                onClick={() => tapped(c)}
+                className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
               >
-                Set as dinner
+                <c.Icon className="h-4 w-4 shrink-0 text-accent-bright" />
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold text-fg/90">
+                    {c.label}
+                  </span>
+                  <span className="block truncate text-xs italic text-fg/45">
+                    {details || c.hint}
+                  </span>
+                </span>
               </button>
-            )}
-          </div>
-        ))}
+              <span className="flex shrink-0 items-center -space-x-1.5">
+                {voters.map((v) => (
+                  <VoterBubble key={v.user.id} voter={v.user} />
+                ))}
+                {leader === c.id &&
+                  plan.kids.map((k) => <VoterBubble key={k.id} voter={k} faded />)}
+              </span>
+              {isParent && voters.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => lockIn(c)}
+                  className="shrink-0 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-2.5 py-1 text-[11px] font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
+                >
+                  Lock it in
+                </button>
+              )}
+            </div>
+          )
+        })}
       </div>
       <FormError message={error} />
-      {isParent && (
-        <button
-          type="button"
-          onClick={drop}
-          className="mt-2 w-full text-center text-xs font-semibold text-fg/40 hover:text-fg/60"
-        >
-          Drop the question
-        </button>
-      )}
+
+      <AnimatePresence>
+        {detailFor && (
+          <DetailSheet
+            choice={detailFor}
+            current={myVote?.choice === detailFor.id ? myVote : null}
+            onClose={() => setDetailFor(null)}
+            onVote={(detail, recipeId) => voteFor(detailFor.id, detail, recipeId)}
+            onRetract={myVote?.choice === detailFor.id ? retract : null}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -409,8 +484,7 @@ export function DinnerPlanner() {
   const [error, setError] = useState<string | null>(null)
   const [planning, setPlanning] = useState<string | null>(null) // dayISO in the sheet
   const [showWeek, setShowWeek] = useState(false)
-  const [asking, setAsking] = useState(false)
-  const [ballot, setBallot] = useState<api.DinnerBallot | null>(null)
+  const [plan, setPlan] = useState<api.DinnerPlan | null>(null)
 
   const days = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
@@ -426,7 +500,7 @@ export function DinnerPlanner() {
       ])
       const seen = new Set(week.map((m) => `${m.date_for}:${m.slot}`))
       setMeals([...week, ...tonight.filter((m) => !seen.has(`${m.date_for}:${m.slot}`))])
-      setBallot(await api.getBallot(todayISO))
+      setPlan(await api.getDinnerPlan(todayISO))
       setError(null)
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Could not load the menu.')
@@ -464,35 +538,42 @@ export function DinnerPlanner() {
             Tonight · {tonightLabel}
           </p>
           <h2 className="truncate font-display text-xl font-semibold tracking-[-0.01em]">
-            {mealTitle(tonight) ?? "What's for dinner?"}
+            {mealTitle(tonight) ?? 'Dinner Plan'}
           </h2>
         </div>
         {isParent && (
-          <span className="flex shrink-0 gap-1.5">
-            {!mealTitle(tonight) && !(ballot && ballot.options.length > 0) && (
-              <button
-                type="button"
-                onClick={() => setAsking(true)}
-                className="rounded-full border border-accent-bright/40 bg-accent-bright/15 px-3 py-1.5 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
-              >
-                Ask
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setPlanning(todayISO)}
-              className="rounded-full border border-accent-bright/40 bg-accent-bright/15 px-3 py-1.5 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
-            >
-              {mealTitle(tonight) ? 'Change' : 'Plan'}
-            </button>
-          </span>
+          <button
+            type="button"
+            onClick={() => setPlanning(todayISO)}
+            className="shrink-0 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-3 py-1.5 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
+          >
+            {mealTitle(tonight) ? 'Change' : 'Plan'}
+          </button>
         )}
       </div>
 
       {tonight?.per_serving && <MacroPills ps={tonight.per_serving} />}
 
-      {!mealTitle(tonight) && ballot && ballot.options.length > 0 && (
-        <DinnerQuestion ballot={ballot} isParent={!!isParent} dayISO={todayISO} onChanged={refresh} />
+      {!mealTitle(tonight) && plan && (
+        <DinnerPlanBlock
+          plan={plan}
+          isParent={!!isParent}
+          me={user?.id}
+          dayISO={todayISO}
+          onChanged={refresh}
+        />
+      )}
+      {mealTitle(tonight) && isParent && plan && plan.votes.length > 0 && (
+        <button
+          type="button"
+          onClick={async () => {
+            await api.clearMeal(todayISO)
+            refresh()
+          }}
+          className="mt-1.5 w-full text-center text-xs font-semibold text-fg/40 hover:text-fg/60"
+        >
+          Unlock tonight's plan
+        </button>
       )}
 
       <FormError message={error} />
@@ -596,19 +677,6 @@ export function DinnerPlanner() {
             onClose={() => setPlanning(null)}
             onSaved={() => {
               setPlanning(null)
-              refresh()
-            }}
-          />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {asking && (
-          <AskSheet
-            dayISO={todayISO}
-            onClose={() => setAsking(false)}
-            onAsked={() => {
-              setAsking(false)
               refresh()
             }}
           />

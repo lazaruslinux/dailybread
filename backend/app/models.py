@@ -529,28 +529,22 @@ class Meal(Base):
     recipe: Mapped["Recipe | None"] = relationship()
 
 
-class DinnerOption(Base):
-    """One candidate on a night's dinner ballot: a saved recipe or a typed
-    title. A parent posts a few; the family votes; the parent crowns one via
-    the normal meal-planner endpoint."""
+class DinnerChoice(str, enum.Enum):
+    """The four standing dinner modes. The nightly decision is rarely "which
+    recipe" — it's "are we cooking at all"."""
 
-    __tablename__ = "dinner_options"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
-    date_for: Mapped[dt.date] = mapped_column(Date, index=True)
-    title: Mapped[str] = mapped_column(String(120))
-    recipe_id: Mapped[int | None] = mapped_column(
-        ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True
-    )
-    position: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    self_serve = "self_serve"  # everyone fends for themselves
+    homemade = "homemade"  # cooked at home (optionally a saved recipe)
+    go_out = "go_out"  # a restaurant (typed detail)
+    delivery = "delivery"  # ordered in (typed detail)
 
 
 class DinnerVote(Base):
-    """One member's vote for one night. The unique constraint is the rule:
-    one vote per member per night, changeable until the parent closes it.
-    The one Kitchen write a child account gets."""
+    """One adult's standing pick for a night's dinner mode, with an optional
+    short detail ("Chipotle") or, for homemade, a recipe. One changeable vote
+    per member per night; kid avatars merely FOLLOW the leading choice in the
+    UI — children never vote. Locking the plan sets the normal meal row and
+    leaves these untouched, so unlocking brings the votes right back."""
 
     __tablename__ = "dinner_votes"
     __table_args__ = (
@@ -561,8 +555,10 @@ class DinnerVote(Base):
     family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
     date_for: Mapped[dt.date] = mapped_column(Date, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    option_id: Mapped[int] = mapped_column(
-        ForeignKey("dinner_options.id", ondelete="CASCADE"), index=True
+    choice: Mapped[DinnerChoice] = mapped_column(SAEnum(DinnerChoice, name="dinner_choice"))
+    detail: Mapped[str] = mapped_column(String(30), default="")
+    recipe_id: Mapped[int | None] = mapped_column(
+        ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 

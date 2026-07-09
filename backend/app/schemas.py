@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, model_validator
 from app.models import (
     ActivityLevel,
     DiarySlot,
+    DinnerChoice,
     ExerciseEffort,
     FoodSource,
     GoalType,
@@ -872,34 +873,40 @@ class ProfileUpdateIn(BaseModel):
     village_presence: bool | None = None
 
 
-# ---- dinner voting -------------------------------------------------------------------
+# ---- the dinner plan -----------------------------------------------------------
 
 
-class DinnerOptionIn(BaseModel):
-    title: str = Field(min_length=1, max_length=120)
+class DinnerVoteIn(BaseModel):
+    """An adult's pick for tonight. detail is the short typed bit ("Chipotle");
+    homemade may carry a recipe instead (or as well — the recipe name wins)."""
+
+    choice: DinnerChoice
+    detail: str = Field(default="", max_length=30)
     recipe_id: int | None = None
 
 
-class DinnerBallotIn(BaseModel):
-    """A parent opening (or replacing) a night's ballot. 2-5 candidates;
-    replacing clears any votes already cast."""
-
-    options: list[DinnerOptionIn] = Field(min_length=2, max_length=5)
-
-
-class DinnerOptionOut(BaseModel):
+class DinnerVoterOut(BaseModel):
     id: int
-    title: str
+    display_name: str
+    avatar_updated_at: dt.datetime | None
+
+
+class DinnerVoteOut(BaseModel):
+    user: DinnerVoterOut
+    choice: DinnerChoice
+    detail: str
     recipe_id: int | None
-    votes: int
-    voters: list[str]  # first names, in voting order
-    my_vote: bool
+    recipe_name: str | None
 
 
-class DinnerBallotOut(BaseModel):
+class DinnerPlanOut(BaseModel):
+    """The standing plan for a night: every adult's pick (in voting order)
+    plus the family's kids, whose avatars the client pins to the leading
+    choice — they eat whatever wins, they don't vote."""
+
     date_for: dt.date
-    options: list[DinnerOptionOut]
-    total_votes: int
+    votes: list[DinnerVoteOut]
+    kids: list[DinnerVoterOut]
 
 
 # ---- the village recipe shelf --------------------------------------------------------

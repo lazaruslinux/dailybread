@@ -110,36 +110,43 @@ export const bootstrap = (
 
 export const logout = () => request<void>('/auth/logout', { method: 'POST' })
 
-// ---- the dinner question ----------------------------------------------------------
+// ---- the dinner plan ---------------------------------------------------------------
 
-export interface DinnerOption {
+export type DinnerChoice = 'self_serve' | 'homemade' | 'go_out' | 'delivery'
+
+export interface DinnerVoter {
   id: number
-  title: string
+  display_name: string
+  avatar_updated_at: string | null
+}
+
+export interface DinnerVote {
+  user: DinnerVoter
+  choice: DinnerChoice
+  detail: string
   recipe_id: number | null
-  votes: number
-  voters: string[] // first names, in voting order
-  my_vote: boolean
+  recipe_name: string | null
 }
 
-export interface DinnerBallot {
+export interface DinnerPlan {
   date_for: string
-  options: DinnerOption[]
-  total_votes: number
+  votes: DinnerVote[]
+  kids: DinnerVoter[]
 }
 
-export const getBallot = (date: string) => request<DinnerBallot>(`/meals/vote?date=${date}`)
+export const getDinnerPlan = (date: string) => request<DinnerPlan>(`/meals/plan?date=${date}`)
 
-export const openBallot = (date: string, options: { title: string; recipe_id?: number | null }[]) =>
-  request<DinnerBallot>(`/meals/vote?date=${date}`, {
+export const castDinnerVote = (
+  date: string,
+  payload: { choice: DinnerChoice; detail?: string; recipe_id?: number | null },
+) =>
+  request<DinnerPlan>(`/meals/plan?date=${date}`, {
     method: 'PUT',
-    body: JSON.stringify({ options }),
+    body: JSON.stringify(payload),
   })
 
-export const closeBallot = (date: string) =>
-  request<void>(`/meals/vote?date=${date}`, { method: 'DELETE' })
-
-export const castVote = (optionId: number) =>
-  request<DinnerBallot>(`/meals/vote/${optionId}`, { method: 'POST' })
+export const retractDinnerVote = (date: string) =>
+  request<DinnerPlan>(`/meals/plan?date=${date}`, { method: 'DELETE' })
 
 // ---- the village recipe shelf -----------------------------------------------------
 

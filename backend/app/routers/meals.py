@@ -6,12 +6,13 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.db import get_db
 from app.deps import require_family, require_parent
-from app.models import DinnerOption, DinnerVote, Meal, MealSlot, Recipe, RecipeIngredient, User
+from app.models import DinnerVote, Meal, MealSlot, Recipe, RecipeIngredient, User
 from app.routers.recipes import per_serving_macros
 from app.schemas import (
-    DinnerBallotIn,
-    DinnerBallotOut,
-    DinnerOptionOut,
+    DinnerPlanOut,
+    DinnerVoteIn,
+    DinnerVoteOut,
+    DinnerVoterOut,
     MealIn,
     MealOut,
 )
@@ -119,165 +120,159 @@ def clear_meal(
         db.commit()
 
 
-# ---- dinner voting ---------------------------------------------------------------
-# A parent posts a few candidates for a night; every family member (kids
-# included — deliberately their one Kitchen write) votes once, changeable;
-# the parent reads the tally and crowns the winner via the normal PUT /meals.
+# ---- the dinner plan ---------------------------------------------------------------
+# Four standing modes, always on for a day until dinner is set. Adults pick
+# one (changeable, retractable); each pick shows as that adult's avatar plus
+# their short detail. Kids never vote — the client pins their avatars to the
+# leading choice. Locking the plan is just setting the normal meal row, so
+# unlocking (clearing the meal) brings the untouched votes straight back.
 
 
-def _ballot_out(db: Session, family_id: int, date_for: dt.date, viewer: User) -> DinnerBallotOut:
-    options = db.scalars(
-        select(DinnerOption)
-        .where(DinnerOption.family_id == family_id, DinnerOption.date_for == date_for)
-        .order_by(DinnerOption.position, DinnerOption.id)
-    ).all()
-    votes = db.execute(
-        select(DinnerVote, User.display_name)
+def _plan_out(db: Session, family_id: int, date_for: dt.date) -> DinnerPlanOut:
+    rows = db.execute(
+        select(DinnerVote, User)
         .join(User, User.id == DinnerVote.user_id)
         .where(DinnerVote.family_id == family_id, DinnerVote.date_for == date_for)
         .order_by(DinnerVote.created_at, DinnerVote.id)
     ).all()
-    by_option: dict[int, list[tuple[int, str]]] = {}
-    for vote, name in votes:
-        by_option.setdefault(vote.option_id, []).append((vote.user_id, name.split()[0]))
-    return DinnerBallotOut(
+    recipe_ids = [v.recipe_id for v, _ in rows if v.recipe_id is not None]
+    names = {
+        r.id: r.name
+        for r in db.scalars(select(Recipe).where(Recipe.id.in_(recipe_ids)))
+    } if recipe_ids else {}
+    kids = [
+        u
+        for u in db.scalars(
+            select(User).where(User.family_id == family_id).order_by(User.created_at)
+        )
+        if u.is_minor
+    ]
+    return DinnerPlanOut(
         date_for=date_for,
-        options=[
-            DinnerOptionOut(
-                id=o.id,
-                title=o.title,
-                recipe_id=o.recipe_id,
-                votes=len(by_option.get(o.id, [])),
-                voters=[n for _, n in by_option.get(o.id, [])],
-                my_vote=any(uid == viewer.id for uid, _ in by_option.get(o.id, [])),
+        votes=[
+            DinnerVoteOut(
+                user=DinnerVoterOut(
+                    id=u.id, display_name=u.display_name, avatar_updated_at=u.avatar_updated_at
+                ),
+                choice=v.choice,
+                detail=v.detail,
+                recipe_id=v.recipe_id,
+                recipe_name=names.get(v.recipe_id),
             )
-            for o in options
+            for v, u in rows
         ],
-        total_votes=len(votes),
+        kids=[
+            DinnerVoterOut(
+                id=k.id, display_name=k.display_name, avatar_updated_at=k.avatar_updated_at
+            )
+            for k in kids
+        ],
     )
 
 
-@router.get("/vote", response_model=DinnerBallotOut)
-def get_ballot(
+@router.get("/plan", response_model=DinnerPlanOut)
+def dinner_plan(
     date_for: dt.date = Query(alias="date"),
     db: Session = Depends(get_db),
     user: User = Depends(require_family),
 ):
-    return _ballot_out(db, user.family_id, date_for, user)
+    return _plan_out(db, user.family_id, date_for)
 
 
-@router.put("/vote", response_model=DinnerBallotOut)
-def open_ballot(
-    data: DinnerBallotIn,
+@router.put("/plan", response_model=DinnerPlanOut)
+def cast_dinner_vote(
+    data: DinnerVoteIn,
     date_for: dt.date = Query(alias="date"),
     db: Session = Depends(get_db),
     parent: User = Depends(require_parent),
 ):
-    """Open (or replace) the night's ballot. Replacing clears cast votes —
-    the choices changed, so the votes no longer mean anything."""
+    """Set (or change) my pick for the night. Adults only — kid avatars are
+    display, not ballots."""
+    from app.models import DinnerChoice
     from app.routers.recipes import _get_recipe
 
-    db.execute(
-        delete(DinnerVote).where(
-            DinnerVote.family_id == parent.family_id, DinnerVote.date_for == date_for
-        )
-    )
-    db.execute(
-        delete(DinnerOption).where(
-            DinnerOption.family_id == parent.family_id, DinnerOption.date_for == date_for
-        )
-    )
-    for i, opt in enumerate(data.options):
-        recipe_id = None
-        if opt.recipe_id is not None:
-            recipe_id = _get_recipe(db, opt.recipe_id, parent.family_id).id
-        db.add(
-            DinnerOption(
-                family_id=parent.family_id,
-                date_for=date_for,
-                title=opt.title.strip(),
-                recipe_id=recipe_id,
-                position=i,
+    if data.choice == DinnerChoice.self_serve and (data.detail or data.recipe_id):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Self-serve needs no detail")
+    if data.recipe_id is not None and data.choice != DinnerChoice.homemade:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Only homemade takes a recipe")
+    recipe_id = None
+    if data.recipe_id is not None:
+        recipe_id = _get_recipe(db, data.recipe_id, parent.family_id).id
+
+    first_of_day = (
+        db.scalar(
+            select(DinnerVote).where(
+                DinnerVote.family_id == parent.family_id, DinnerVote.date_for == date_for
             )
         )
+        is None
+    )
+
+    vote = db.scalar(
+        select(DinnerVote).where(
+            DinnerVote.family_id == parent.family_id,
+            DinnerVote.date_for == date_for,
+            DinnerVote.user_id == parent.id,
+        )
+    )
+    if vote is None:
+        vote = DinnerVote(family_id=parent.family_id, date_for=date_for, user_id=parent.id)
+        db.add(vote)
+    vote.choice = data.choice
+    vote.detail = data.detail.strip()
+    vote.recipe_id = recipe_id
     db.commit()
 
-    # The nudge that makes a two-person question work: the other adults hear
-    # the question the moment it's asked. One push per ask, kids never.
-    try:
-        from app import push
+    # The day's first pick nudges the other adults once; later picks and
+    # changes stay quiet — the block is standing, not a conversation thread.
+    if first_of_day:
+        try:
+            from app import push
 
-        if push.enabled():
-            first = parent.display_name.split()[0]
-            titles = [o.title.strip() for o in data.options]
-            body = " or ".join(titles[:-1]) + f" or {titles[-1]}?" if len(titles) > 1 else titles[0]
-            payload = {
-                "title": f"{first} is asking about dinner",
-                "body": body[:150],
-                "tag": f"dinner-question-{date_for.isoformat()}",
-                "url": "/",
-            }
-            others = db.scalars(
-                select(User).where(
-                    User.family_id == parent.family_id, User.id != parent.id
+            if push.enabled():
+                first = parent.display_name.split()[0]
+                label = {
+                    DinnerChoice.self_serve: "Self-serve",
+                    DinnerChoice.homemade: "Homemade",
+                    DinnerChoice.go_out: "Go out",
+                    DinnerChoice.delivery: "Delivery",
+                }[data.choice]
+                extra = vote.detail or (
+                    db.get(Recipe, recipe_id).name if recipe_id else ""
                 )
-            )
-            for member in others:
-                if not member.is_minor:
-                    push.send_to_user(db, member.id, payload)
-    except Exception:
-        pass  # the ballot itself is saved; a failed nudge is not worth a 500
+                payload = {
+                    "title": f"{first} made a dinner pick",
+                    "body": f"{label} · {extra}" if extra else label,
+                    "tag": f"dinner-plan-{date_for.isoformat()}",
+                    "url": "/",
+                }
+                for member in db.scalars(
+                    select(User).where(
+                        User.family_id == parent.family_id, User.id != parent.id
+                    )
+                ):
+                    if not member.is_minor:
+                        push.send_to_user(db, member.id, payload)
+        except Exception:
+            pass  # the vote is saved; a failed nudge is not worth a 500
 
-    return _ballot_out(db, parent.family_id, date_for, parent)
+    return _plan_out(db, parent.family_id, date_for)
 
 
-@router.delete("/vote", status_code=status.HTTP_204_NO_CONTENT)
-def close_ballot(
+@router.delete("/plan", response_model=DinnerPlanOut)
+def retract_dinner_vote(
     date_for: dt.date = Query(alias="date"),
     db: Session = Depends(get_db),
     parent: User = Depends(require_parent),
 ):
-    db.execute(
-        delete(DinnerVote).where(
-            DinnerVote.family_id == parent.family_id, DinnerVote.date_for == date_for
-        )
-    )
-    db.execute(
-        delete(DinnerOption).where(
-            DinnerOption.family_id == parent.family_id, DinnerOption.date_for == date_for
-        )
-    )
-    db.commit()
-
-
-@router.post("/vote/{option_id}", response_model=DinnerBallotOut)
-def cast_vote(
-    option_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_family),
-):
-    """One vote per member per night, changeable until the ballot closes.
-    Every member votes — this is the single Kitchen write a child has."""
-    option = db.get(DinnerOption, option_id)
-    if option is None or option.family_id != user.family_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such option")
-    existing = db.scalar(
+    vote = db.scalar(
         select(DinnerVote).where(
-            DinnerVote.family_id == user.family_id,
-            DinnerVote.date_for == option.date_for,
-            DinnerVote.user_id == user.id,
+            DinnerVote.family_id == parent.family_id,
+            DinnerVote.date_for == date_for,
+            DinnerVote.user_id == parent.id,
         )
     )
-    if existing is None:
-        db.add(
-            DinnerVote(
-                family_id=user.family_id,
-                date_for=option.date_for,
-                user_id=user.id,
-                option_id=option.id,
-            )
-        )
-    else:
-        existing.option_id = option.id
-    db.commit()
-    return _ballot_out(db, user.family_id, option.date_for, user)
+    if vote is not None:
+        db.delete(vote)
+        db.commit()
+    return _plan_out(db, parent.family_id, date_for)
