@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { Check, Flame, Hourglass, Pencil, Trash2, Undo2, X } from 'lucide-react'
+import { Ban, Check, Flame, Hourglass, Pencil, Trash2, Undo2, X } from 'lucide-react'
 import { useState } from 'react'
 import { avatarUrl, type FamilyMember, type FeedItem, type Repeat, type User } from '../lib/api'
 import { formatTime } from '../lib/moods'
@@ -52,6 +52,7 @@ export function ItemDetail({
   onToggleFor,
   onEdit,
   onDelete,
+  onCancel,
   onClose,
 }: {
   item: FeedItem
@@ -62,9 +63,13 @@ export function ItemDetail({
   onToggleFor?: (userId: number, done: boolean) => void
   onEdit?: () => void
   onDelete?: () => Promise<void>
+  // Appointments/activities only: call it off (or put it back on) without
+  // pretending it was done.
+  onCancel?: () => Promise<void>
   onClose: () => void
 }) {
-  const { Icon, tint, label } = KIND_STYLE[item.kind]
+  const { Icon, tint, label: kindLabel } = KIND_STYLE[item.kind]
+  const label = item.cancelled ? `${kindLabel} · Cancelled` : kindLabel
   const isRoutine = item.kind === 'routine'
   const whenLabel = item.all_day
     ? 'All day'
@@ -75,6 +80,18 @@ export function ItemDetail({
       : null
   const [armed, setArmed] = useState(false)
   const [busy, setBusy] = useState(false)
+
+  const [cancelBusy, setCancelBusy] = useState(false)
+
+  async function handleCancel() {
+    if (!onCancel) return
+    setCancelBusy(true)
+    try {
+      await onCancel()
+    } finally {
+      setCancelBusy(false)
+    }
+  }
 
   async function handleDelete() {
     if (!onDelete) return
@@ -321,6 +338,23 @@ export function ItemDetail({
             <Button type="button" variant="ghost" onClick={onEdit} className="flex items-center justify-center gap-1.5">
               <Pencil className="h-4 w-4" /> Edit card
             </Button>
+          )}
+          {onCancel && (
+            <button
+              type="button"
+              disabled={cancelBusy}
+              onClick={handleCancel}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-gold/40 bg-gold/10 px-4 py-3 text-sm font-semibold text-gold transition-colors hover:bg-gold/20 disabled:opacity-50"
+            >
+              <Ban className="h-4 w-4" />
+              {cancelBusy
+                ? 'Working'
+                : item.cancelled
+                  ? 'Put it back on'
+                  : item.kind === 'appointment'
+                    ? 'Cancel this appointment'
+                    : 'Cancel this activity'}
+            </button>
           )}
           {onDelete && (
             <Button

@@ -220,3 +220,38 @@ def test_theme_follows_the_account(owner):
     assert owner.get("/auth/me").json()["theme"] == "dark"
     # Only the two real schemes are accepted.
     assert owner.patch("/me/profile", json={"theme": "hotdog"}).status_code == 422
+
+
+# ---- the server overview --------------------------------------------------------
+
+
+def test_overview_is_owner_only(owner, parent, child, other):
+    for client in (parent, child, other):
+        assert client.get("/auth/overview").status_code == 403
+    assert owner.get("/auth/overview").status_code == 200
+
+
+def test_overview_trees_the_whole_install(owner, other, child):
+    # Link the two families into a village so both branches of the tree show.
+    created = owner.post("/villages", json={"name": "Circle"}).json()
+    other.post("/villages/join", json={"code": created["invite_code"]})
+    # And one account still mid-wizard.
+    owner.post(
+        "/auth/users",
+        json={
+            "username": "drifter",
+            "display_name": "Drifter",
+            "password": "drift-pass-123",
+            "role": "parent",
+            "new_household": True,
+        },
+    )
+
+    tree = owner.get("/auth/overview").json()
+    assert [v["name"] for v in tree["villages"]] == ["Circle"]
+    village_families = {f["name"] for f in tree["villages"][0]["families"]}
+    assert village_families == {"Home", "The Bs"}
+    home = next(f for f in tree["villages"][0]["families"] if f["name"] == "Home")
+    assert {u["username"] for u in home["users"]} >= {"owner", "kid"}
+    assert tree["solo_families"] == []
+    assert [u["username"] for u in tree["homeless_users"]] == ["drifter"]

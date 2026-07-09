@@ -58,6 +58,11 @@ class Village(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(80))
+    # The founding family: the only one whose admins may DELETE the village
+    # (anyone may leave). SET NULL survives that family's removal.
+    created_by_family_id: Mapped[int | None] = mapped_column(
+        ForeignKey("families.id", ondelete="SET NULL"), nullable=True
+    )
     invite_code_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     invite_expires_at: Mapped[dt.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -334,6 +339,10 @@ class Completion(Base):
     user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    # True marks a CANCELLED occurrence (appointments/activities): the slot is
+    # resolved — no reminders, no digest — but it reads "called off", never
+    # "done". Same (item, member, day) slot a completion would occupy.
+    cancelled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     date_for: Mapped[dt.date] = mapped_column(Date, index=True)
     completed_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     # A minor's check-off starts pending and only counts once a parent makes it

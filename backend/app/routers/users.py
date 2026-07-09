@@ -295,6 +295,28 @@ def _require_can_set_avatar(target: User, viewer: User) -> None:
         )
 
 
+def _village_parent(db: Session, user_id: int, viewer: User) -> User | None:
+    """A PARENT whose family shares a village with the viewer's. The one
+    cross-family crack in the wall, and it opens the avatar image alone —
+    profiles, moods, boards, and children stay sealed."""
+    from app.models import Role as _Role
+    from app.models import VillageFamily
+
+    target = db.get(User, user_id)
+    if target is None or target.role != _Role.parent or target.family_id is None:
+        return None
+    mine = select(VillageFamily.village_id).where(
+        VillageFamily.family_id == viewer.family_id
+    )
+    shared = db.scalar(
+        select(VillageFamily).where(
+            VillageFamily.family_id == target.family_id,
+            VillageFamily.village_id.in_(mine),
+        )
+    )
+    return target if shared is not None else None
+
+
 @router.get("/users/{user_id}/avatar")
 def get_avatar(
     user_id: int,
@@ -303,8 +325,14 @@ def get_avatar(
 ):
     """Serve a member's avatar image. 404 when they have none so the frontend
     falls back to generated initials. The URL is versioned by avatar_updated_at,
-    so the response can be cached hard."""
-    user = _target_member(user_id, viewer, db)
+    so the response can be cached hard. Village-mates' PARENT photos are the
+    one thing visible across families (the faces on the village card)."""
+    try:
+        user = _target_member(user_id, viewer, db)
+    except HTTPException:
+        user = _village_parent(db, user_id, viewer)
+        if user is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "No such user")
     path = avatars.avatar_path(user.id)
     if user.avatar_updated_at is None or not path.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No avatar")

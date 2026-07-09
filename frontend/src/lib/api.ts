@@ -108,6 +108,38 @@ export const bootstrap = (
 
 export const logout = () => request<void>('/auth/logout', { method: 'POST' })
 
+// ---- server overview -----------------------------------------------------------
+
+export interface OverviewUser {
+  id: number
+  username: string
+  display_name: string
+  role: Role
+  is_admin: boolean
+  is_owner: boolean
+}
+
+export interface OverviewFamily {
+  id: number
+  name: string
+  users: OverviewUser[]
+}
+
+export interface OverviewVillage {
+  id: number
+  name: string
+  families: OverviewFamily[]
+}
+
+export interface Overview {
+  villages: OverviewVillage[]
+  solo_families: OverviewFamily[]
+  homeless_users: OverviewUser[]
+}
+
+// Server admin only: the whole install as a tree.
+export const getOverview = () => request<Overview>('/auth/overview')
+
 // ---- signup invites -----------------------------------------------------------
 // The server owner mints a 15-minute code; the invitee redeems it on the
 // sign-in screen, picks their own password, and founds their own family.
@@ -268,6 +300,8 @@ export interface FeedItem {
   // streak (or, for a non-participant, whether everyone is done). For other
   // kinds, the single shared check.
   completed: boolean
+  // Called off (appointments/activities): resolved, but never "done".
+  cancelled: boolean
   streak: number | null
   // Kid mode: a minor's mark waiting on a parent. For the kid it's their own
   // waiting state; for a parent it means the card needs approval. pending_by
@@ -340,6 +374,12 @@ export const updateItem = (id: number, payload: Partial<ItemPayload>) =>
   request<FeedItem>(`/items/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
 
 export const deleteItem = (id: number) => request<void>(`/items/${id}`, { method: 'DELETE' })
+
+export const cancelItem = (id: number, date: string) =>
+  request<FeedItem>(`/items/${id}/cancel?date=${date}`, { method: 'POST' })
+
+export const uncancelItem = (id: number, date: string) =>
+  request<FeedItem>(`/items/${id}/cancel?date=${date}`, { method: 'DELETE' })
 
 // forUserId lets a parent check a routine off on another member's behalf. date
 // defaults to today (the board); the calendar passes the day being viewed so a
@@ -964,6 +1004,9 @@ export const sendTestPush = () => request<{ sent: number }>('/push/test', { meth
 export interface VillageParent {
   id: number
   display_name: string
+  // The photo handle: village parents' avatar images are served across the
+  // family wall (nothing else is).
+  avatar_updated_at: string | null
 }
 
 export interface VillageFamily {
@@ -980,6 +1023,8 @@ export interface Village {
   families: VillageFamily[]
   invite_active: boolean
   invite_expires_at: string | null
+  // True when YOUR family founded it: founders delete, everyone else leaves.
+  is_creator: boolean
 }
 
 export interface VillageCreated extends Village {
@@ -1011,3 +1056,7 @@ export const regenerateInvite = (villageId: number) =>
 
 export const leaveVillage = (villageId: number) =>
   request<void>(`/villages/${villageId}/membership`, { method: 'DELETE' })
+
+// Founding family only: dissolves the village for everyone.
+export const deleteVillage = (villageId: number) =>
+  request<void>(`/villages/${villageId}`, { method: 'DELETE' })

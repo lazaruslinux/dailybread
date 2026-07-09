@@ -9,9 +9,13 @@ from app.config import settings
 from app.db import get_db
 from app.deps import get_current_user, require_admin
 from app.invitecodes import hash_code, mint_code, normalize, pretty, still_valid
-from app.models import Family, Role, SignupInvite, User
+from app.models import Family, Role, SignupInvite, User, Village, VillageFamily
 from app.schemas import (
     BootstrapIn,
+    OverviewFamilyOut,
+    OverviewOut,
+    OverviewUserOut,
+    OverviewVillageOut,
     ChangePasswordIn,
     CreateUserIn,
     InviteCheckOut,
@@ -130,6 +134,53 @@ def change_password(
     db.commit()
     db.refresh(user)
     return user
+
+
+# ---- the server overview ----------------------------------------------------------
+
+
+@router.get("/overview", response_model=OverviewOut)
+def server_overview(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """Everything on the install, as a tree: villages > families > members,
+    then families outside any village, then accounts still mid-wizard. The
+    server admin's bird's-eye view — no one else's (403)."""
+    if not admin.is_owner:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Server admin only")
+
+    users_by_family: dict[int, list[OverviewUserOut]] = {}
+    homeless: list[OverviewUserOut] = []
+    for user in db.scalars(select(User).order_by(User.created_at, User.id)):
+        out = OverviewUserOut.model_validate(user)
+        if user.family_id is None:
+            homeless.append(out)
+        else:
+            users_by_family.setdefault(user.family_id, []).append(out)
+
+    def family_out(family: Family) -> OverviewFamilyOut:
+        return OverviewFamilyOut(
+            id=family.id, name=family.name, users=users_by_family.get(family.id, [])
+        )
+
+    families = {f.id: f for f in db.scalars(select(Family).order_by(Family.created_at, Family.id))}
+    in_a_village: set[int] = set()
+    villages: list[OverviewVillageOut] = []
+    for village in db.scalars(select(Village).order_by(Village.created_at, Village.id)):
+        member_ids = db.scalars(
+            select(VillageFamily.family_id)
+            .where(VillageFamily.village_id == village.id)
+            .order_by(VillageFamily.joined_at, VillageFamily.id)
+        ).all()
+        in_a_village.update(member_ids)
+        villages.append(
+            OverviewVillageOut(
+                id=village.id,
+                name=village.name,
+                families=[family_out(families[fid]) for fid in member_ids if fid in families],
+            )
+        )
+
+    solo = [family_out(f) for fid, f in families.items() if fid not in in_a_village]
+    return OverviewOut(villages=villages, solo_families=solo, homeless_users=homeless)
 
 
 # ---- signup invites --------------------------------------------------------------

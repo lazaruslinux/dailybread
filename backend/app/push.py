@@ -150,17 +150,17 @@ def reminder_tick(now: dt.datetime) -> int:
             # "already acted" here — the kid did the thing; don't nag them.
             if item.kind == ItemKind.routine:
                 done_today = {
-                    uid for uid, day, _pending in rows if day == today and uid is not None
+                    uid for uid, day, _pending, _canc in rows if day == today and uid is not None
                 }
                 people = [p for p in _routine_participants(db, item) if p.id not in done_today]
             elif item.date_for is not None:
-                if rows:  # dated one-shots count as done regardless of the day checked
+                if rows:  # done or cancelled, whichever day it was marked
                     continue
                 people = _recipients(db, item)
             else:
-                # A repeating appointment: this occurrence is done only if a
-                # check landed on today itself.
-                if any(day == today for _uid, day, _pending in rows):
+                # A repeating appointment: this occurrence is resolved only by
+                # a mark (done or cancelled) on today itself.
+                if any(day == today for _uid, day, _pending, _canc in rows):
                     continue
                 people = _recipients(db, item)
             # Kid mode: no notifications for minors at all — their day is the
@@ -275,16 +275,17 @@ def _todays_board(db: Session, user: User, now: dt.datetime) -> tuple[int, Item 
         rows = comps[item.id]
         if item.kind == ItemKind.routine:
             # Their own occurrence; a pending mark counts as already acted.
-            acted = any(uid == user.id and day == today for uid, day, _pend in rows)
+            acted = any(uid == user.id and day == today for uid, day, _pend, _canc in rows)
         elif item.date_for is not None:
-            # Dated one-shots are done once anyone checked them, whatever day.
-            acted = any(not pend for _uid, _day, pend in rows)
+            # Dated one-shots are resolved once anyone checked or cancelled
+            # them, whatever day.
+            acted = any(not pend or canc for _uid, _day, pend, canc in rows)
         elif item.repeat_type is not None:
-            # A repeating appointment: only a check on today's occurrence counts.
-            acted = any(day == today and not pend for _uid, day, pend in rows)
+            # A repeating appointment: only a mark on today's occurrence counts.
+            acted = any(day == today and (not pend or canc) for _uid, day, pend, canc in rows)
         else:
             # Undated tasks: any check (today = done, earlier = archived).
-            acted = any(not pend for _uid, _day, pend in rows)
+            acted = any(not pend for _uid, _day, pend, _canc in rows)
         if not acted:
             open_items.append(item)
 

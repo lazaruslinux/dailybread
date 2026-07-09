@@ -231,11 +231,13 @@ class FeedItemOut(BaseModel):
     end_time: dt.time | None  # end / "To"
     all_day: bool
     date_for: dt.date | None
-    repeat: RepeatOut | None  # routines only
+    repeat: RepeatOut | None  # anything recurring (routines, repeating appointments)
     # The requesting member's own view: for a routine, their own check/streak
     # (or, for a non-participant, whether every participant is done). For other
     # kinds, the single shared check.
     completed: bool
+    # Called off (appointments/activities): resolved, but never "done".
+    cancelled: bool = False
     streak: int | None
     # Kid mode: a minor tapped done and the mark awaits a parent. For the
     # tapping kid this is their own waiting state; for everyone else it flags
@@ -865,6 +867,42 @@ class ProfileUpdateIn(BaseModel):
     theme: Literal["light", "dark"] | None = None
 
 
+# ---- server overview ---------------------------------------------------------------
+
+
+class OverviewUserOut(BaseModel):
+    id: int
+    username: str
+    display_name: str
+    role: Role
+    is_admin: bool
+    is_owner: bool
+
+    model_config = {"from_attributes": True}
+
+
+class OverviewFamilyOut(BaseModel):
+    id: int
+    name: str
+    users: list[OverviewUserOut]
+
+
+class OverviewVillageOut(BaseModel):
+    id: int
+    name: str
+    families: list[OverviewFamilyOut]
+
+
+class OverviewOut(BaseModel):
+    """The whole install at a glance, for the server admin alone: every
+    village with its families, then families in no village, then accounts
+    that haven't founded a family yet."""
+
+    villages: list[OverviewVillageOut]
+    solo_families: list[OverviewFamilyOut]
+    homeless_users: list[OverviewUserOut]
+
+
 # ---- signup invites --------------------------------------------------------------
 
 
@@ -911,12 +949,14 @@ class VillageJoinIn(BaseModel):
 
 
 class VillageParentOut(BaseModel):
-    """A parent as village-mates see them: name and id, nothing else. No
-    avatar timestamp on purpose — avatar images stay family-scoped, so
-    bubbles render as initials everywhere. Children never appear at all."""
+    """A parent as village-mates see them: name, id, and photo — the faces on
+    the village card. The avatar image is the ONE thing served across the
+    family wall (see users.get_avatar); profiles, moods, and boards stay
+    sealed, and children never appear at all."""
 
     id: int
     display_name: str
+    avatar_updated_at: dt.datetime | None = None
 
 
 class VillageFamilyOut(BaseModel):
@@ -945,6 +985,9 @@ class VillageOut(BaseModel):
     families: list[VillageFamilyOut]
     invite_active: bool
     invite_expires_at: dt.datetime | None
+    # True when the REQUESTING family founded this village — founders may
+    # delete it outright; everyone else may only leave.
+    is_creator: bool = False
 
 
 class VillageCreatedOut(VillageOut):

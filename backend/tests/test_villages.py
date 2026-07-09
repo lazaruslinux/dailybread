@@ -158,8 +158,9 @@ def test_village_shows_parents_and_never_children(app, village, owner, other, ch
     # Children stay behind the family wall — even with an adult birthdate.
     assert "The Kid" not in home_names
     assert "Grown Kid" not in home_names
-    # No avatar handle rides along: bubbles are initials-only across families.
-    assert "avatar_updated_at" not in by_family["Home"]["parents"][0]
+    # The photo handle rides along (the one cross-family opening); no photo
+    # yet reads as None and the client falls back to initials.
+    assert by_family["Home"]["parents"][0]["avatar_updated_at"] is None
     # Family B's head shows for family A too.
     assert [p["display_name"] for p in by_family["The Bs"]["parents"]] == ["Josh"]
 
@@ -255,3 +256,29 @@ def test_village_mates_cannot_open_each_others_profiles(village, owner, other):
     # And the family strip never mixes families, village or not.
     strip = other.get(f"/users?date={today}").json()
     assert all(m["family_id"] == strip[0]["family_id"] for m in strip)
+
+
+def test_village_parent_avatar_is_reachable_but_nothing_else(village, owner, other):
+    """The avatar IMAGE crosses the wall for village parents; the profile
+    never does, and a family outside the village still sees nothing."""
+    from tests.conftest import user_id
+    import datetime as _dt
+
+    owner_id = user_id(owner)
+    today = _dt.date.today().isoformat()
+    # No photo uploaded: a village-mate gets the "No avatar" 404 (permission
+    # passed), while the profile stays a "No such user" wall.
+    res = other.get(f"/users/{owner_id}/avatar")
+    assert res.status_code == 404
+    assert res.json()["detail"] == "No avatar"
+    res = other.get(f"/users/{owner_id}/profile?date={today}")
+    assert res.status_code == 404
+    assert res.json()["detail"] == "No such user"
+
+
+def test_child_avatars_never_cross_the_wall(village, owner, other, child):
+    from tests.conftest import user_id
+
+    res = other.get(f"/users/{user_id(child)}/avatar")
+    assert res.status_code == 404
+    assert res.json()["detail"] == "No such user"

@@ -695,3 +695,45 @@ def test_repeating_appointment_validation(owner):
         json={"kind": "activity", "title": "No", "date_for": TODAY,
               "time_of_day": "09:00", "end_time": "10:00", "repeat": all_days()},
     ).status_code == 400
+
+
+# ---- cancelling ------------------------------------------------------------------
+
+
+def test_cancel_an_appointment(owner):
+    appt = make_item(owner, kind="appointment", title="Dentist", date_for=TODAY,
+                     time_of_day="14:00", end_time="15:00")
+    res = owner.post(f"/items/{appt['id']}/cancel?date={TODAY}")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["cancelled"] is True
+    assert body["completed"] is False
+    # Back on: the mark lifts cleanly.
+    res = owner.delete(f"/items/{appt['id']}/cancel?date={TODAY}")
+    assert res.json()["cancelled"] is False
+
+
+def test_cancel_replaces_a_done_mark_and_is_parent_only(owner, child):
+    kid_id = None
+    appt = make_item(owner, kind="appointment", title="Recital", date_for=TODAY,
+                     time_of_day="14:00", end_time="15:00", visibility="family")
+    owner.post(f"/items/{appt['id']}/complete?date={TODAY}")
+    res = owner.post(f"/items/{appt['id']}/cancel?date={TODAY}")
+    assert res.json()["cancelled"] is True
+    assert res.json()["completed"] is False
+    assert child.post(f"/items/{appt['id']}/cancel?date={TODAY}").status_code == 403
+
+
+def test_only_events_cancel(owner):
+    task = make_item(owner, kind="task", title="Chore")
+    assert owner.post(f"/items/{task['id']}/cancel?date={TODAY}").status_code == 400
+
+
+def test_cancelling_one_occurrence_leaves_the_rest(owner):
+    meeting = make_item(owner, kind="appointment", title="Standup",
+                        time_of_day="09:00", end_time="09:30", repeat=all_days())
+    assert owner.post(f"/items/{meeting['id']}/cancel?date={TODAY}").json()["cancelled"] is True
+    yesterday = (dt.date.today() - dt.timedelta(days=1)).isoformat()
+    cal = owner.get(f"/items/calendar?start={yesterday}&end={yesterday}").json()
+    row = next(i for i in cal["days"][0]["items"] if i["id"] == meeting["id"])
+    assert row["cancelled"] is False and row["completed"] is False

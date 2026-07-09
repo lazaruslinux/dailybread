@@ -70,7 +70,7 @@ def _member_village(db: Session, village_id: int, family_id: int) -> Village:
     return village
 
 
-def _village_out(db: Session, village: Village) -> VillageOut:
+def _village_out(db: Session, village: Village, viewer_family_id: int) -> VillageOut:
     rows = db.execute(
         select(VillageFamily, Family)
         .join(Family, Family.id == VillageFamily.family_id)
@@ -88,7 +88,11 @@ def _village_out(db: Session, village: Village) -> VillageOut:
             .order_by(User.created_at, User.id)
         ):
             parents_by_family.setdefault(user.family_id, []).append(
-                VillageParentOut(id=user.id, display_name=user.display_name)
+                VillageParentOut(
+                    id=user.id,
+                    display_name=user.display_name,
+                    avatar_updated_at=user.avatar_updated_at,
+                )
             )
     active = _invite_active(village, _utcnow())
     return VillageOut(
@@ -106,6 +110,7 @@ def _village_out(db: Session, village: Village) -> VillageOut:
         ],
         invite_active=active,
         invite_expires_at=village.invite_expires_at if active else None,
+        is_creator=village.created_by_family_id == viewer_family_id,
     )
 
 
@@ -125,7 +130,7 @@ def list_villages(db: Session = Depends(get_db), user: User = Depends(require_fa
         .where(VillageFamily.family_id == user.family_id)
         .order_by(Village.created_at, Village.id)
     ).all()
-    return [_village_out(db, v) for v in villages]
+    return [_village_out(db, v, user.family_id) for v in villages]
 
 
 @router.post("", response_model=VillageCreatedOut, status_code=status.HTTP_201_CREATED)
@@ -144,6 +149,7 @@ def create_village(
     code = mint_code()
     village = Village(
         name=data.name.strip(),
+        created_by_family_id=admin.family_id,
         invite_code_hash=hash_code(code),
         invite_expires_at=_utcnow() + INVITE_TTL,
     )
@@ -152,7 +158,7 @@ def create_village(
     db.add(VillageFamily(village_id=village.id, family_id=admin.family_id))
     db.commit()
     db.refresh(village)
-    base = _village_out(db, village)
+    base = _village_out(db, village, admin.family_id)
     return VillageCreatedOut(**base.model_dump(), invite_code=pretty(code))
 
 
@@ -219,7 +225,7 @@ def join_village(
     db.commit()
     throttle.clear(f"village-join:{admin.username}")
     db.refresh(village)
-    return _village_out(db, village)
+    return _village_out(db, village, admin.family_id)
 
 
 @router.post("/{village_id}/invite", response_model=VillageInviteOut)
@@ -238,6 +244,23 @@ def regenerate_invite(
     return VillageInviteOut(
         invite_code=pretty(code), invite_expires_at=village.invite_expires_at
     )
+
+
+@router.delete("/{village_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_village(
+    village_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """The founding family dissolves the village for everyone — the answer
+    to stale villages nobody tends. Other families may only leave."""
+    village = _member_village(db, village_id, admin.family_id)
+    if village.created_by_family_id != admin.family_id:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Only the founding family can delete the village"
+        )
+    db.delete(village)  # memberships and shelf rows cascade away
+    db.commit()
 
 
 @router.delete("/{village_id}/membership", status_code=status.HTTP_204_NO_CONTENT)

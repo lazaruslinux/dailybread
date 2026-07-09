@@ -273,6 +273,7 @@ def _feed_item(
     assignee_completions: list[AssigneeCompletion] | None,
     pending: bool = False,
     pending_by: int | None = None,
+    cancelled: bool = False,
 ) -> FeedItemOut:
     return FeedItemOut(
         id=item.id,
@@ -292,11 +293,13 @@ def _feed_item(
         streak=streak,
         pending=pending,
         pending_by=pending_by,
+        cancelled=cancelled,
         assignee_completions=assignee_completions,
     )
 
 
-# One item's completion rows, prefetched: (user_id, date_for, pending) triples.
+# One item's completion rows, prefetched:
+# (user_id, date_for, pending, cancelled) quadruples.
 # A pending row is a minor's tap awaiting a parent — it must never read as done.
 CompletionRows = list[tuple[int | None, dt.date, bool]]
 
@@ -311,12 +314,16 @@ def _completions_by_item(db: Session, items: list[Item]) -> dict[int, Completion
     """
     rows: dict[int, CompletionRows] = {item.id: [] for item in items}
     if rows:
-        for item_id, uid, day, pending in db.execute(
+        for item_id, uid, day, pending, cancelled in db.execute(
             select(
-                Completion.item_id, Completion.user_id, Completion.date_for, Completion.pending
+                Completion.item_id,
+                Completion.user_id,
+                Completion.date_for,
+                Completion.pending,
+                Completion.cancelled,
             ).where(Completion.item_id.in_(rows))
         ):
-            rows[item_id].append((uid, day, pending))
+            rows[item_id].append((uid, day, pending, cancelled))
     return rows
 
 
@@ -341,26 +348,36 @@ def _build_feed_item(
         # A pending row (a minor's tap awaiting a parent) never counts as done;
         # it surfaces separately so the card can show its waiting state.
         if item.date_for is not None:
-            done = any(not pend for _, _, pend in completions)
-            waiting = next((uid for uid, _, pend in completions if pend), None)
+            done = any(not pend and not canc for _, _, pend, canc in completions)
+            called_off = any(canc for _, _, _, canc in completions)
+            waiting = next((uid for uid, _, pend, canc in completions if pend and not canc), None)
         else:
-            done = any(day == date and not pend for _, day, pend in completions)
+            done = any(
+                day == date and not pend and not canc for _, day, pend, canc in completions
+            )
+            called_off = any(day == date and canc for _, day, _, canc in completions)
             waiting = next(
-                (uid for uid, day, pend in completions if pend and day == date), None
+                (
+                    uid
+                    for uid, day, pend, canc in completions
+                    if pend and not canc and day == date
+                ),
+                None,
             )
         return _feed_item(
             item,
             completed=done,
             streak=None,
             assignee_completions=None,
-            pending=not done and waiting is not None,
-            pending_by=waiting if not done else None,
+            pending=not done and not called_off and waiting is not None,
+            pending_by=waiting if not done and not called_off else None,
+            cancelled=called_off,
         )
 
     participants = _routine_participants(db, item)
     dates_by_user: dict[int, set[dt.date]] = {}
     pending_by_user: dict[int, set[dt.date]] = {}
-    for uid, day, pend in completions:
+    for uid, day, pend, _canc in completions:  # routines are never cancelled
         if uid is not None:
             (pending_by_user if pend else dates_by_user).setdefault(uid, set()).add(day)
 
@@ -463,7 +480,7 @@ def feed(
             if (
                 not fi.completed
                 and not fi.pending
-                and any(day != date_for for _, day, _ in comps[item.id])
+                and any(day != date_for for _, day, _, _ in comps[item.id])
             ):
                 continue
             today.append(fi)
@@ -611,6 +628,14 @@ def create_item(
     db.add(item)
     db.commit()
     db.refresh(item)
+    _push_board_change(
+        db,
+        _board_change_recipients(db, item, parent),
+        parent,
+        "added",
+        item.title,
+        _schedule_text(item),
+    )
     return _build_feed_item(db, item, parent, dt.date.today(), [])
 
 
@@ -624,6 +649,7 @@ def update_item(
     item = _get_item(db, item_id, parent.family_id)
     _require_visible(item, parent)
     fields = data.model_fields_set  # only touch keys the client actually sent
+    before_schedule = tuple(getattr(item, f) for f in _SCHEDULE_FIELDS)
 
     if "assignee_ids" in fields:
         item.assignees = _resolve_assignees(db, data.assignee_ids or [], parent.family_id)
@@ -668,6 +694,15 @@ def update_item(
     _validate_item(item)
     db.commit()
     db.refresh(item)
+    if tuple(getattr(item, f) for f in _SCHEDULE_FIELDS) != before_schedule:
+        _push_board_change(
+            db,
+            _board_change_recipients(db, item, parent),
+            parent,
+            "moved",
+            item.title,
+            f"Now {_schedule_text(item)}",
+        )
     return _build_feed_item(
         db, item, parent, dt.date.today(), _completions_by_item(db, [item])[item.id]
     )
@@ -681,8 +716,142 @@ def delete_item(
 ):
     item = _get_item(db, item_id, parent.family_id)
     _require_visible(item, parent)
+    title, kind = item.title, item.kind
+    recipients = _board_change_recipients(db, item, parent)
     db.delete(item)  # completions cascade away with it
     db.commit()
+    _push_board_change(db, recipients, parent, "removed", title, "")
+
+
+# ---- cancelling (appointments and activities) -----------------------------------
+
+_CANCELLABLE = {ItemKind.appointment, ItemKind.activity}
+
+
+def _cancel_slot(item: Item, date_for: dt.date):
+    """The completion slot a cancellation occupies: the single one-shot row
+    for a dated card, the day's row for a repeating one."""
+    stmt = select(Completion).where(Completion.item_id == item.id)
+    if item.date_for is None:
+        stmt = stmt.where(Completion.date_for == date_for)
+    return stmt
+
+
+@router.post("/{item_id}/cancel", response_model=FeedItemOut)
+def cancel_item(
+    item_id: int,
+    date_for: dt.date = Query(alias="date"),
+    db: Session = Depends(get_db),
+    parent: User = Depends(require_parent),
+):
+    """Call an appointment or activity off: resolved (no reminders, no
+    digest), but shown as cancelled rather than done. Parents only — calling
+    off the dentist is a parent's move. Repeating cards cancel one occurrence."""
+    _check_complete_date(date_for)
+    item = _get_item(db, item_id, parent.family_id)
+    _require_visible(item, parent)
+    if item.kind not in _CANCELLABLE:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Only appointments and activities can be cancelled"
+        )
+    for row in db.scalars(_cancel_slot(item, date_for)):
+        db.delete(row)  # a cancellation replaces any done/pending mark
+    db.flush()  # the deletes must land before the new row reuses the slot
+    db.add(
+        Completion(
+            item_id=item.id, user_id=parent.id, date_for=date_for, cancelled=True
+        )
+    )
+    db.commit()
+    return _build_feed_item(
+        db, item, parent, date_for, _completions_by_item(db, [item])[item.id]
+    )
+
+
+@router.delete("/{item_id}/cancel", response_model=FeedItemOut)
+def uncancel_item(
+    item_id: int,
+    date_for: dt.date = Query(alias="date"),
+    db: Session = Depends(get_db),
+    parent: User = Depends(require_parent),
+):
+    """It's back on: remove the cancellation mark."""
+    _check_complete_date(date_for)
+    item = _get_item(db, item_id, parent.family_id)
+    _require_visible(item, parent)
+    rows = [r for r in db.scalars(_cancel_slot(item, date_for)) if r.cancelled]
+    for row in rows:
+        db.delete(row)
+    if rows:
+        db.commit()
+    return _build_feed_item(
+        db, item, parent, date_for, _completions_by_item(db, [item])[item.id]
+    )
+
+
+# ---- board-change notifications ---------------------------------------------------
+
+# When a member adds, reschedules, or removes a card, the family members who
+# can see it hear about it once — ONE push per action, never one per
+# occurrence of a repeating card.
+
+_SCHEDULE_FIELDS = (
+    "date_for",
+    "time_of_day",
+    "end_time",
+    "all_day",
+    "repeat_type",
+    "repeat_days",
+    "repeat_interval",
+    "repeat_month_day",
+)
+
+
+def _schedule_text(item: Item) -> str:
+    if item.repeat_type is not None:
+        base = "Repeats " + ("weekly" if item.repeat_type == RepeatType.weekly else "monthly")
+    elif item.date_for is not None:
+        base = item.date_for.strftime("%a %b %-d")
+    else:
+        base = "Anytime"
+    if item.all_day:
+        return f"{base} · all day"
+    if item.time_of_day is not None:
+        clock = item.time_of_day.strftime("%-I:%M %p")
+        if item.end_time is not None:
+            clock += " – " + item.end_time.strftime("%-I:%M %p")
+        return f"{base} · {clock}"
+    return base
+
+
+def _board_change_recipients(db: Session, item: Item, actor: User) -> list[int]:
+    """Adults who can see the card, minus whoever made the change."""
+    from app.push import _recipients, enabled
+
+    if not enabled():
+        return []
+    return [
+        p.id for p in _recipients(db, item) if not p.is_minor and p.id != actor.id
+    ]
+
+
+def _push_board_change(
+    db: Session, recipient_ids: list[int], actor: User, verb: str, title: str, body: str
+) -> None:
+    if not recipient_ids:
+        return
+    try:
+        first = actor.display_name.split()[0]
+        payload = {
+            "title": f"{first} {verb}: {title}",
+            "body": body,
+            "tag": f"board-change-{title[:40]}",
+            "url": "/",
+        }
+        for uid in recipient_ids:
+            push.send_to_user(db, uid, payload)
+    except Exception:
+        log.exception("board-change push failed (the change itself is saved)")
 
 
 def _notify_parents_of_pending(db: Session, item: Item, kid: User, date_for: dt.date) -> None:

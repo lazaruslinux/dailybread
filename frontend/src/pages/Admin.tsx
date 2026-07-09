@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { Copy, Home, KeyRound, Pencil, Plus, ShieldCheck, Trash2, X } from 'lucide-react'
+import { Copy, Home, KeyRound, ListTree, Pencil, Plus, ShieldCheck, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
@@ -557,6 +557,86 @@ function InviteHouseholdSheet({ onClose }: { onClose: () => void }) {
   )
 }
 
+// ---- the server overview ---------------------------------------------------------
+
+// Server admin only: every village, family, and member on the install, as an
+// indented tree. Read-only by design — management still happens per family.
+function ServerOverview() {
+  const [tree, setTree] = useState<api.Overview | null>(null)
+  const [open, setOpen] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function toggle() {
+    const next = !open
+    setOpen(next)
+    if (next && tree === null) {
+      try {
+        setTree(await api.getOverview())
+      } catch (err) {
+        setError(err instanceof api.ApiError ? err.message : 'Could not load the overview.')
+      }
+    }
+  }
+
+  const userRow = (u: api.OverviewUser) => (
+    <p key={u.id} className="flex items-center gap-2 pl-8 text-sm text-fg/70">
+      <span className="font-semibold text-fg/85">{u.display_name}</span>
+      <span className="text-xs text-fg/45">@{u.username}</span>
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-fg/40">
+        {u.is_owner ? 'server admin' : u.is_admin ? `${ROLE_LABEL[u.role]} · admin` : ROLE_LABEL[u.role]}
+      </span>
+    </p>
+  )
+
+  const familyBlock = (f: api.OverviewFamily) => (
+    <div key={f.id} className="flex flex-col gap-1">
+      <p className="pl-4 text-sm font-semibold text-fg/80">{f.name}</p>
+      {f.users.map(userRow)}
+    </div>
+  )
+
+  return (
+    <div className="mt-3">
+      <button
+        onClick={toggle}
+        className="glass flex w-full items-center gap-3 p-4 text-left font-semibold text-fg/80 transition-colors hover:text-fg"
+      >
+        <ListTree className="h-4 w-4 text-accent-bright" /> Server overview
+      </button>
+      {open && (
+        <div className="glass mt-2 flex flex-col gap-3 p-4">
+          <FormError message={error} />
+          {tree === null && !error && <p className="text-sm text-fg/40">Loading</p>}
+          {tree?.villages.map((v) => (
+            <div key={v.id} className="flex flex-col gap-1.5">
+              <p className="text-xs font-semibold uppercase tracking-widest text-accent-bright">
+                Village · {v.name}
+              </p>
+              {v.families.map(familyBlock)}
+            </div>
+          ))}
+          {tree && tree.solo_families.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <p className="text-xs font-semibold uppercase tracking-widest text-fg/40">
+                Not in a village
+              </p>
+              {tree.solo_families.map(familyBlock)}
+            </div>
+          )}
+          {tree && tree.homeless_users.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <p className="text-xs font-semibold uppercase tracking-widest text-fg/40">
+                Still setting up
+              </p>
+              {tree.homeless_users.map(userRow)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ---- rename the family ---------------------------------------------------------
 
 function RenameFamilySheet({
@@ -697,6 +777,7 @@ export function Admin() {
           >
             <Home className="h-4 w-4 text-accent-bright" /> Invite to dailybread
           </button>
+          <ServerOverview />
         </div>
       )}
 

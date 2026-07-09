@@ -4,8 +4,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import {
   ApiError,
+  avatarUrl,
   checkVillageCode,
   createVillage,
+  deleteVillage,
   joinVillage,
   leaveVillage,
   listVillages,
@@ -254,6 +256,8 @@ export function VillagesCard() {
     expiresAt: string | null
   } | null>(null)
   const [armedLeave, setArmedLeave] = useState<number | null>(null)
+  const [deleting, setDeleting] = useState<Village | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
 
   const refresh = useCallback(() => {
     listVillages()
@@ -330,13 +334,21 @@ export function VillagesCard() {
                   <div className="flex flex-wrap gap-3">
                     {f.parents.map((p) => (
                       <span key={p.id} className="flex w-12 flex-col items-center gap-1">
-                        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-accent-bright/60 to-accent-strong/60 text-xs font-bold text-fg">
-                          {p.display_name
-                            .split(/\s+/)
-                            .slice(0, 2)
-                            .map((w) => w[0]?.toUpperCase() ?? '')
-                            .join('')}
-                        </span>
+                        {p.avatar_updated_at ? (
+                          <img
+                            src={avatarUrl(p) ?? undefined}
+                            alt=""
+                            className="h-9 w-9 rounded-full border border-fg/10 object-cover"
+                          />
+                        ) : (
+                          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-accent-bright/60 to-accent-strong/60 text-xs font-bold text-fg">
+                            {p.display_name
+                              .split(/\s+/)
+                              .slice(0, 2)
+                              .map((w) => w[0]?.toUpperCase() ?? '')
+                              .join('')}
+                          </span>
+                        )}
                         <span className="w-full truncate text-center text-[10px] text-fg/55">
                           {p.display_name.split(/\s+/)[0]}
                         </span>
@@ -359,13 +371,23 @@ export function VillagesCard() {
                   >
                     New invite code
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => leave(v)}
-                    className={`font-semibold ${armedLeave === v.id ? 'text-danger' : 'text-fg/45'} hover:underline`}
-                  >
-                    {armedLeave === v.id ? 'Really leave?' : 'Leave'}
-                  </button>
+                  {v.is_creator ? (
+                    <button
+                      type="button"
+                      onClick={() => setDeleting(v)}
+                      className="font-semibold text-fg/45 hover:underline"
+                    >
+                      Delete village
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => leave(v)}
+                      className={`font-semibold ${armedLeave === v.id ? 'text-danger' : 'text-fg/45'} hover:underline`}
+                    >
+                      {armedLeave === v.id ? 'Really leave?' : 'Leave'}
+                    </button>
+                  )}
                 </span>
               </div>
             )}
@@ -405,6 +427,46 @@ export function VillagesCard() {
               refresh()
             }}
           />
+        )}
+        {deleting && (
+          <Sheet onClose={() => setDeleting(null)}>
+            <h3 className="mb-1 text-lg font-bold">Delete {deleting.name}?</h3>
+            <p className="mb-4 text-sm text-fg/60">
+              Are you sure you wish to delete this village? Every family is removed from it and
+              any shared recipes disappear from their kitchens. Nobody's own data is touched.
+              This can't be undone.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                className="flex-1"
+                onClick={() => setDeleting(null)}
+              >
+                Keep it
+              </Button>
+              <Button
+                type="button"
+                variant="danger"
+                className="flex-1"
+                disabled={deleteBusy}
+                onClick={async () => {
+                  setDeleteBusy(true)
+                  try {
+                    await deleteVillage(deleting.id)
+                    setDeleting(null)
+                    refresh()
+                  } catch (err) {
+                    setError(err instanceof ApiError ? err.message : 'Something went wrong')
+                    setDeleting(null)
+                  }
+                  setDeleteBusy(false)
+                }}
+              >
+                {deleteBusy ? 'Deleting…' : 'Delete'}
+              </Button>
+            </div>
+          </Sheet>
         )}
         {reveal && (
           <CodeSheet

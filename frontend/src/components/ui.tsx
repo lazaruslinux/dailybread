@@ -15,6 +15,9 @@ interface FieldProps extends InputHTMLAttributes<HTMLInputElement> {
 export function Field({ label, id, onClear, ...rest }: FieldProps) {
   const inputId = id ?? `field-${label.toLowerCase().replace(/\s+/g, '-')}`
   const clearable = onClear && Boolean(rest.value)
+  // Time pickers across the whole app move in 5-minute steps (nobody
+  // schedules dinner for 6:03); an explicit step prop still wins.
+  if (rest.type === 'time' && rest.step === undefined) rest = { ...rest, step: 300 }
   return (
     // min-w-0 lets the field shrink inside grid/flex rows; without it the
     // browser holds the input at its intrinsic width and it overflows.

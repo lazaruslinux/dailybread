@@ -113,6 +113,7 @@ def test_reminds_assignees_before_a_timed_card(
     )
     assert res.status_code == 201, res.text
 
+    outbox.clear()  # setup's board-change push isn't under test here
     assert push_engine.reminder_tick(_now_at(14, 0)) == 1
     assert outbox == [SUB["endpoint"]]
     # Same window again: the log stops a duplicate.
@@ -149,6 +150,7 @@ def test_a_completed_card_is_not_reminded(owner, configured, outbox, engine_db):
     )
     item_id = res.json()["id"]
     owner.post(f"/items/{item_id}/complete?date={dt.date.today().isoformat()}")
+    outbox.clear()  # setup's board-change pushes aren't under test here
     assert push_engine.reminder_tick(_now_at(14, 0)) == 0
 
 
@@ -172,6 +174,7 @@ def test_routines_skip_participants_who_already_did_theirs(
     item_id = res.json()["id"]
     parent.post(f"/items/{item_id}/complete?date={dt.date.today().isoformat()}")
 
+    outbox.clear()  # setup's board-change pushes aren't under test here
     assert push_engine.reminder_tick(_now_at(14, 0)) == 1
     assert outbox == [SUB["endpoint"]]  # the owner's device, not the kid's
 
@@ -193,6 +196,7 @@ def test_family_visible_unassigned_cards_notify_the_household(
         },
     )
     assert res.status_code == 201, res.text
+    outbox.clear()  # setup's board-change pushes aren't under test here
     assert push_engine.reminder_tick(_now_at(14, 0)) == 2
     assert sorted(outbox) == [SUB["endpoint"], SUB2["endpoint"]]
 
@@ -236,11 +240,13 @@ def test_repeating_appointment_reminds_only_on_its_day(
         },
     )
     assert res.status_code == 201, res.text
+    outbox.clear()  # setup's board-change pushes aren't under test here
     # Not scheduled today: silence (this used to fire daily for anything
     # with a repeat before repeating appointments existed).
     assert push_engine.reminder_tick(_now_at(14, 0)) == 0
 
     owner.patch(f"/items/{res.json()['id']}", json={"repeat": {"type": "weekly", "days": [today_wd]}})
+    outbox.clear()  # the reschedule itself notifies; drain that too
     assert push_engine.reminder_tick(_now_at(14, 0)) == 1
     assert outbox == [SUB["endpoint"]]
 
@@ -264,3 +270,56 @@ def test_repeating_appointment_checked_today_stays_quiet(
     assert res.status_code == 201, res.text
     parent.post(f"/items/{res.json()['id']}/complete?date={dt.date.today().isoformat()}")
     assert push_engine.reminder_tick(_now_at(14, 0)) == 0
+
+
+# ---- board-change notifications --------------------------------------------------
+
+
+def test_adding_a_card_notifies_once(owner, parent, child, configured, outbox, engine_db):
+    parent.put("/push/subscription", json=SUB)
+    child.put("/push/subscription", json=SUB2)
+    res = owner.post(
+        "/items",
+        json={
+            "kind": "routine",
+            "title": "Morning run",
+            "visibility": "family",
+            "repeat": {"type": "weekly", "days": [0, 1, 2, 3, 4, 5, 6]},
+        },
+    )
+    assert res.status_code == 201, res.text
+    # ONE push per action for a family-visible card: the other adult's device.
+    # Never one per occurrence, never the actor, never a kid.
+    assert outbox == [SUB["endpoint"]]
+
+
+def test_only_schedule_changes_notify(owner, parent, configured, outbox, engine_db):
+    parent.put("/push/subscription", json=SUB)
+    res = owner.post(
+        "/items",
+        json={"kind": "appointment", "title": "Dentist", "visibility": "family",
+              "date_for": dt.date.today().isoformat(),
+              "time_of_day": "14:00:00", "end_time": "15:00:00"},
+    )
+    item_id = res.json()["id"]
+    outbox.clear()
+
+    # A title tweak is quiet; moving the time speaks.
+    owner.patch(f"/items/{item_id}", json={"title": "Dentist (Dr. Lee)"})
+    assert outbox == []
+    owner.patch(f"/items/{item_id}", json={"time_of_day": "15:00:00", "end_time": "16:00:00"})
+    assert outbox == [SUB["endpoint"]]
+    outbox.clear()
+
+    owner.delete(f"/items/{item_id}")
+    assert outbox == [SUB["endpoint"]]
+
+
+def test_private_card_changes_stay_private(owner, parent, configured, outbox, engine_db):
+    parent.put("/push/subscription", json=SUB)
+    res = owner.post(
+        "/items",
+        json={"kind": "task", "title": "Buy her gift"},  # private to the owner
+    )
+    assert res.status_code == 201
+    assert outbox == []  # the other parent can't see it, so they don't hear about it

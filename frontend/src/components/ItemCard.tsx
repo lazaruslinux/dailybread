@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { Activity, CalendarClock, Check, Circle, Flame, Hourglass, Pencil, Repeat, type LucideIcon } from 'lucide-react'
+import { Activity, CalendarClock, Check, Circle, Flame, Hourglass, Pencil, Repeat, type LucideIcon , X } from 'lucide-react'
 import { avatarUrl, type FamilyMember, type FeedItem, type ItemKind } from '../lib/api'
 import { formatTimeRange } from '../lib/moods'
 import { Avatar } from './Avatar'
@@ -120,7 +120,7 @@ export function ItemCard({
     <motion.div
       layout
       initial={{ opacity: 0, y: 16, scale: 0.98 }}
-      animate={{ opacity: item.completed ? 0.55 : 1, y: 0, scale: 1 }}
+      animate={{ opacity: item.completed || item.cancelled ? 0.55 : 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, scale: 0.96 }}
       transition={{ delay: index * 0.05, type: 'spring', stiffness: 300, damping: 26 }}
       whileTap={{ scale: 0.97 }}
@@ -156,6 +156,9 @@ export function ItemCard({
             }`}
           >
             {item.completed && <Check className="h-4 w-4 text-emerald-300" strokeWidth={3} />}
+            {!item.completed && item.cancelled && (
+              <X className="h-4 w-4 text-gold" strokeWidth={3} />
+            )}
             {!item.completed && myPending && (
               <Hourglass className="h-3.5 w-3.5 text-amber-300" strokeWidth={2.5} />
             )}

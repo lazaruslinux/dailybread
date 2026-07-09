@@ -860,6 +860,16 @@ export function Home({
             onToggleFor={(userId, done) => toggleFor(detail.item, userId, done)}
             onEdit={isParent ? () => openEditor(detail.item) : undefined}
             onDelete={isParent ? () => deleteFromDetail(detail.item) : undefined}
+            onCancel={
+              isParent && (detail.item.kind === 'appointment' || detail.item.kind === 'activity')
+                ? async () => {
+                    const call = detail.item.cancelled ? api.uncancelItem : api.cancelItem
+                    await call(detail.item.id, api.localDate())
+                    setDetail(null)
+                    refresh()
+                  }
+                : undefined
+            }
             onClose={() => setDetail(null)}
           />
         )}
