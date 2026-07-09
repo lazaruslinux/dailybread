@@ -857,6 +857,45 @@ class ProfileUpdateIn(BaseModel):
     bio: str | None = Field(default=None, max_length=500)
 
 
+# ---- villages -------------------------------------------------------------------
+
+
+class VillageIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+class VillageJoinIn(BaseModel):
+    code: str = Field(min_length=1, max_length=20)
+
+
+class VillageFamilyOut(BaseModel):
+    id: int
+    name: str
+    joined_at: dt.datetime
+
+
+class VillageOut(BaseModel):
+    """A village as its members see it. Carries invite STATUS only — the code
+    itself is stored as a hash and can never be read back, only regenerated
+    (it appears exactly once, in the response that minted it)."""
+
+    id: int
+    name: str
+    created_at: dt.datetime
+    families: list[VillageFamilyOut]
+    invite_active: bool
+    invite_expires_at: dt.datetime | None
+
+
+class VillageCreatedOut(VillageOut):
+    invite_code: str
+
+
+class VillageInviteOut(BaseModel):
+    invite_code: str
+    invite_expires_at: dt.datetime
+
+
 # ---- web push -----------------------------------------------------------------
 
 

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { JournalCard } from '../components/JournalCard'
 import { NotificationsCard } from '../components/Notifications'
+import { VillagesCard } from '../components/Villages'
 import { getTheme, setTheme, THEMES, type Theme } from '../lib/theme'
 import { ChangePasswordSheet } from './Password'
 import { Profile } from './Profile'
@@ -66,6 +67,8 @@ export function You({ onOpenAdmin }: { onOpenAdmin: () => void }) {
       <ThemePicker userId={user.id} />
 
       <NotificationsCard />
+
+      <VillagesCard />
 
       <div className="flex flex-col gap-2">
         <button

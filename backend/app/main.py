@@ -20,6 +20,7 @@ from app.routers import (
     push,
     recipes,
     users,
+    villages,
 )
 
 # Schema management moved to Alembic: the container entrypoint runs
@@ -73,6 +74,7 @@ app.include_router(meals.router)
 app.include_router(push.router)
 app.include_router(recipes.router)
 app.include_router(users.router)
+app.include_router(villages.router)
 
 
 @app.get("/")

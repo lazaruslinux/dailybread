@@ -906,3 +906,45 @@ export const unsubscribePush = (endpoint: string) =>
   })
 
 export const sendTestPush = () => request<{ sent: number }>('/push/test', { method: 'POST' })
+
+// ---- villages ---------------------------------------------------------------
+// Private circles of linked families. Nothing is discoverable; the invite code
+// is shown exactly once when minted and can only be regenerated, never re-read.
+
+export interface VillageFamily {
+  id: number
+  name: string
+  joined_at: string
+}
+
+export interface Village {
+  id: number
+  name: string
+  created_at: string
+  families: VillageFamily[]
+  invite_active: boolean
+  invite_expires_at: string | null
+}
+
+export interface VillageCreated extends Village {
+  invite_code: string
+}
+
+export interface VillageInvite {
+  invite_code: string
+  invite_expires_at: string
+}
+
+export const listVillages = () => request<Village[]>('/villages')
+
+export const createVillage = (name: string) =>
+  request<VillageCreated>('/villages', { method: 'POST', body: JSON.stringify({ name }) })
+
+export const joinVillage = (code: string) =>
+  request<Village>('/villages/join', { method: 'POST', body: JSON.stringify({ code }) })
+
+export const regenerateInvite = (villageId: number) =>
+  request<VillageInvite>(`/villages/${villageId}/invite`, { method: 'POST' })
+
+export const leaveVillage = (villageId: number) =>
+  request<void>(`/villages/${villageId}/membership`, { method: 'DELETE' })

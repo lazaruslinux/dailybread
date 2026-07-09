@@ -43,6 +43,72 @@ class Family(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class Village(Base):
+    """A named circle of linked families — the one deliberate, narrow opening
+    in the family wall. Membership is invitation-only: there is no directory,
+    no search, and a village you don't belong to 404s like it doesn't exist.
+    What crosses the wall is tiny and explicit (a shared recipe shelf and
+    opt-in mood/status); boards, kitchens, and calendars never do.
+
+    The invite code is stored only as a SHA-256 hash: a database read never
+    exposes a live door key, so the plaintext exists exactly once, in the
+    response that minted it. One active code per village; a join consumes it."""
+
+    __tablename__ = "villages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    invite_code_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    invite_expires_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class VillageFamily(Base):
+    """One family's membership in one village. A family may belong to several
+    villages; each pairing exists at most once."""
+
+    __tablename__ = "village_families"
+    __table_args__ = (
+        UniqueConstraint("village_id", "family_id", name="uq_village_family"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    village_id: Mapped[int] = mapped_column(
+        ForeignKey("villages.id", ondelete="CASCADE"), index=True
+    )
+    family_id: Mapped[int] = mapped_column(
+        ForeignKey("families.id", ondelete="CASCADE"), index=True
+    )
+    joined_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class VillageRecipe(Base):
+    """One recipe shared onto one village's shelf. The row is a pointer, not a
+    copy: the owning family's recipe stays theirs, and "save a copy" (not this
+    table) is what puts an independent snapshot in another family's kitchen.
+
+    family_id is the owner denormalized at share time (a recipe never changes
+    families), buying attribution without a join and a one-query cleanup of a
+    family's shares when it leaves the village."""
+
+    __tablename__ = "village_recipes"
+    __table_args__ = (
+        UniqueConstraint("village_id", "recipe_id", name="uq_village_recipe"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    village_id: Mapped[int] = mapped_column(
+        ForeignKey("villages.id", ondelete="CASCADE"), index=True
+    )
+    recipe_id: Mapped[int] = mapped_column(
+        ForeignKey("recipes.id", ondelete="CASCADE"), index=True
+    )
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -92,6 +158,12 @@ class User(Base):
     # Admin-set, drives kid mode (see is_minor). Deliberately independent from
     # health_profiles.birthdate, which is a self-reported BMR input.
     birthdate: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    # Cross-family presence: has this member elected to share their mood and
+    # daily status with the family's villages? Off by default. Minors are
+    # excluded from village presence server-side regardless of this flag.
+    village_presence: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     @property
@@ -320,6 +392,13 @@ class Recipe(Base):
         cascade="all, delete-orphan",
         order_by="RecipeIngredient.position",
         back_populates="recipe",
+    )
+
+    # Shelf entries in any villages this recipe is shared to. Deleting the
+    # recipe unshares it everywhere (saved copies are independent rows and
+    # survive; see routers/villages.py).
+    village_shares: Mapped[list["VillageRecipe"]] = relationship(
+        cascade="all, delete-orphan"
     )
 
 
