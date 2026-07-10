@@ -198,6 +198,64 @@ def test_fitness_data_is_self_only(owner, parent):
     assert body["connected"] is False
 
 
+# ---- goals + history --------------------------------------------------------------
+
+
+def test_goals_start_on_the_recommended_defaults(owner):
+    body = owner.get("/me/fitness").json()
+    assert body["goals"] == {"steps": 10000, "active_kcal": 500, "exercise_minutes": 30}
+
+
+def test_a_member_can_tune_and_reset_their_own_goals(owner):
+    res = owner.patch("/me/fitness/goals", json={"steps": 4000})
+    assert res.status_code == 200, res.text
+    assert res.json() == {"steps": 4000, "active_kcal": 500, "exercise_minutes": 30}
+    # a later partial change leaves the tuned field alone
+    res = owner.patch("/me/fitness/goals", json={"exercise_minutes": 10})
+    assert res.json() == {"steps": 4000, "active_kcal": 500, "exercise_minutes": 10}
+    # an explicit null puts one goal back on the default, nothing else moves
+    res = owner.patch("/me/fitness/goals", json={"steps": None})
+    assert res.json() == {"steps": 10000, "active_kcal": 500, "exercise_minutes": 10}
+
+
+def test_goals_are_per_member(owner, parent):
+    owner.patch("/me/fitness/goals", json={"steps": 4000})
+    assert parent.get("/me/fitness").json()["goals"]["steps"] == 10000
+
+
+def test_nonsense_goals_are_refused(owner):
+    assert owner.patch("/me/fitness/goals", json={"steps": 10}).status_code == 422
+    assert owner.patch("/me/fitness/goals", json={"active_kcal": 999999}).status_code == 422
+    assert owner.patch("/me/fitness/goals", json={"exercise_minutes": 0}).status_code == 422
+    # none of that stuck
+    assert owner.get("/me/fitness").json()["goals"]["steps"] == 10000
+
+
+def test_minors_cannot_touch_goals_or_history(child):
+    assert child.patch("/me/fitness/goals", json={"steps": 4000}).status_code == 403
+    assert child.get("/me/fitness/history").status_code == 403
+
+
+def test_history_serves_the_trailing_thirty_days(owner):
+    token = _mint(owner)
+    _send(owner, token, _payload())
+    _send(owner, token, _payload(YESTERDAY))
+
+    days = owner.get("/me/fitness/history", params={"date": TODAY.isoformat()}).json()["days"]
+    assert len(days) == 30
+    assert days[0]["date_for"] == (TODAY - dt.timedelta(days=29)).isoformat()
+    assert days[-1]["date_for"] == TODAY.isoformat()
+    assert days[-1]["steps"] == 8000 and days[-2]["steps"] == 8000
+    assert days[0]["steps"] is None  # empty days come back honest, not zero
+
+
+def test_history_is_self_only_too(owner, parent):
+    token = _mint(owner)
+    _send(owner, token, _payload())
+    days = parent.get("/me/fitness/history").json()["days"]
+    assert all(d["steps"] is None for d in days)
+
+
 def test_malformed_payloads_are_survived(owner):
     token = _mint(owner)
     res = _send(

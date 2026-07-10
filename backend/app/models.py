@@ -204,6 +204,12 @@ class User(Base):
     village_presence: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    # Personal daily targets behind the Fitness rings. NULL = the app-wide
+    # recommended default (routers.fitness.DEFAULT_GOALS), so a fresh account
+    # starts on the standard public-health numbers without storing them.
+    goal_steps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    goal_active_kcal: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    goal_exercise_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     @property

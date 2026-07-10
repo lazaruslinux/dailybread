@@ -411,12 +411,19 @@ export interface FitnessWeekDay {
   resting_hr: number | null
 }
 
+export interface FitnessGoals {
+  steps: number
+  active_kcal: number
+  exercise_minutes: number
+}
+
 export interface Fitness {
   connected: boolean
   last_sync: string | null
   today: FitnessDay
   week: FitnessWeekDay[]
   workouts: Workout[]
+  goals: FitnessGoals
 }
 
 export interface IngestToken {
@@ -434,6 +441,14 @@ export const mintIngestToken = () =>
 
 export const revokeIngestToken = () =>
   request<void>('/me/fitness/token', { method: 'DELETE' })
+
+// The trailing 30 days for the per-metric detail views.
+export const getFitnessHistory = (date: string) =>
+  request<{ days: FitnessWeekDay[] }>(`/me/fitness/history?date=${date}`)
+
+// Partial update; an explicit null puts that goal back on the default.
+export const updateFitnessGoals = (goals: Partial<Record<keyof FitnessGoals, number | null>>) =>
+  request<FitnessGoals>('/me/fitness/goals', { method: 'PATCH', body: JSON.stringify(goals) })
 
 // ---- items and the home feed --------------------------------------------------
 

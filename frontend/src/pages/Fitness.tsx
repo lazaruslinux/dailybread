@@ -1,9 +1,19 @@
 import { AnimatePresence } from 'framer-motion'
-import { Check, Copy, Flame, Footprints, HeartPulse, Link2, Timer, Unplug } from 'lucide-react'
+import {
+  Check,
+  ChevronRight,
+  Copy,
+  Flame,
+  Footprints,
+  HeartPulse,
+  Link2,
+  Timer,
+  Unplug,
+} from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import * as api from '../lib/api'
 import { Sheet } from '../components/Recipes'
-import { Button, FormError } from '../components/ui'
+import { Button, Field, FormError } from '../components/ui'
 
 // The Fitness tab: imported Apple Health numbers, self-only like the diary.
 // Nothing here is visible to other family members or villages, ever.
@@ -14,9 +24,65 @@ import { Button, FormError } from '../components/ui'
 // trademark concentric trio, our validated metric palette rather than
 // red/green/cyan, our labels, our glass. Familiar shape, our identity.
 
-// Daily goals behind the rings. Family defaults for now; per-member goals
-// can become a setting once real use says which ones people want to tune.
-const GOALS = { steps: 10000, active_kcal: 500, exercise_minutes: 30 }
+// Everything the tab knows about one metric, in one place: the cards, the
+// rings, and the detail sheets all read from this. goalKey marks the metrics
+// with a tunable daily target (resting HR has none — lower is its own story).
+type MetricDef = {
+  key: 'steps' | 'active_kcal' | 'exercise_minutes' | 'resting_hr'
+  label: string
+  title: string
+  icon: typeof Footprints
+  colorVar: string
+  unit?: string
+  goalKey?: keyof api.FitnessGoals
+  bestWord: string
+  bestPick: 'max' | 'min'
+}
+
+const METRICS: MetricDef[] = [
+  {
+    key: 'steps',
+    label: 'Step count',
+    title: 'Steps',
+    icon: Footprints,
+    colorVar: '--fit-steps',
+    goalKey: 'steps',
+    bestWord: 'Best day',
+    bestPick: 'max',
+  },
+  {
+    key: 'active_kcal',
+    label: 'Active energy',
+    title: 'Active energy',
+    icon: Flame,
+    colorVar: '--fit-active',
+    unit: 'kcal',
+    goalKey: 'active_kcal',
+    bestWord: 'Best day',
+    bestPick: 'max',
+  },
+  {
+    key: 'exercise_minutes',
+    label: 'Exercise',
+    title: 'Exercise minutes',
+    icon: Timer,
+    colorVar: '--fit-exercise',
+    unit: 'min',
+    goalKey: 'exercise_minutes',
+    bestWord: 'Best day',
+    bestPick: 'max',
+  },
+  {
+    key: 'resting_hr',
+    label: 'Resting HR',
+    title: 'Resting heart rate',
+    icon: HeartPulse,
+    colorVar: '--fit-hr',
+    unit: 'bpm',
+    bestWord: 'Lowest',
+    bestPick: 'min',
+  },
+]
 
 const DAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] // Date.getDay(), Monday-shifted
 
@@ -35,6 +101,21 @@ function fmtWhen(iso: string): string {
 function fmtMiles(meters: number | null): string | null {
   if (meters === null) return null
   return `${(meters / 1609.344).toFixed(1)} mi`
+}
+
+function fmtShortDate(iso: string): string {
+  return new Date(iso + 'T00:00:00').toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+function fmtReadoutDate(iso: string): string {
+  return new Date(iso + 'T00:00:00').toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  })
 }
 
 // ---- connect flow ---------------------------------------------------------------
@@ -249,24 +330,20 @@ function MiniBars({
 }
 
 function MetricCard({
-  icon: Icon,
-  label,
-  colorVar,
+  def,
   value,
-  unit,
   week,
-  pick,
+  onOpen,
 }: {
-  icon: typeof Footprints
-  label: string
-  colorVar: string
+  def: MetricDef
   value: number | null
-  unit?: string
   week: api.FitnessWeekDay[]
-  pick: (d: api.FitnessWeekDay) => number | null
+  onOpen: () => void
 }) {
+  const { icon: Icon, label, colorVar, unit } = def
   return (
-    <div className="glass p-4">
+    <button type="button" onClick={onOpen} className="glass relative p-4 text-left">
+      <ChevronRight className="absolute right-3 top-4 h-4 w-4 text-fg/30" />
       <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
         <Icon className="h-3.5 w-3.5" style={{ color: `var(${colorVar})` }} /> {label}
       </span>
@@ -275,8 +352,282 @@ function MetricCard({
         {fmtNumber(value)}
         {unit && <span className="ml-1 text-sm font-semibold">{unit}</span>}
       </p>
-      <MiniBars week={week} pick={pick} colorVar={colorVar} unit={unit ?? label.toLowerCase()} />
+      <MiniBars
+        week={week}
+        pick={(d) => d[def.key]}
+        colorVar={colorVar}
+        unit={unit ?? label.toLowerCase()}
+      />
+    </button>
+  )
+}
+
+// ---- per-metric detail ------------------------------------------------------------
+
+// The last 30 days as tappable bars. Tap a day and the readout above the
+// chart names it; the dashed line marks the daily goal where one exists.
+function HistoryBars({
+  days,
+  def,
+  goal,
+  selected,
+  onSelect,
+}: {
+  days: api.FitnessWeekDay[]
+  def: MetricDef
+  goal?: number
+  selected: string | null
+  onSelect: (date: string) => void
+}) {
+  const HEIGHT = 112
+  const values = days.map((d) => d[def.key])
+  const max = Math.max(...values.map((v) => v ?? 0), goal ?? 0, 1)
+  const goalY = goal ? Math.round((goal / max) * HEIGHT) : null
+  return (
+    <div>
+      <div className="relative" style={{ height: HEIGHT }}>
+        {goalY !== null && (
+          <div
+            className="pointer-events-none absolute inset-x-0 border-t border-dashed border-fg/25"
+            style={{ bottom: goalY }}
+          >
+            <span className="absolute right-0 -top-4 text-[9px] font-semibold uppercase tracking-wide text-fg/40">
+              goal
+            </span>
+          </div>
+        )}
+        <div className="flex h-full items-end gap-[2px]">
+          {days.map((day, i) => {
+            const v = values[i]
+            const h = v ? Math.max(5, Math.round((v / max) * HEIGHT)) : 3
+            const isSelected = selected === day.date_for
+            return (
+              <button
+                key={day.date_for}
+                type="button"
+                onClick={() => onSelect(day.date_for)}
+                aria-label={fmtReadoutDate(day.date_for)}
+                className="flex h-full flex-1 items-end"
+              >
+                <div
+                  className="w-full rounded-t-[3px]"
+                  style={{
+                    height: h,
+                    background: v
+                      ? `var(${def.colorVar})`
+                      : 'color-mix(in srgb, var(--fg) 10%, transparent)',
+                    opacity: !v || selected === null || isSelected ? 1 : 0.45,
+                  }}
+                />
+              </button>
+            )
+          })}
+        </div>
+      </div>
+      <div className="mt-1 flex justify-between text-[10px] font-semibold text-fg/35">
+        <span>{fmtShortDate(days[0].date_for)}</span>
+        <span>Today</span>
+      </div>
     </div>
+  )
+}
+
+function DetailStat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-fg/45">{label}</p>
+      <p className="truncate text-sm font-bold text-fg/90">{value}</p>
+      {sub && <p className="text-[11px] text-fg/50">{sub}</p>}
+    </div>
+  )
+}
+
+// "Daily goal · 10,000 · Change" with an inline editor. Saving a number sets
+// this member's own target; the reset link goes back to the recommended one.
+function GoalEditor({
+  def,
+  goal,
+  onGoals,
+}: {
+  def: MetricDef
+  goal: number
+  onGoals: (goals: api.FitnessGoals) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function save(value: number | null) {
+    if (!def.goalKey) return
+    setBusy(true)
+    setError(null)
+    try {
+      onGoals(await api.updateFitnessGoals({ [def.goalKey]: value }))
+      setEditing(false)
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Something went wrong')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function submit() {
+    const n = Number(draft)
+    if (!draft.trim() || !Number.isFinite(n) || n <= 0) {
+      setError('Enter a number.')
+      return
+    }
+    void save(Math.round(n))
+  }
+
+  if (!editing) {
+    return (
+      <div className="flex items-center justify-between rounded-xl bg-fg/5 px-4 py-3">
+        <p className="text-sm text-fg/70">
+          Daily goal{' '}
+          <span className="font-bold text-fg/90">
+            {goal.toLocaleString()}
+            {def.unit ? ` ${def.unit}` : ''}
+          </span>
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setDraft(String(goal))
+            setEditing(true)
+          }}
+          className="text-sm font-semibold text-accent-bright hover:underline"
+        >
+          Change
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-xl bg-fg/5 px-4 py-3">
+      <Field
+        label={`Daily goal${def.unit ? ` (${def.unit})` : ''}`}
+        type="number"
+        inputMode="numeric"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+      />
+      <FormError message={error} />
+      <div className="grid grid-cols-2 gap-2">
+        <Button variant="ghost" onClick={() => setEditing(false)} disabled={busy}>
+          Never mind
+        </Button>
+        <Button onClick={submit} disabled={busy}>
+          {busy ? 'Saving…' : 'Save'}
+        </Button>
+      </div>
+      <button
+        type="button"
+        onClick={() => void save(null)}
+        disabled={busy}
+        className="text-xs font-semibold text-fg/45 hover:text-fg/70"
+      >
+        Use the recommended goal
+      </button>
+    </div>
+  )
+}
+
+function MetricDetail({
+  def,
+  today,
+  history,
+  goals,
+  onGoals,
+  onClose,
+}: {
+  def: MetricDef
+  today: number | null
+  history: api.FitnessWeekDay[] | null
+  goals: api.FitnessGoals
+  onGoals: (goals: api.FitnessGoals) => void
+  onClose: () => void
+}) {
+  const [selected, setSelected] = useState<string | null>(null)
+  const goal = def.goalKey ? goals[def.goalKey] : undefined
+
+  const days = history ?? []
+  const withData = days.filter((d) => d[def.key] !== null)
+  const avgOf = (subset: api.FitnessWeekDay[]) =>
+    subset.length
+      ? Math.round(subset.reduce((sum, d) => sum + (d[def.key] ?? 0), 0) / subset.length)
+      : null
+  const avg7 = avgOf(days.slice(-7).filter((d) => d[def.key] !== null))
+  const avg30 = avgOf(withData)
+  const best = withData.length
+    ? withData.reduce((a, b) =>
+        def.bestPick === 'max'
+          ? (b[def.key] ?? 0) > (a[def.key] ?? 0)
+            ? b
+            : a
+          : (b[def.key] ?? Infinity) < (a[def.key] ?? Infinity)
+            ? b
+            : a,
+      )
+    : null
+
+  const selectedDay = history?.find((d) => d.date_for === selected) ?? null
+  const Icon = def.icon
+  const unitSuffix = def.unit ? ` ${def.unit}` : ''
+
+  return (
+    <Sheet onClose={onClose}>
+      <h3 className="mb-1 flex items-center gap-2 text-lg font-bold">
+        <Icon className="h-5 w-5" style={{ color: `var(${def.colorVar})` }} />
+        {def.title}
+      </h3>
+      <p className="text-[11px] text-fg/45">Today</p>
+      <p className="text-3xl font-bold tracking-tight" style={{ color: `var(${def.colorVar})` }}>
+        {fmtNumber(today)}
+        {def.unit && <span className="ml-1 text-base font-semibold">{def.unit}</span>}
+      </p>
+
+      {history === null ? (
+        <p className="mt-6 text-sm text-fg/40">Loading</p>
+      ) : history.length === 0 ? (
+        <p className="mt-6 text-sm text-fg/40">Couldn't load the last 30 days.</p>
+      ) : (
+        <div className="mt-4 flex flex-col gap-4">
+          <div>
+            <p className="mb-2 h-4 text-xs text-fg/55">
+              {selectedDay
+                ? `${fmtReadoutDate(selectedDay.date_for)} · ${
+                    selectedDay[def.key] === null
+                      ? 'no data'
+                      : fmtNumber(selectedDay[def.key]) + unitSuffix
+                  }`
+                : 'Last 30 days · tap a bar'}
+            </p>
+            <HistoryBars
+              days={history}
+              def={def}
+              goal={goal}
+              selected={selected}
+              onSelect={(d) => setSelected(selected === d ? null : d)}
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <DetailStat label="7-day avg" value={avg7 === null ? '–' : fmtNumber(avg7) + unitSuffix} />
+            <DetailStat label="30-day avg" value={avg30 === null ? '–' : fmtNumber(avg30) + unitSuffix} />
+            <DetailStat
+              label={def.bestWord}
+              value={best === null ? '–' : fmtNumber(best[def.key]) + unitSuffix}
+              sub={best === null ? undefined : fmtShortDate(best.date_for)}
+            />
+          </div>
+
+          {goal !== undefined && <GoalEditor def={def} goal={goal} onGoals={onGoals} />}
+        </div>
+      )}
+    </Sheet>
   )
 }
 
@@ -317,6 +668,8 @@ export function Fitness() {
   const [error, setError] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
+  const [detail, setDetail] = useState<MetricDef | null>(null)
+  const [history, setHistory] = useState<api.FitnessWeekDay[] | null>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -325,6 +678,18 @@ export function Fitness() {
       setError(err instanceof api.ApiError ? err.message : 'Could not load fitness data.')
     }
   }, [])
+
+  // The 30-day window is one cheap fetch shared by all four detail views;
+  // grab it the first time any card opens.
+  function openDetail(def: MetricDef) {
+    setDetail(def)
+    if (history === null) {
+      api
+        .getFitnessHistory(api.localDate())
+        .then((h) => setHistory(h.days))
+        .catch(() => setHistory([]))
+    }
+  }
 
   useEffect(() => {
     void refresh()
@@ -374,14 +739,14 @@ export function Fitness() {
                 icon={Footprints}
                 label="Steps"
                 value={data.today.steps}
-                goal={GOALS.steps}
+                goal={data.goals.steps}
               />
               <RingStat
                 colorVar="--fit-active"
                 icon={Flame}
                 label="Active"
                 value={data.today.active_kcal}
-                goal={GOALS.active_kcal}
+                goal={data.goals.active_kcal}
                 unit="kcal"
               />
               <RingStat
@@ -389,48 +754,22 @@ export function Fitness() {
                 icon={Timer}
                 label="Exercise"
                 value={data.today.exercise_minutes}
-                goal={GOALS.exercise_minutes}
+                goal={data.goals.exercise_minutes}
                 unit="min"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-2">
-            <MetricCard
-              icon={Footprints}
-              label="Step count"
-              colorVar="--fit-steps"
-              value={data.today.steps}
-              week={data.week}
-              pick={(d) => d.steps}
-            />
-            <MetricCard
-              icon={Flame}
-              label="Active energy"
-              colorVar="--fit-active"
-              value={data.today.active_kcal}
-              unit="kcal"
-              week={data.week}
-              pick={(d) => d.active_kcal}
-            />
-            <MetricCard
-              icon={Timer}
-              label="Exercise"
-              colorVar="--fit-exercise"
-              value={data.today.exercise_minutes}
-              unit="min"
-              week={data.week}
-              pick={(d) => d.exercise_minutes}
-            />
-            <MetricCard
-              icon={HeartPulse}
-              label="Resting HR"
-              colorVar="--fit-hr"
-              value={data.today.resting_hr}
-              unit="bpm"
-              week={data.week}
-              pick={(d) => d.resting_hr}
-            />
+            {METRICS.map((def) => (
+              <MetricCard
+                key={def.key}
+                def={def}
+                value={data.today[def.key]}
+                week={data.week}
+                onOpen={() => openDetail(def)}
+              />
+            ))}
           </div>
 
           {data.workouts.length > 0 && (
@@ -473,6 +812,16 @@ export function Fitness() {
       )}
 
       <AnimatePresence>
+        {detail && (
+          <MetricDetail
+            def={detail}
+            today={data.today[detail.key]}
+            history={history}
+            goals={data.goals}
+            onGoals={(goals) => setData((d) => (d ? { ...d, goals } : d))}
+            onClose={() => setDetail(null)}
+          />
+        )}
         {connecting && (
           <ConnectSheet
             onClose={() => setConnecting(false)}

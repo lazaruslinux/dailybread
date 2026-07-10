@@ -27,6 +27,9 @@ from app.invitecodes import hash_code
 from app.models import FitnessDaily, IngestToken, User, WeightEntry, Workout
 from app.schemas import (
     FitnessDayOut,
+    FitnessGoalsIn,
+    FitnessGoalsOut,
+    FitnessHistoryOut,
     FitnessOut,
     FitnessWeekDayOut,
     IngestResultOut,
@@ -254,6 +257,43 @@ def ingest_health(
 
 # ---- the Fitness tab -------------------------------------------------------------
 
+# The ring targets a member starts on: the widely recommended daily numbers
+# (10,000 steps and the 150-minutes-a-week guideline's 30 a day). A member's
+# own goal_* column, when set, replaces one of these.
+DEFAULT_GOALS = {"steps": 10000, "active_kcal": 500, "exercise_minutes": 30}
+
+
+def _goals_out(user: User) -> FitnessGoalsOut:
+    return FitnessGoalsOut(
+        steps=user.goal_steps or DEFAULT_GOALS["steps"],
+        active_kcal=user.goal_active_kcal or DEFAULT_GOALS["active_kcal"],
+        exercise_minutes=user.goal_exercise_min or DEFAULT_GOALS["exercise_minutes"],
+    )
+
+
+def _days_out(
+    db: Session, user: User, start: dt.date, end: dt.date
+) -> list[FitnessWeekDayOut]:
+    """Every day in [start, end] with all four metrics; missing days stay
+    None so the charts can show the gap honestly."""
+    rows = db.scalars(
+        select(FitnessDaily).where(
+            FitnessDaily.user_id == user.id,
+            FitnessDaily.date_for.between(start, end),
+        )
+    ).all()
+    by_day_metric = {(r.date_for, r.metric): r.value for r in rows}
+    return [
+        FitnessWeekDayOut(
+            date_for=day,
+            steps=by_day_metric.get((day, "steps")),
+            active_kcal=by_day_metric.get((day, "active_kcal")),
+            exercise_minutes=by_day_metric.get((day, "exercise_minutes")),
+            resting_hr=by_day_metric.get((day, "resting_hr")),
+        )
+        for day in (start + dt.timedelta(days=i) for i in range((end - start).days + 1))
+    ]
+
 
 @router.get("/me/fitness", response_model=FitnessOut)
 def my_fitness(
@@ -265,16 +305,7 @@ def my_fitness(
     week_start = today - dt.timedelta(days=6)
     token = db.get(IngestToken, user.id)
 
-    rows = db.scalars(
-        select(FitnessDaily).where(
-            FitnessDaily.user_id == user.id,
-            FitnessDaily.date_for.between(week_start, today),
-        )
-    ).all()
-    by_day_metric = {(r.date_for, r.metric): r.value for r in rows}
-
-    def metric(day: dt.date, name: str) -> float | None:
-        return by_day_metric.get((day, name))
+    week = _days_out(db, user, week_start, today)
 
     workouts = db.scalars(
         select(Workout)
@@ -283,27 +314,51 @@ def my_fitness(
         .limit(20)
     ).all()
 
+    today_out = week[-1]
     return FitnessOut(
         connected=token is not None,
         last_sync=token.last_used_at if token else None,
         today=FitnessDayOut(
-            steps=metric(today, "steps"),
-            active_kcal=metric(today, "active_kcal"),
-            exercise_minutes=metric(today, "exercise_minutes"),
-            resting_hr=metric(today, "resting_hr"),
+            steps=today_out.steps,
+            active_kcal=today_out.active_kcal,
+            exercise_minutes=today_out.exercise_minutes,
+            resting_hr=today_out.resting_hr,
         ),
-        week=[
-            FitnessWeekDayOut(
-                date_for=day,
-                steps=metric(day, "steps"),
-                active_kcal=metric(day, "active_kcal"),
-                exercise_minutes=metric(day, "exercise_minutes"),
-                resting_hr=metric(day, "resting_hr"),
-            )
-            for day in (week_start + dt.timedelta(days=i) for i in range(7))
-        ],
+        week=week,
         workouts=[WorkoutOut.model_validate(w) for w in workouts],
+        goals=_goals_out(user),
     )
+
+
+@router.get("/me/fitness/history", response_model=FitnessHistoryOut)
+def my_fitness_history(
+    date: dt.date | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_adult),
+):
+    """The trailing 30 days, for the per-metric detail views. The client
+    computes its own averages and bests from the raw days."""
+    today = date or dt.date.today()
+    return FitnessHistoryOut(days=_days_out(db, user, today - dt.timedelta(days=29), today))
+
+
+@router.patch("/me/fitness/goals", response_model=FitnessGoalsOut)
+def update_fitness_goals(
+    payload: FitnessGoalsIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_adult),
+):
+    """Set (or, with an explicit null, reset) any of the member's ring goals.
+    Fields not sent stay as they are."""
+    sent = payload.model_dump(exclude_unset=True)
+    if "steps" in sent:
+        user.goal_steps = sent["steps"]
+    if "active_kcal" in sent:
+        user.goal_active_kcal = sent["active_kcal"]
+    if "exercise_minutes" in sent:
+        user.goal_exercise_min = sent["exercise_minutes"]
+    db.commit()
+    return _goals_out(user)
 
 
 @router.post("/me/fitness/token", response_model=IngestTokenOut)

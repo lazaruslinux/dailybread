@@ -1189,12 +1189,38 @@ class FitnessWeekDayOut(BaseModel):
     resting_hr: float | None
 
 
+class FitnessGoalsOut(BaseModel):
+    """The member's ring targets, already resolved: their own number where
+    they set one, the recommended default where they didn't."""
+
+    steps: int
+    active_kcal: int
+    exercise_minutes: int
+
+
+class FitnessGoalsIn(BaseModel):
+    """Only the fields sent change; an explicit null puts that goal back on
+    the recommended default."""
+
+    steps: int | None = Field(default=None, ge=1000, le=100000)
+    active_kcal: int | None = Field(default=None, ge=50, le=5000)
+    exercise_minutes: int | None = Field(default=None, ge=5, le=1440)
+
+
+class FitnessHistoryOut(BaseModel):
+    """A longer trailing window for the per-metric detail views; same day
+    shape as the week, just more of it."""
+
+    days: list[FitnessWeekDayOut]
+
+
 class FitnessOut(BaseModel):
     connected: bool
     last_sync: dt.datetime | None
     today: FitnessDayOut
     week: list[FitnessWeekDayOut]
     workouts: list[WorkoutOut]
+    goals: FitnessGoalsOut
 
 
 class IngestResultOut(BaseModel):

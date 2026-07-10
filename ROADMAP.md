@@ -131,6 +131,14 @@ Where dailybread is headed, in order. Done items stay for history.
   overriding a deliberate in-app entry, and everything imported is
   self-only: invisible to other members, absent for child accounts.
 
+- **Fitness metric detail views + personal goals** — every metric card
+  opens into its own story: the last 30 days as tappable bars (tap a day,
+  read its number), a goal line, 7- and 30-day averages, and the best day
+  (lowest, for resting heart rate). Each member can tune their own daily
+  targets for steps, active energy, and exercise minutes right in the
+  detail view — the rings follow — or put one back on the recommended
+  default with a tap.
+
 - **Repeating appointments** — an appointment can carry the same weekly or
   monthly schedule a routine does (the standing work meeting), keeping its
   start and end times and its shared check-off, completed per occurrence; a
@@ -181,13 +189,12 @@ Where dailybread is headed, in order. Done items stay for history.
 
 ## Next
 
-1. **Fitness metric detail views** — every card on the Fitness tab opens
-   into a breakdown of its metric: a longer history than the week strip,
-   averages and bests, and whatever granularity the imported data supports.
-2. **Fitness follow-through** — trends (weight chart, longer step history),
-   imported workouts auto-completing matching board routines, and an opt-in
-   for counting watch calories toward the day's energy target. Strava as an
-   optional secondary connector if ever wanted.
+1. **Fitness follow-through** — trends (weight chart), imported workouts
+   auto-completing matching board routines, and an opt-in for counting
+   watch calories toward the day's energy target. Strava as an optional
+   secondary connector if ever wanted. Intraday (hourly) metric detail
+   would need a finer-grained table and a chattier exporter setting —
+   deliberately deferred to keep the sync light.
 
 ## Ongoing polish
 
