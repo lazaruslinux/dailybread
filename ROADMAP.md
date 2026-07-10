@@ -181,7 +181,10 @@ Where dailybread is headed, in order. Done items stay for history.
 
 ## Next
 
-1. **Fitness follow-through** — trends (weight chart, longer step history),
+1. **Fitness metric detail views** — every card on the Fitness tab opens
+   into a breakdown of its metric: a longer history than the week strip,
+   averages and bests, and whatever granularity the imported data supports.
+2. **Fitness follow-through** — trends (weight chart, longer step history),
    imported workouts auto-completing matching board routines, and an opt-in
    for counting watch calories toward the day's energy target. Strava as an
    optional secondary connector if ever wanted.
