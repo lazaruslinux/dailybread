@@ -1,4 +1,4 @@
-import { X } from 'lucide-react'
+import { Flashlight, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -19,6 +19,9 @@ export function BarcodeScanner({
   const videoRef = useRef<HTMLVideoElement>(null)
   const [notice, setNotice] = useState<string | null>('Starting the camera…')
   const [manual, setManual] = useState('')
+  // Torch support is a camera capability (rear cameras on newer phones);
+  // the button only exists when the track reports it.
+  const [torch, setTorch] = useState<{ track: MediaStreamTrack; on: boolean } | null>(null)
   // Set once a code is accepted, so a half-decoded second frame can't fire twice.
   const done = useRef(false)
 
@@ -42,8 +45,11 @@ export function BarcodeScanner({
         return
       }
       try {
+        // Without a resolution ask the browser picks a low default, and a
+        // barcode at arm's length lands on too few pixels to ever decode —
+        // the "have to lean right in" complaint. `ideal` degrades gracefully.
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' },
+          video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
           audio: false,
         })
       } catch {
@@ -65,18 +71,43 @@ export function BarcodeScanner({
       }
       setNotice(null)
 
+      const track = stream.getVideoTracks()[0]
+      if (track) {
+        // Continuous autofocus helps Android Chrome; browsers that don't know
+        // the constraint (iOS) reject or ignore it, both fine.
+        track
+          .applyConstraints({ advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet] })
+          .catch(() => {})
+        const caps = track.getCapabilities?.() as (MediaTrackCapabilities & { torch?: boolean }) | undefined
+        if (caps?.torch && !cancelled) setTorch({ track, on: false })
+      }
+
       const canvas = document.createElement('canvas')
       const ctx = canvas.getContext('2d', { willReadFrequently: true })
       if (!ctx) return
       let busy = false
+      let tick = 0
       timer = window.setInterval(async () => {
         if (busy || done.current || !video.videoWidth) return
         busy = true
         try {
-          canvas.width = video.videoWidth
-          canvas.height = video.videoHeight
-          ctx.drawImage(video, 0, 0)
-          const code = await read(ctx.getImageData(0, 0, canvas.width, canvas.height))
+          // Most ticks decode a centered square crop — full pixel density
+          // where the reticle points, far cheaper than the whole 1080p frame,
+          // and square so a sideways barcode still fits (zxing rotates).
+          // Every 4th tick takes the full frame for codes held off-center.
+          const full = ++tick % 4 === 0
+          const s = Math.round(0.7 * Math.min(video.videoWidth, video.videoHeight))
+          const w = full ? video.videoWidth : s
+          const h = full ? video.videoHeight : s
+          canvas.width = w
+          canvas.height = h
+          if (full) ctx.drawImage(video, 0, 0)
+          else {
+            const sx = Math.round((video.videoWidth - s) / 2)
+            const sy = Math.round((video.videoHeight - s) / 2)
+            ctx.drawImage(video, sx, sy, s, s, 0, 0, s, s)
+          }
+          const code = await read(ctx.getImageData(0, 0, w, h))
           if (code && !done.current) {
             done.current = true
             onCode(code)
@@ -84,7 +115,7 @@ export function BarcodeScanner({
         } finally {
           busy = false
         }
-      }, 350)
+      }, 150)
     }
 
     start()
@@ -95,6 +126,15 @@ export function BarcodeScanner({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  function toggleTorch() {
+    if (!torch) return
+    const on = !torch.on
+    torch.track
+      .applyConstraints({ advanced: [{ torch: on } as MediaTrackConstraintSet] })
+      .then(() => setTorch({ ...torch, on }))
+      .catch(() => {})
+  }
 
   function submitManual(e: FormEvent) {
     e.preventDefault()
@@ -129,6 +169,19 @@ export function BarcodeScanner({
           <p className="absolute inset-x-4 top-4 rounded-xl bg-black/75 p-3 text-center text-sm text-white/90">
             {notice}
           </p>
+        )}
+        {torch && (
+          <button
+            type="button"
+            onClick={toggleTorch}
+            aria-label={torch.on ? 'Turn the flashlight off' : 'Turn the flashlight on'}
+            aria-pressed={torch.on}
+            className={`absolute bottom-5 left-1/2 -translate-x-1/2 rounded-full border p-3.5 transition-colors ${
+              torch.on ? 'border-white bg-white text-black' : 'border-white/40 bg-black/50 text-white'
+            }`}
+          >
+            <Flashlight className="h-5 w-5" />
+          </button>
         )}
       </div>
 
