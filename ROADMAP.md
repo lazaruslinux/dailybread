@@ -197,6 +197,12 @@ Where dailybread is headed, in order. Done items stay for history.
 
 ## Parked
 
+- **Android fitness adapter (future release)** — Health Connect is Android's
+  HealthKit, and community bridge apps can POST it to a webhook. The ingest
+  endpoint, tokens, and all the Fitness UI are already platform-neutral; the
+  work is a second payload parser for whichever bridge gets blessed, after
+  vetting one for background-sync reliability. Deliberately after the Apple
+  path is polished with a real household on it.
 - **Adult member role** — parent permissions without admin, for grown members
   who aren't heads of household. Today the roles are Parent and Child only.
 
