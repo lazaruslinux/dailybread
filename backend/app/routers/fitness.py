@@ -13,6 +13,7 @@ re-sending a whole window is always safe.
 """
 
 import datetime as dt
+import logging
 import secrets
 from collections import defaultdict
 
@@ -49,6 +50,7 @@ from app.schemas import (
 )
 
 router = APIRouter(tags=["fitness"])
+log = logging.getLogger("dailybread.ingest")
 
 # Exporter metric name -> (our metric, how multiple same-day points combine).
 # The exporter can send one point per day or many intra-day ones depending on
@@ -291,6 +293,8 @@ def _import_workouts(db: Session, user: User, workouts) -> tuple[int, set[dt.dat
     the routine auto-complete pass."""
     touched = 0
     days: set[dt.date] = set()
+    saw_route = False
+    first_keys: list[str] | None = None
     for entry in workouts if isinstance(workouts, list) else []:
         if not isinstance(entry, dict):
             continue
@@ -331,8 +335,15 @@ def _import_workouts(db: Session, user: User, workouts) -> tuple[int, set[dt.dat
         route = _parse_route(entry.get("route"))
         if route is not None:
             row.route = route
+            saw_route = True
+        elif first_keys is None:
+            first_keys = sorted(entry.keys())
         touched += 1
         days.add(started.date())
+    if touched and not saw_route:
+        # Diagnostic for the exporter's settings/shape: field NAMES only,
+        # never values — no GPS coordinates ever reach the logs.
+        log.info("workouts imported with no route data; first entry fields: %s", first_keys)
     return touched, days
 
 
