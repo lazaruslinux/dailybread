@@ -15,9 +15,8 @@ import {
   Unplug,
   Watch,
   Waves,
-  Zap,
 } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ComponentType, type CSSProperties } from 'react'
 import * as api from '../lib/api'
 import { Sheet } from '../components/Recipes'
 import { Button, Field, FormError } from '../components/ui'
@@ -939,10 +938,35 @@ function WeightDetail({ health, onClose }: { health: api.Health; onClose: () => 
   )
 }
 
+// A running figure in the street-sign style; the icon set has walkers and
+// bikes but no runner, so this one is drawn to its 24px stroke grammar.
+function Runner({ className, style }: { className?: string; style?: CSSProperties }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      style={style}
+      aria-hidden
+    >
+      <circle cx="13" cy="4" r="1" />
+      <path d="M4 17l5 1 .75-1.5" />
+      <path d="M15 21v-4l-4-3 1-6" />
+      <path d="M7 12V9l5-1 3 3 3 1" />
+    </svg>
+  )
+}
+
+type ActivityIcon = ComponentType<{ className?: string; style?: CSSProperties }>
+
 // Each kind of workout wears its own face; the flame stays for anything the
 // list doesn't know. Matched on the activity name Apple sends.
-const ACTIVITY_ICONS: [RegExp, typeof Flame][] = [
-  [/run/i, Zap],
+const ACTIVITY_ICONS: [RegExp, ActivityIcon][] = [
+  [/run/i, Runner],
   [/hik/i, Mountain],
   [/walk/i, Footprints],
   [/strength|core|weight/i, Dumbbell],
@@ -950,7 +974,7 @@ const ACTIVITY_ICONS: [RegExp, typeof Flame][] = [
   [/cycl|bike/i, Bike],
 ]
 
-function activityIcon(activity: string): typeof Flame {
+function activityIcon(activity: string): ActivityIcon {
   const hit = ACTIVITY_ICONS.find(([re]) => re.test(activity))
   return hit ? hit[1] : Flame
 }

@@ -139,11 +139,7 @@ function TargetsCard({ day, onEdit }: { day: api.DiaryDay; onEdit: () => void })
               </div>
               {key === 'calories' && day.targets.exercise_kcal > 0 && (
                 <p className="mt-0.5 text-[11px] text-emerald-500">
-                  includes +{Math.round(day.targets.exercise_kcal)} kcal from{' '}
-                  {day.watch_kcal !== null &&
-                  day.watch_kcal > day.exercise.reduce((s, e) => s + e.kcal, 0)
-                    ? 'your watch'
-                    : 'exercise'}
+                  includes +{Math.round(day.targets.exercise_kcal)} kcal earned from workouts
                 </p>
               )}
             </div>
@@ -987,7 +983,7 @@ function ExerciseCard({
         <div className="flex items-baseline gap-2">
           <h3 className="font-semibold text-fg/90">Exercise</h3>
           {burned > 0 && (
-            <span className="text-xs font-semibold text-emerald-500">+{Math.round(burned)} kcal earned</span>
+            <span className="text-xs font-semibold text-emerald-500">+{Math.round(burned)} kcal earned from workouts</span>
           )}
         </div>
         <button

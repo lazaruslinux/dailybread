@@ -8,7 +8,7 @@ export type Theme = 'light' | 'dark'
 // entry is labelled "Default"; Dark Forest is the opt-in alternative.
 export const THEMES: { id: Theme; label: string; hint: string }[] = [
   { id: 'light', label: 'Default', hint: 'Light Amber' },
-  { id: 'dark', label: 'Dark Forest', hint: 'Warm dark' },
+  { id: 'dark', label: 'Forest', hint: 'Dark Background' },
 ]
 
 // Anything not in this set (including retired themes like crimson/forest a user

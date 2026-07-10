@@ -51,7 +51,7 @@
   --fit-steps: #7c4dea;
   --fit-active: #d94f10;
   --fit-exercise: #0c8f82;
-  --fit-hr: #2563eb;
+  --fit-hr: #cf2637; /* warm heart-red; every metric surface is also labeled + iconed */
   --fit-weight: #be185d;
   --fit-bodyfat: #8a6a00;
 
@@ -88,7 +88,7 @@
   --fit-steps: #8b5cf6;
   --fit-active: #ea580c;
   --fit-exercise: #0d9488;
-  --fit-hr: #3b82f6;
+  --fit-hr: #ef4444;
   --fit-weight: #ec4899;
   --fit-bodyfat: #b08704;
 
