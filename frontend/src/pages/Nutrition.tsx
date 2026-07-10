@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { useAuth } from '../auth/AuthContext'
 import * as api from '../lib/api'
 import {
+  FoodIdentity,
   FoodPicker,
   Sheet,
   UNIT_LABEL,
@@ -453,7 +454,16 @@ function PortionSheet({
   return (
     <Sheet onClose={onClose}>
       <div className="mb-4 flex items-start justify-between gap-3">
-        <h2 className="min-w-0 text-lg font-bold leading-snug">{name}</h2>
+        <div className="min-w-0">
+          <h2 className="text-lg font-bold leading-snug">{name}</h2>
+          {/* Brand + label serving + database badge: enough to spot a wrong
+              product before it lands in the diary. */}
+          {food && (
+            <div className="mt-1">
+              <FoodIdentity food={food} />
+            </div>
+          )}
+        </div>
         <button onClick={onClose} aria-label="Close" className="shrink-0 rounded-lg p-1.5 text-fg/50 hover:bg-fg/10 hover:text-fg">
           <X className="h-5 w-5" />
         </button>

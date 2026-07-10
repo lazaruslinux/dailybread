@@ -542,7 +542,22 @@ function RecipeDetail({
   )
 }
 
-const SOURCE_LABEL: Record<api.FoodSource, string> = { usda: 'USDA', off: 'OFF', custom: 'Custom' }
+export const SOURCE_LABEL: Record<api.FoodSource, string> = { usda: 'USDA', off: 'OFF', custom: 'Custom' }
+
+// The identity subline + database badge shown wherever a picked or scanned
+// food needs read-and-confirm: the brand and label serving are what you check
+// against the package in your hand.
+export function FoodIdentity({ food }: { food: Pick<api.Food, 'brand' | 'serving' | 'source'> }) {
+  const sub = [food.brand, food.serving].filter(Boolean).join(' · ')
+  return (
+    <div className="flex items-center gap-2" data-portion-food>
+      {sub && <span className="min-w-0 truncate text-xs text-fg/45">{sub}</span>}
+      <span className="shrink-0 rounded-md border border-fg/10 bg-fg/5 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fg/50">
+        {SOURCE_LABEL[food.source]}
+      </span>
+    </div>
+  )
+}
 
 // The food picker: search the USDA database (server-proxied), the family's
 // own custom foods, or scan a product barcode — tap a result to add it as an
@@ -719,6 +734,86 @@ export function FoodPicker({ onPick, onBack }: { onPick: (food: api.Food) => voi
   )
 }
 
+// Confirm a picked or scanned food before it joins the recipe: read the name
+// against the package, set the portion, then Add. Nothing lands silently.
+function FoodConfirm({
+  food,
+  onAdd,
+  onBack,
+}: {
+  food: api.Food
+  onAdd: (l: EditLine) => void
+  onBack: () => void
+}) {
+  const [line, setLine] = useState<EditLine>(() => lineFromFood(food))
+  const base = baseAmountOf(line)
+  const cals = line.calories != null ? Math.round((line.calories * base) / 100) : null
+  const baseLabel = `${+base.toFixed(base < 10 ? 1 : 0)} ${UNIT_LABEL[line.base_unit]}`
+
+  function changeUnit(next: string) {
+    const nsi = servingIndex(next)
+    const per = nsi != null ? line.servings[nsi]?.grams || 1 : UNIT_TO_BASE[next as api.AmountUnit] || 1
+    setLine({ ...line, unit: next, amount: r2(base / per) })
+  }
+
+  return (
+    <div data-food-confirm>
+      <div className="mb-3 flex items-center gap-2">
+        <button onClick={onBack} aria-label="Back" className="rounded-lg p-1.5 text-fg/50 hover:bg-fg/10 hover:text-fg">
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        <span className="text-xs font-semibold uppercase tracking-wide text-accent-bright">Add ingredient</span>
+      </div>
+
+      <h2 className="text-lg font-bold leading-snug">{food.name}</h2>
+      <div className="mt-1">
+        <FoodIdentity food={food} />
+      </div>
+
+      <div className="mt-4 flex items-center gap-2">
+        <div className="w-20 shrink-0">
+          <input
+            inputMode="decimal"
+            value={line.amount === 0 ? '' : String(line.amount)}
+            onChange={(e) => {
+              const v = e.target.value.replace(/[^0-9.]/g, '')
+              setLine({ ...line, amount: v === '' ? 0 : Number(v) })
+            }}
+            className="field px-2 text-center"
+            aria-label={`Amount of ${food.name}`}
+            autoFocus
+          />
+        </div>
+        <div className="min-w-0 flex-1">
+          <select value={line.unit} onChange={(e) => changeUnit(e.target.value)} className="field px-2" aria-label={`Unit for ${food.name}`}>
+            {line.servings.length > 0 && (
+              <optgroup label="Servings">
+                {line.servings.map((s, i) => (
+                  <option key={`s${i}`} value={`serving:${i}`}>
+                    {s.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            <optgroup label={line.base_unit === 'ml' ? 'Volume' : 'Weight'}>
+              {unitsForBase(line.base_unit).map((u) => (
+                <option key={u} value={u}>
+                  {UNIT_LABEL[u]}
+                </option>
+              ))}
+            </optgroup>
+          </select>
+        </div>
+      </div>
+      <p className="mt-1.5 px-1 text-xs text-fg/45">{[baseLabel, cals != null ? `${cals} cal` : null].filter(Boolean).join(' · ')}</p>
+
+      <Button type="button" onClick={() => onAdd(line)} disabled={line.amount <= 0} className="mt-4 w-full">
+        Add to recipe
+      </Button>
+    </div>
+  )
+}
+
 // One editable ingredient line: amount + unit, its live contribution, remove.
 function LineRow({
   line,
@@ -826,6 +921,7 @@ function RecipeSheet({
   const [lines, setLines] = useState<EditLine[]>(() => (recipe?.ingredients ?? []).map(lineFromSaved))
   const [steps, setSteps] = useState(recipe?.steps ?? '')
   const [picking, setPicking] = useState(false)
+  const [pending, setPending] = useState<api.Food | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
@@ -916,16 +1012,25 @@ function RecipeSheet({
   }
 
   if (picking) {
-    // Tapping outside the picker returns to the form, never discards the recipe.
+    // Tapping outside the picker returns to the form, never discards the
+    // recipe. A picked/scanned food goes through FoodConfirm (swapped inside
+    // this same open Sheet — stacked sheets fight over the body lock) so
+    // nothing is appended before it's been read and portioned.
     return (
       <Sheet onClose={() => setPicking(false)}>
-        <FoodPicker
-          onBack={() => setPicking(false)}
-          onPick={(food) => {
-            setLines((ls) => [...ls, lineFromFood(food)])
-            setPicking(false)
-          }}
-        />
+        {pending ? (
+          <FoodConfirm
+            food={pending}
+            onBack={() => setPending(null)}
+            onAdd={(l) => {
+              setLines((ls) => [...ls, l])
+              setPending(null)
+              setPicking(false)
+            }}
+          />
+        ) : (
+          <FoodPicker onBack={() => setPicking(false)} onPick={setPending} />
+        )}
       </Sheet>
     )
   }
