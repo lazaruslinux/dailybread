@@ -1,16 +1,21 @@
 import { AnimatePresence } from 'framer-motion'
 import {
+  Bike,
   Check,
   ChevronRight,
   Copy,
+  Dumbbell,
   Flame,
   Footprints,
   HeartPulse,
   Link2,
+  Mountain,
   Scale,
   Timer,
   Unplug,
   Watch,
+  Waves,
+  Zap,
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import * as api from '../lib/api'
@@ -934,7 +939,60 @@ function WeightDetail({ health, onClose }: { health: api.Health; onClose: () => 
   )
 }
 
+// Each kind of workout wears its own face; the flame stays for anything the
+// list doesn't know. Matched on the activity name Apple sends.
+const ACTIVITY_ICONS: [RegExp, typeof Flame][] = [
+  [/run/i, Zap],
+  [/hik/i, Mountain],
+  [/walk/i, Footprints],
+  [/strength|core|weight/i, Dumbbell],
+  [/swim/i, Waves],
+  [/cycl|bike/i, Bike],
+]
+
+function activityIcon(activity: string): typeof Flame {
+  const hit = ACTIVITY_ICONS.find(([re]) => re.test(activity))
+  return hit ? hit[1] : Flame
+}
+
+// A tiny map-less trace of where the workout went: the GPS points scaled into
+// a square, latitude corrected so the shape isn't stretched. Decoration only —
+// the row's text carries the information.
+function RouteThumb({ route }: { route: number[][] }) {
+  const S = 48
+  const PAD = 5
+  const lats = route.map((p) => p[0])
+  const lons = route.map((p) => p[1])
+  const minLat = Math.min(...lats)
+  const maxLat = Math.max(...lats)
+  const minLon = Math.min(...lons)
+  const maxLon = Math.max(...lons)
+  const kx = Math.cos((((minLat + maxLat) / 2) * Math.PI) / 180)
+  const w = (maxLon - minLon) * kx || 1e-9
+  const h = maxLat - minLat || 1e-9
+  const s = Math.min((S - 2 * PAD) / w, (S - 2 * PAD) / h)
+  const ox = (S - w * s) / 2
+  const oy = (S - h * s) / 2
+  const xy = ([lat, lon]: number[]) =>
+    `${(ox + (lon - minLon) * kx * s).toFixed(1)},${(oy + (maxLat - lat) * s).toFixed(1)}`
+  return (
+    <svg width={S} height={S} viewBox={`0 0 ${S} ${S}`} aria-hidden className="shrink-0">
+      <polyline
+        points={route.map(xy).join(' ')}
+        fill="none"
+        stroke="var(--fit-active)"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity={0.85}
+      />
+      <circle cx={xy(route[0]).split(',')[0]} cy={xy(route[0]).split(',')[1]} r={2.5} fill="var(--fit-active)" />
+    </svg>
+  )
+}
+
 function WorkoutRow({ workout }: { workout: api.Workout }) {
+  const Icon = activityIcon(workout.activity)
   const bits = [
     workout.duration_s ? `${Math.round(workout.duration_s / 60)} min` : null,
     workout.kcal ? `${Math.round(workout.kcal)} kcal` : null,
@@ -947,12 +1005,13 @@ function WorkoutRow({ workout }: { workout: api.Workout }) {
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
         style={{ background: 'color-mix(in srgb, var(--fit-active) 16%, transparent)' }}
       >
-        <Flame className="h-5 w-5" style={{ color: 'var(--fit-active)' }} />
+        <Icon className="h-5 w-5" style={{ color: 'var(--fit-active)' }} />
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate font-semibold text-fg/90">{workout.activity}</p>
         <p className="truncate text-xs text-fg/50">{fmtWhen(workout.started_at)}</p>
       </div>
+      {workout.route && workout.route.length > 1 && <RouteThumb route={workout.route} />}
       <p className="shrink-0 text-right text-xs leading-relaxed text-fg/60">
         {bits.map((b) => (
           <span key={b} className="block">
@@ -1142,7 +1201,7 @@ export function Fitness() {
               >
                 <span className="flex min-w-0 items-center gap-3">
                   <Watch className="h-4 w-4 shrink-0 text-accent-bright" />
-                  <span className="text-sm text-fg/80">Watch calories raise my food budget</span>
+                  <span className="text-sm text-fg/80">Watch workouts raise my food budget</span>
                 </span>
                 <span
                   className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${
@@ -1158,8 +1217,9 @@ export function Fitness() {
               </button>
               {data.count_watch_kcal && (
                 <p className="mt-2 text-xs text-fg/45">
-                  Days with watch data add the larger of the watch's active calories and your
-                  logged exercise to the diary — never both.
+                  Each synced workout's own calories are added to that day's diary — never the
+                  all-day active total. If you also log exercise by hand, the larger of the two
+                  counts, not both.
                 </p>
               )}
             </div>

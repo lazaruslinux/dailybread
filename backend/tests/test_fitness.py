@@ -266,33 +266,108 @@ def test_body_fat_without_a_weigh_in_is_skipped(owner):
     assert not [w for w in weights if w["date_for"] == TODAY.isoformat()]
 
 
+# ---- workout routes ---------------------------------------------------------------
+
+
+def _route_payload(points) -> dict:
+    p = _payload()
+    p["data"]["workouts"][0]["route"] = points
+    return p
+
+
+def _my_workout(client) -> dict:
+    body = client.get("/me/fitness").json()
+    return next(w for w in body["workouts"] if w["activity"] == "Outdoor Run")
+
+
+def test_routes_come_along_in_either_key_style(owner):
+    token = _mint(owner)
+    _send(owner, token, _route_payload([
+        {"latitude": 33.45001, "longitude": -112.07001, "speed": 2.9},
+        {"latitude": 33.45120, "longitude": -112.06880},
+        {"lat": 33.45230, "lon": -112.06790},  # v1-style point mixed in
+    ]))
+    assert _my_workout(owner)["route"] == [
+        [33.45001, -112.07001],
+        [33.4512, -112.0688],
+        [33.4523, -112.0679],
+    ]
+
+
+def test_long_routes_are_downsampled(owner):
+    token = _mint(owner)
+    pts = [{"latitude": 33.4 + i / 10000, "longitude": -112.0 - i / 10000} for i in range(500)]
+    _send(owner, token, _route_payload(pts))
+    route = _my_workout(owner)["route"]
+    assert len(route) == 60
+    assert route[0] == [33.4, -112.0]
+    assert route[-1] == [round(33.4 + 499 / 10000, 5), round(-112.0 - 499 / 10000, 5)]
+
+
+def test_a_resend_without_route_keeps_the_trace(owner):
+    token = _mint(owner)
+    _send(owner, token, _route_payload([
+        {"latitude": 33.45, "longitude": -112.07},
+        {"latitude": 33.46, "longitude": -112.06},
+    ]))
+    _send(owner, token, _payload())  # same workout id, no route this time
+    assert _my_workout(owner)["route"] is not None
+
+
+def test_junk_routes_are_ignored(owner):
+    token = _mint(owner)
+    _send(owner, token, _route_payload(["junk", {"latitude": "x"}, {"latitude": 33.4}]))
+    assert _my_workout(owner)["route"] is None
+
+
 # ---- watch calories in the food budget -------------------------------------------
 
 
 def test_watch_kcal_is_off_by_default(owner):
     token = _mint(owner)
-    _send(owner, token, _payload())  # active_energy 512.5 lands
+    _send(owner, token, _payload())  # a 320 kcal workout lands
     day = owner.get(f"/diary?date={TODAY.isoformat()}").json()
     assert day["burned"] == 0
     assert day["watch_kcal"] is None
     assert day["targets"]["exercise_kcal"] == 0
 
 
-def test_opted_in_watch_kcal_raises_the_budget(owner):
+def test_opted_in_workout_kcal_raises_the_budget(owner):
+    """Only the workout's own calories count — never the day's all-day active
+    total (512.5 in this payload), which the target's activity level covers."""
     assert owner.put("/me/fitness/watch-kcal", json={"enabled": True}).json() == {
         "enabled": True
     }
     token = _mint(owner)
-    _send(owner, token, _payload())
+    _send(owner, token, _payload())  # workout activeEnergyBurned 320
     day = owner.get(f"/diary?date={TODAY.isoformat()}").json()
-    assert day["burned"] == 512.5
-    assert day["watch_kcal"] == 512.5
-    assert day["targets"]["exercise_kcal"] == 512.5
+    assert day["burned"] == 320.0
+    assert day["watch_kcal"] == 320.0
+    assert day["targets"]["exercise_kcal"] == 320.0
+
+
+def test_two_workouts_on_a_day_both_count(owner):
+    owner.put("/me/fitness/watch-kcal", json={"enabled": True})
+    token = _mint(owner)
+    payload = _payload()
+    payload["data"]["workouts"].append(
+        {
+            "id": "workout-evening",
+            "name": "Outdoor Walk",
+            "start": _stamp(TODAY, "18:00:00"),
+            "end": _stamp(TODAY, "18:40:00"),
+            "duration": 2400,
+            "activeEnergyBurned": {"qty": 150.0, "units": "kcal"},
+        }
+    )
+    _send(owner, token, payload)
+    day = owner.get(f"/diary?date={TODAY.isoformat()}").json()
+    assert day["watch_kcal"] == 470.0  # 320 + 150
 
 
 def test_watch_and_manual_log_never_sum(owner):
-    """The budget takes the larger of the two: a logged run is already inside
-    the watch's active total, so summing would count it twice."""
+    """The budget takes the larger of the two: a manually logged run is the
+    same run the watch tracked, so summing would count it twice."""
     owner.put("/me/fitness/watch-kcal", json={"enabled": True})
     owner.put("/me/health/weight", json={"date_for": TODAY.isoformat(), "weight_kg": 90.0})
     res = owner.post(
@@ -302,10 +377,10 @@ def test_watch_and_manual_log_never_sum(owner):
     assert res.status_code == 201, res.text
     manual = res.json()["kcal"]
     token = _mint(owner)
-    _send(owner, token, _payload())  # watch says 512.5
+    _send(owner, token, _payload())  # the watch workout says 320
     day = owner.get(f"/diary?date={TODAY.isoformat()}").json()
-    assert day["burned"] == max(manual, 512.5)
-    assert day["targets"]["exercise_kcal"] == max(manual, 512.5)
+    assert day["burned"] == max(manual, 320.0)
+    assert day["targets"]["exercise_kcal"] == max(manual, 320.0)
 
 
 def test_watch_kcal_toggle_is_adults_only(child):

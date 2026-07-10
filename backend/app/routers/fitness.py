@@ -259,6 +259,33 @@ def _import_body_fat(db: Session, user: User, points) -> int:
     return touched
 
 
+# The thumbnail needs a shape, not a track: cap stored routes at this many
+# evenly spaced points so a two-hour run costs the same few hundred bytes.
+_ROUTE_MAX_POINTS = 60
+
+
+def _parse_route(raw) -> list | None:
+    """The exporter's route array, downsampled to [lat, lon] pairs. Newer
+    exports name the keys latitude/longitude, older ones lat/lon; a point
+    missing either is skipped."""
+    if not isinstance(raw, list):
+        return None
+    pts = []
+    for p in raw:
+        if not isinstance(p, dict):
+            continue
+        lat = p.get("latitude", p.get("lat"))
+        lon = p.get("longitude", p.get("lon"))
+        if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
+            pts.append([round(float(lat), 5), round(float(lon), 5)])
+    if len(pts) < 2:
+        return None
+    if len(pts) > _ROUTE_MAX_POINTS:
+        step = (len(pts) - 1) / (_ROUTE_MAX_POINTS - 1)
+        pts = [pts[round(i * step)] for i in range(_ROUTE_MAX_POINTS)]
+    return pts
+
+
 def _import_workouts(db: Session, user: User, workouts) -> tuple[int, set[dt.date]]:
     """Returns (workouts touched, the days they started on) — the days feed
     the routine auto-complete pass."""
@@ -299,6 +326,11 @@ def _import_workouts(db: Session, user: User, workouts) -> tuple[int, set[dt.dat
         row.distance_m = _distance_m(entry.get("distance"))
         heart = entry.get("heartRate")
         row.avg_hr = _qty(heart.get("avg")) if isinstance(heart, dict) else None
+        # A re-send without route data must not erase a trace we already have
+        # (the exporter's route toggle can be flipped either way later).
+        route = _parse_route(entry.get("route"))
+        if route is not None:
+            row.route = route
         touched += 1
         days.add(started.date())
     return touched, days
@@ -487,9 +519,10 @@ def set_watch_kcal(
     db: Session = Depends(get_db),
     user: User = Depends(require_adult),
 ):
-    """Opt in (or out of) counting the watch's active calories toward the
-    day's food budget. The diary takes the larger of the watch number and the
-    manual exercise log for a day, never the sum."""
+    """Opt in (or out of) counting the watch's workout calories toward the
+    day's food budget — deliberate workouts only, never the all-day active
+    total. The diary takes the larger of the workout sum and the manual
+    exercise log for a day, never the sum of both."""
     user.count_watch_kcal = payload.enabled
     db.commit()
     return WatchKcalIn(enabled=user.count_watch_kcal)

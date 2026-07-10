@@ -2,6 +2,7 @@ import datetime as dt
 import enum
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     Column,
     Date,
@@ -210,10 +211,12 @@ class User(Base):
     goal_steps: Mapped[int | None] = mapped_column(Integer, nullable=True)
     goal_active_kcal: Mapped[int | None] = mapped_column(Integer, nullable=True)
     goal_exercise_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Opt-in: the watch's active calories raise the day's food budget. The
-    # diary takes the LARGER of the watch number and the manual exercise log
-    # for a day, never the sum — a logged run also shows up in the watch's
-    # total, so adding them would count it twice.
+    # Opt-in: the watch's WORKOUT calories raise the day's food budget — only
+    # deliberate workouts, never the all-day active total (the calorie
+    # target's activity level already covers baseline movement). The diary
+    # takes the LARGER of the workout sum and the manual exercise log for a
+    # day, never the sum of both — a logged run is the same run the watch
+    # tracked, so adding them would count it twice.
     count_watch_kcal: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
@@ -1043,4 +1046,8 @@ class Workout(Base):
     kcal: Mapped[float | None] = mapped_column(Float, nullable=True)
     distance_m: Mapped[float | None] = mapped_column(Float, nullable=True)
     avg_hr: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # The workout's GPS trace, downsampled to a handful of [lat, lon] pairs —
+    # just enough to draw the little route thumbnail, deliberately not the
+    # full-resolution track. Present only when the exporter sends route data.
+    route: Mapped[list | None] = mapped_column(JSON, nullable=True)
     source: Mapped[str] = mapped_column(String(20), default="apple", server_default="apple")

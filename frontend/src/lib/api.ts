@@ -394,6 +394,8 @@ export interface Workout {
   kcal: number | null
   distance_m: number | null
   avg_hr: number | null
+  // Downsampled [lat, lon] pairs for the route thumbnail, when GPS came along.
+  route: number[][] | null
 }
 
 export interface FitnessDay {

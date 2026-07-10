@@ -1,7 +1,7 @@
 import datetime as dt
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -11,12 +11,12 @@ from app.models import (
     UNIT_TO_BASE,
     DiaryEntry,
     ExerciseEntry,
-    FitnessDaily,
     Food,
     NutritionTarget,
     Recipe,
     TargetMode,
     User,
+    Workout,
     base_unit_of,
 )
 from app.routers.recipes import _resolve_food, per_serving_macros
@@ -185,18 +185,22 @@ def get_day(
     ).all()
     burned = round(sum(w.kcal for w in workouts), 1)
 
-    # Opted-in members earn from the watch too: the day's budget uses the
-    # LARGER of the watch's active calories and the manual log, never the sum
-    # (a logged run is inside the watch total, so summing would double it).
+    # Opted-in members earn from watch WORKOUTS: the sum of the day's imported
+    # workout calories — never the all-day active total, which would double-
+    # count the baseline movement the calorie target's activity level already
+    # covers. The budget then uses the LARGER of that and the manual log,
+    # never the sum (a manually logged run is the same run the watch tracked).
     watch_kcal = None
     if user.count_watch_kcal:
+        day_start = dt.datetime.combine(date, dt.time.min)
         watch_kcal = db.scalar(
-            select(FitnessDaily.value).where(
-                FitnessDaily.user_id == user.id,
-                FitnessDaily.date_for == date,
-                FitnessDaily.metric == "active_kcal",
+            select(func.sum(Workout.kcal)).where(
+                Workout.user_id == user.id,
+                Workout.started_at >= day_start,
+                Workout.started_at < day_start + dt.timedelta(days=1),
             )
         )
+        watch_kcal = round(watch_kcal, 1) if watch_kcal else None
     earned = max(burned, watch_kcal or 0.0)
 
     return DiaryDayOut(

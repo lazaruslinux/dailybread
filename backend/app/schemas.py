@@ -834,8 +834,8 @@ class DiaryDayOut(BaseModel):
     date: dt.date
     targets: TargetsOut
     consumed: RecipeMacros
-    # The watch's active calories for the day, present only when the member
-    # opted in to counting them; the client uses it to say where the day's
+    # The day's imported workout calories, present only when the member opted
+    # in to counting them; the client uses it to say where the day's
     # earn-back came from.
     watch_kcal: float | None = None
     entries: list[DiaryEntryOut]
@@ -1177,6 +1177,9 @@ class WorkoutOut(BaseModel):
     kcal: float | None
     distance_m: float | None
     avg_hr: float | None
+    # Downsampled [lat, lon] pairs for the little route thumbnail, when the
+    # exporter sent GPS data.
+    route: list[list[float]] | None = None
 
     model_config = {"from_attributes": True}
 
@@ -1230,7 +1233,7 @@ class FitnessOut(BaseModel):
     week: list[FitnessWeekDayOut]
     workouts: list[WorkoutOut]
     goals: FitnessGoalsOut
-    # Opt-in: watch active calories raise the day's food budget.
+    # Opt-in: watch workout calories raise the day's food budget.
     count_watch_kcal: bool = False
 
 
