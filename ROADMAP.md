@@ -194,22 +194,29 @@ Where dailybread is headed, in order. Done items stay for history.
   a faster barcode scanner (higher camera resolution, focused decode
   region, torch); and a pinch-zoom circular crop when choosing an
   avatar photo.
+- **Fitness follow-through** — a weight trend chart on the Fitness tab
+  (90 days, tappable points, the goal as a dashed line) with body fat
+  percentage as its own aligned panel, synced from the exporter onto the
+  weight log; routines can opt in to being checked off by a member's
+  synced workout (explicit per-routine toggle, no title guessing); and an
+  opt-in that counts watch active calories toward the day's food budget,
+  taking the larger of the watch number and the manual exercise log so
+  nothing is counted twice.
 
 ## Next
 
-1. **Fitness follow-through** — trends (weight chart, with body fat
-   percentage synced from the health exporter as a second line), imported
-   workouts auto-completing matching board routines, and an opt-in for
-   counting watch calories toward the day's energy target. Strava as an
-   optional secondary connector if ever wanted. Intraday (hourly) metric
-   detail would need a finer-grained table and a chattier exporter
-   setting — deliberately deferred to keep the sync light.
+1. **Public demo instance** — a separate, throwaway deployment with fake
+   seeded data so someone who isn't in the family can try the app. The
+   LAN-only rule is about the family instance; the demo shares only the
+   code. Strava as an optional secondary fitness connector if ever
+   wanted; intraday (hourly) metric detail stays deliberately deferred
+   to keep the sync light.
 
 ## Ongoing polish
 
 - Member colors, a do-not-disturb dot, loading skeletons, pull-to-refresh,
   an in-app "How to use" / FAQ section.
-- Health layer: a weight trend chart, a parent-facing UI for setting a
+- Health layer: a parent-facing UI for setting a
   child's goals (the endpoints exist), net carbs on the diary, more
   exercise types (the catalog is data-driven), and a projected
   goal-arrival date.
