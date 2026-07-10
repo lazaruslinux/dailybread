@@ -340,3 +340,71 @@ def test_label_units_convert_to_base_measures():
     assert foods_api._serving_in_base(1, "cup") is None
     assert foods_api._serving_in_base(None, "g") is None
     assert foods_api._serving_in_base(0, "g") is None
+
+
+def _fdc(description, data_type="Branded", brand="", gtin="", published="", fdc_id=1):
+    """A minimal FDC search hit for ranking tests."""
+    return {
+        "fdcId": fdc_id,
+        "description": description,
+        "dataType": data_type,
+        "brandName": brand,
+        "gtinUpc": gtin,
+        "publishedDate": published,
+        "foodNutrients": [],
+    }
+
+
+def test_search_ranking_dedupes_branded_by_gtin():
+    # The same product listed twice (zero-padded EAN vs bare UPC); newest wins.
+    old = _fdc("Instant Oats", brand="Quaker", gtin="030000012345", published="2020-01-01")
+    new = _fdc("Instant Oats", brand="Quaker", gtin="0030000012345", published="2024-06-01", fdc_id=2)
+    ranked = foods_api._rank_usda("oats", [old, new])
+    assert len(ranked) == 1
+    assert ranked[0]["fdcId"] == 2
+
+
+def test_search_ranking_dedupes_branded_by_brand_and_name():
+    a = _fdc("INSTANT OATS", brand="Quaker", published="2020-01-01")
+    b = _fdc("Instant  Oats!", brand="QUAKER", published="2023-01-01", fdc_id=2)
+    ranked = foods_api._rank_usda("oats", [a, b])
+    assert len(ranked) == 1
+    assert ranked[0]["fdcId"] == 2
+
+
+def test_search_ranking_prefers_query_word_coverage():
+    generic = _fdc("Oats, raw", data_type="Foundation")
+    quaker = _fdc("Instant Oats, 1 Minute", brand="Quaker", fdc_id=2)
+    ranked = foods_api._rank_usda("quaker instant oats", [generic, quaker])
+    assert [f["fdcId"] for f in ranked] == [2, 1]
+
+
+def test_generic_query_keeps_foundation_first():
+    # Equal word coverage: the lab-analysed entry outranks the label one even
+    # when FDC returned it later.
+    branded = _fdc("Chicken Breast", brand="Somebrand")
+    foundation = _fdc("Chicken Breast", data_type="Foundation", fdc_id=2)
+    ranked = foods_api._rank_usda("chicken breast", [branded, foundation])
+    assert [f["fdcId"] for f in ranked] == [2, 1]
+
+
+def test_query_words_match_as_prefixes():
+    # "oat" should still hit "oats" — coverage counts prefixes.
+    hit = _fdc("Rolled Oats", brand="Bobs", fdc_id=1)
+    miss = _fdc("Wheat Flakes", brand="Bobs", fdc_id=2)
+    ranked = foods_api._rank_usda("oat", [miss, hit])
+    assert ranked[0]["fdcId"] == 1
+
+
+def test_shouty_names_are_title_cased():
+    assert foods_api._display("QUAKER INSTANT OATMEAL") == "Quaker Instant Oatmeal"
+    assert foods_api._display("Log Cabin Original Syrup") == "Log Cabin Original Syrup"
+    assert foods_api._display("2% MILK") == "2% Milk"
+    assert foods_api._display("") == ""
+
+
+def test_gtin_normalization():
+    assert foods_api._norm_gtin("0030000012345") == "30000012345"
+    assert foods_api._norm_gtin("030000012345") == "30000012345"
+    assert foods_api._norm_gtin(" 0300-0001 2345") == "30000012345"
+    assert foods_api._norm_gtin(None) == ""

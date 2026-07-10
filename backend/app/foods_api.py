@@ -92,6 +92,70 @@ def _serving_in_base(size, unit) -> tuple[float, str] | None:
     return None
 
 
+def _norm_gtin(s) -> str:
+    """Barcodes normalised for equality checks: digits only, leading zeros
+    dropped — FDC stores gtinUpc inconsistently as a 12-digit UPC-A or a
+    zero-padded 13/14-digit code for the same product."""
+    return "".join(ch for ch in str(s or "") if ch.isdigit()).lstrip("0")
+
+
+def _display(s: str) -> str:
+    """Branded catalog names often arrive ALL CAPS; title-case those and leave
+    anything already normally cased alone."""
+    if s and s == s.upper() and any(c.isalpha() for c in s):
+        return s.title()
+    return s
+
+
+def _tokens(s: str) -> list[str]:
+    return "".join(c.lower() if c.isalnum() else " " for c in s).split()
+
+
+# Canonical lab-analysed datasets outrank label-transcribed Branded entries
+# when a query matches both equally well.
+_DATATYPE_RANK = {"Foundation": 0, "SR Legacy": 1, "Branded": 2}
+
+
+def _rank_usda(query: str, foods: list[dict]) -> list[dict]:
+    """Collapse duplicate Branded listings and order hits by how well they
+    match the words typed.
+
+    Dedupe key for Branded entries: the barcode when present, else normalised
+    brand+name; the newest publishedDate survives (string compare — FDC dates
+    are ISO-formatted; a missing date just loses ties). Score: fraction of
+    query words appearing as prefixes in name+brand — this emulates
+    require-all-words without dropping recall (FDC's requireAllWords is a
+    website-UI switch, not an API parameter, so it can't be sent). Ties keep
+    canonical datasets first, then FDC's own relevance order (stable sort).
+    """
+    by_key: dict[str, dict] = {}
+    order: list[str] = []
+    for f in foods:
+        if f.get("dataType") == "Branded":
+            gtin = _norm_gtin(f.get("gtinUpc"))
+            brand = f.get("brandName") or f.get("brandOwner") or ""
+            key = f"g:{gtin}" if gtin else "n:" + " ".join(_tokens(f"{brand} {f.get('description') or ''}"))
+        else:
+            key = f"i:{f.get('fdcId')}"
+        held = by_key.get(key)
+        if held is None:
+            by_key[key] = f
+            order.append(key)
+        elif (f.get("publishedDate") or "") > (held.get("publishedDate") or ""):
+            by_key[key] = f
+    words = _tokens(query)
+
+    def sort_key(f: dict):
+        hay = _tokens(
+            f"{f.get('description') or ''} {f.get('brandName') or ''} {f.get('brandOwner') or ''}"
+        )
+        covered = sum(1 for w in words if any(h.startswith(w) for h in hay))
+        coverage = covered / len(words) if words else 0.0
+        return (-coverage, _DATATYPE_RANK.get(f.get("dataType"), 3))
+
+    return sorted((by_key[k] for k in order), key=sort_key)
+
+
 def _usda_serving(f: dict) -> str:
     """A display serving from a USDA search hit. Branded foods carry a household
     text ("1 slice") and/or a gram size; we show whichever we have, both when we
@@ -107,6 +171,29 @@ def _usda_serving(f: dict) -> str:
     return household or grams
 
 
+def _usda_food_result(f: dict) -> FoodResult:
+    """A FoodResult from one FDC search hit (shared by search and barcode)."""
+    by_number = {str(n.get("nutrientNumber")): n.get("value") for n in f.get("foodNutrients", [])}
+    return FoodResult(
+        source="usda",
+        source_id=str(f.get("fdcId")),
+        name=_display((f.get("description") or "").strip()),
+        brand=_display((f.get("brandName") or f.get("brandOwner") or "").strip()),
+        calories=_num(by_number.get(_N_ENERGY_KCAL)),
+        protein_g=_num(by_number.get(_N_PROTEIN)),
+        carbs_g=_num(by_number.get(_N_CARBS)),
+        fat_g=_num(by_number.get(_N_FAT)),
+        saturated_fat_g=_num(by_number.get(_N_SATURATED)),
+        trans_fat_g=_num(by_number.get(_N_TRANS)),
+        cholesterol_mg=_num(by_number.get(_N_CHOLESTEROL)),
+        sodium_mg=_num(by_number.get(_N_SODIUM)),
+        fiber_g=_num(by_number.get(_N_FIBER)),
+        sugar_g=_num(by_number.get(_N_SUGAR)),
+        serving=_usda_serving(f),
+        **_serving_fields(f.get("servingSize"), f.get("servingSizeUnit")),
+    )
+
+
 def search_usda(query: str, api_key: str, limit: int = 25) -> list[FoodResult]:
     """Search USDA FoodData Central. Raises FoodApiError if not configured or
     the call fails."""
@@ -118,7 +205,9 @@ def search_usda(query: str, api_key: str, limit: int = 25) -> list[FoodResult]:
             params={
                 "api_key": api_key,
                 "query": query,
-                "pageSize": limit,
+                # Fetch wider than we return so _rank_usda has material to
+                # dedupe and re-rank before the cut to `limit`.
+                "pageSize": 50,
                 "dataType": "Foundation,SR Legacy,Branded",
             },
             headers={"User-Agent": _UA},
@@ -137,30 +226,8 @@ def search_usda(query: str, api_key: str, limit: int = 25) -> list[FoodResult]:
     if r.status_code >= 400:
         raise FoodApiError("Food search failed.")
 
-    results: list[FoodResult] = []
-    for f in r.json().get("foods", []):
-        by_number = {str(n.get("nutrientNumber")): n.get("value") for n in f.get("foodNutrients", [])}
-        results.append(
-            FoodResult(
-                source="usda",
-                source_id=str(f.get("fdcId")),
-                name=(f.get("description") or "").strip(),
-                brand=(f.get("brandName") or f.get("brandOwner") or "").strip(),
-                calories=_num(by_number.get(_N_ENERGY_KCAL)),
-                protein_g=_num(by_number.get(_N_PROTEIN)),
-                carbs_g=_num(by_number.get(_N_CARBS)),
-                fat_g=_num(by_number.get(_N_FAT)),
-                saturated_fat_g=_num(by_number.get(_N_SATURATED)),
-                trans_fat_g=_num(by_number.get(_N_TRANS)),
-                cholesterol_mg=_num(by_number.get(_N_CHOLESTEROL)),
-                sodium_mg=_num(by_number.get(_N_SODIUM)),
-                fiber_g=_num(by_number.get(_N_FIBER)),
-                sugar_g=_num(by_number.get(_N_SUGAR)),
-                serving=_usda_serving(f),
-                **_serving_fields(f.get("servingSize"), f.get("servingSizeUnit")),
-            )
-        )
-    return results
+    ranked = _rank_usda(query, r.json().get("foods", []))
+    return [_usda_food_result(f) for f in ranked[:limit]]
 
 
 def _serving_fields(size, unit) -> dict:
@@ -197,8 +264,8 @@ def lookup_barcode(barcode: str) -> FoodResult | None:
     return FoodResult(
         source="off",
         source_id=str(barcode),
-        name=(p.get("product_name") or "Unknown product").strip(),
-        brand=(p.get("brands") or "").split(",")[0].strip(),
+        name=_display((p.get("product_name") or "Unknown product").strip()),
+        brand=_display((p.get("brands") or "").split(",")[0].strip()),
         calories=_num(nut.get("energy-kcal_100g")),
         protein_g=_num(nut.get("proteins_100g")),
         carbs_g=_num(nut.get("carbohydrates_100g")),
