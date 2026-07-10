@@ -23,6 +23,8 @@ const OPTIONS = {
 // Decode one camera frame (or any image). Returns the digits, or null.
 export async function readCode(image: ImageData | Blob): Promise<string | null> {
   const results: ReadResult[] = await readBarcodes(image, { ...OPTIONS, formats: [...OPTIONS.formats] })
-  const hit = results.find((r) => r.isValid && /^[0-9]{6,14}$/.test(r.text))
+  // 8 digits is the shortest real product code (EAN-8, and UPC-E as zxing
+  // reports it); the server rejects anything shorter.
+  const hit = results.find((r) => r.isValid && /^[0-9]{8,14}$/.test(r.text))
   return hit ? hit.text : null
 }

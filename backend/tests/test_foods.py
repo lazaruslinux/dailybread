@@ -254,7 +254,8 @@ def test_barcode_resolves_from_the_shared_cache_before_off(owner, monkeypatch):
 
 def test_bad_barcodes_are_rejected(owner):
     assert owner.get("/foods/barcode/12ab34").status_code == 400
-    assert owner.get("/foods/barcode/12345").status_code == 400  # too short
+    assert owner.get("/foods/barcode/1234567").status_code == 400  # shorter than EAN-8
+    assert owner.get("/foods/barcode/123456789012345").status_code == 400  # longer than GTIN-14
     res = owner.post("/foods", json={
         "name": "X", "servings": [{"name": "100 g", "grams": 100}],
         "basis_index": 0, "barcode": "not-digits",

@@ -111,7 +111,9 @@ def lookup_barcode(
     then the internet — USDA's Branded dataset first (label-accurate for US
     products), Open Food Facts as the fallback. Scanning something you've
     scanned before never leaves the server."""
-    if not code.isdigit() or not (6 <= len(code) <= 14):
+    # Real printed codes are 8 digits at the shortest (EAN-8; UPC-E includes its
+    # number-system and check digits) and 14 at the longest (GTIN-14).
+    if not code.isdigit() or not (8 <= len(code) <= 14):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "That doesn't look like a barcode")
 
     ours = db.scalar(
@@ -129,8 +131,10 @@ def lookup_barcode(
         return ours
 
     # Barcode-cached usda rows keep the scanned code in source_id; search-
-    # cached usda rows keep the fdcId. Barcodes run 12-13 digits, fdcIds 7-8,
-    # so a scan can't accidentally match a search row.
+    # cached usda rows keep the fdcId. Barcodes run 8-14 digits, fdcIds are 7
+    # today — an 8-digit EAN-8 could in principle collide once fdcIds reach 8
+    # digits, at the cost of one wrong cache hit on a rare code shape; worth a
+    # source_id prefix (and migration) only if that day comes.
     cached = db.scalar(
         select(Food)
         .where(

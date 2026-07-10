@@ -112,6 +112,9 @@ export function BarcodeScanner({
             done.current = true
             onCode(code)
           }
+        } catch {
+          // A decoder hiccup on one frame is not worth surfacing; the next
+          // tick tries again.
         } finally {
           busy = false
         }
@@ -139,7 +142,7 @@ export function BarcodeScanner({
   function submitManual(e: FormEvent) {
     e.preventDefault()
     const code = manual.trim()
-    if (!/^[0-9]{6,14}$/.test(code) || done.current) return
+    if (!/^[0-9]{8,14}$/.test(code) || done.current) return
     done.current = true
     onCode(code)
   }
@@ -197,7 +200,7 @@ export function BarcodeScanner({
         />
         <button
           type="submit"
-          disabled={!/^[0-9]{6,14}$/.test(manual.trim())}
+          disabled={!/^[0-9]{8,14}$/.test(manual.trim())}
           className="shrink-0 rounded-xl bg-white/15 px-4 py-2.5 font-semibold text-white disabled:opacity-40"
         >
           Use
