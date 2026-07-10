@@ -406,6 +406,9 @@ export interface FitnessDay {
 export interface FitnessWeekDay {
   date_for: string
   steps: number | null
+  active_kcal: number | null
+  exercise_minutes: number | null
+  resting_hr: number | null
 }
 
 export interface Fitness {
