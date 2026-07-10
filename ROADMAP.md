@@ -189,12 +189,13 @@ Where dailybread is headed, in order. Done items stay for history.
 
 ## Next
 
-1. **Fitness follow-through** — trends (weight chart), imported workouts
-   auto-completing matching board routines, and an opt-in for counting
-   watch calories toward the day's energy target. Strava as an optional
-   secondary connector if ever wanted. Intraday (hourly) metric detail
-   would need a finer-grained table and a chattier exporter setting —
-   deliberately deferred to keep the sync light.
+1. **Fitness follow-through** — trends (weight chart, with body fat
+   percentage synced from the health exporter as a second line), imported
+   workouts auto-completing matching board routines, and an opt-in for
+   counting watch calories toward the day's energy target. Strava as an
+   optional secondary connector if ever wanted. Intraday (hourly) metric
+   detail would need a finer-grained table and a chattier exporter
+   setting — deliberately deferred to keep the sync light.
 
 ## Ongoing polish
 
