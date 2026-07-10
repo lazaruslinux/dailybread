@@ -4,6 +4,7 @@ import { type ChangeEvent, useCallback, useEffect, useState } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { Avatar } from '../components/Avatar'
+import { AvatarCrop } from '../components/AvatarCrop'
 import { Button, FormError } from '../components/ui'
 import { formatTime, MOODS, MOOD_ORDER } from '../lib/moods'
 
@@ -25,6 +26,8 @@ export function Profile({ userId }: { userId: number }) {
   const [bioDraft, setBioDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [avatarBusy, setAvatarBusy] = useState(false)
+  // A freshly picked photo waits in the crop sheet until it's framed.
+  const [cropFile, setCropFile] = useState<File | null>(null)
   // Only a parent sets photos, and only their own or a child's — never another
   // parent's. Children set none, so this is false for them even on their own
   // page. Mirrors the backend rule in users._require_can_set_avatar.
@@ -66,16 +69,20 @@ export function Profile({ userId }: { userId: number }) {
     }
   }
 
-  async function onPickAvatar(e: ChangeEvent<HTMLInputElement>) {
+  function onPickAvatar(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
-    e.target.value = '' // let the same file be re-picked after an error
-    if (!file) return
+    e.target.value = '' // let the same file be re-picked after a cancel
+    if (file) setCropFile(file)
+  }
+
+  async function uploadCropped(blob: Blob) {
     setAvatarBusy(true)
     setError(null)
     try {
       // The server returns the fresh profile (new avatar_updated_at), so the
       // photo swaps in immediately without another round-trip.
-      setProfile(await api.uploadAvatar(userId, file))
+      setProfile(await api.uploadAvatar(userId, blob))
+      setCropFile(null)
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Could not upload that photo.')
     } finally {
@@ -119,6 +126,14 @@ export function Profile({ userId }: { userId: number }) {
 
   return (
     <div>
+      {cropFile && (
+        <AvatarCrop
+          file={cropFile}
+          busy={avatarBusy}
+          onCancel={() => setCropFile(null)}
+          onSave={uploadCropped}
+        />
+      )}
       <motion.div
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}

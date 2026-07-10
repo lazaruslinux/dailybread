@@ -916,9 +916,11 @@ export const avatarUrl = (u: { id: number; avatar_updated_at: string | null }): 
 
 // Multipart upload can't go through request(): the browser must set its own
 // multipart Content-Type with the boundary, so we call fetch directly here.
-export async function uploadAvatar(userId: number, file: File): Promise<Profile> {
+export async function uploadAvatar(userId: number, blob: Blob): Promise<Profile> {
   const body = new FormData()
-  body.append('file', file)
+  // A bare Blob (the crop sheet's canvas export) needs an explicit filename;
+  // the server reads bytes, not the name.
+  body.append('file', blob, 'avatar.jpg')
   const res = await fetch(`/api/users/${userId}/avatar`, {
     method: 'POST',
     credentials: 'same-origin',
