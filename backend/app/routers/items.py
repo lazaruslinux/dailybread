@@ -156,6 +156,8 @@ def _validate_item(item: Item) -> None:
     Tasks are free-form. Activities are time blocks (start and end required).
     Appointments are calendar events: a start and end, or all-day (no times).
     """
+    if item.workout_auto_complete and item.kind != ItemKind.routine:
+        _bad("Only routines can complete themselves from a workout")
     if item.kind == ItemKind.routine:
         if item.date_for is not None:
             _bad("Routines recur; they take no date")
@@ -289,6 +291,7 @@ def _feed_item(
         all_day=item.all_day,
         date_for=item.date_for,
         repeat=_repeat_out(item),
+        workout_auto_complete=item.workout_auto_complete,
         completed=completed,
         streak=streak,
         pending=pending,
@@ -623,6 +626,7 @@ def create_item(
         repeat_interval=rinterval,
         repeat_anchor=ranchor,
         repeat_month_day=rmonthday,
+        workout_auto_complete=data.workout_auto_complete,
     )
     _validate_item(item)
     db.add(item)
@@ -688,6 +692,8 @@ def update_item(
             item.repeat_anchor,
             item.repeat_month_day,
         ) = _resolve_repeat(data.repeat)
+    if "workout_auto_complete" in fields and data.workout_auto_complete is not None:
+        item.workout_auto_complete = data.workout_auto_complete
     if "shared_to_feed" in fields and data.shared_to_feed is not None:
         item.shared_to_feed = data.shared_to_feed
 

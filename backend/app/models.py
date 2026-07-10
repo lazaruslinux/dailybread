@@ -210,6 +210,13 @@ class User(Base):
     goal_steps: Mapped[int | None] = mapped_column(Integer, nullable=True)
     goal_active_kcal: Mapped[int | None] = mapped_column(Integer, nullable=True)
     goal_exercise_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Opt-in: the watch's active calories raise the day's food budget. The
+    # diary takes the LARGER of the watch number and the manual exercise log
+    # for a day, never the sum — a logged run also shows up in the watch's
+    # total, so adding them would count it twice.
+    count_watch_kcal: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     @property
@@ -327,6 +334,13 @@ class Item(Base):
     all_day: Mapped[bool] = mapped_column(Boolean, default=False)
     # Which day (tasks and events). Routines leave this NULL and use recurrence.
     date_for: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+
+    # Routines only: a member's synced workout (any kind) checks off their own
+    # slot on this routine for that day. Explicit per-routine opt-in — the
+    # server never guesses which routines mean "exercise" from their titles.
+    workout_auto_complete: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
 
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 

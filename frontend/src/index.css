@@ -17,6 +17,8 @@
   --color-fit-active: var(--fit-active);
   --color-fit-exercise: var(--fit-exercise);
   --color-fit-hr: var(--fit-hr);
+  --color-fit-weight: var(--fit-weight);
+  --color-fit-bodyfat: var(--fit-bodyfat);
 }
 
 /* ---- Default theme: Light Amber (warm near-white paper, deep-amber accents) - */
@@ -50,6 +52,8 @@
   --fit-active: #d94f10;
   --fit-exercise: #0c8f82;
   --fit-hr: #2563eb;
+  --fit-weight: #be185d;
+  --fit-bodyfat: #8a6a00;
 
   /* Danger (delete, errors). On paper the ink must be deep enough to read; a
      light rose would wash out, which is why the tint alone isn't the text. */
@@ -85,6 +89,8 @@
   --fit-active: #ea580c;
   --fit-exercise: #0d9488;
   --fit-hr: #3b82f6;
+  --fit-weight: #ec4899;
+  --fit-bodyfat: #b08704;
 
   /* Light rose reads on the near-black surface here. */
   --danger-fg: #fda4af; /* rose-300 */

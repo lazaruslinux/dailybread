@@ -197,6 +197,8 @@ class ItemIn(BaseModel):
     all_day: bool = False  # all-day appointment: a date with no times
     date_for: dt.date | None = None  # tasks/events; routines use repeat instead
     repeat: RepeatIn | None = None  # required for routines, forbidden otherwise
+    # Routines only: a synced workout checks this routine off for that member.
+    workout_auto_complete: bool = False
     # Future cross-household feed (Phase E). None follows the kind default.
     shared_to_feed: bool | None = None
 
@@ -218,6 +220,7 @@ class ItemUpdate(BaseModel):
     all_day: bool | None = None
     date_for: dt.date | None = None
     repeat: RepeatIn | None = None
+    workout_auto_complete: bool | None = None
     shared_to_feed: bool | None = None
 
 
@@ -247,6 +250,8 @@ class FeedItemOut(BaseModel):
     all_day: bool
     date_for: dt.date | None
     repeat: RepeatOut | None  # anything recurring (routines, repeating appointments)
+    # Routines only: this routine checks itself off from a synced workout.
+    workout_auto_complete: bool = False
     # The requesting member's own view: for a routine, their own check/streak
     # (or, for a non-participant, whether every participant is done). For other
     # kinds, the single shared check.
@@ -829,6 +834,10 @@ class DiaryDayOut(BaseModel):
     date: dt.date
     targets: TargetsOut
     consumed: RecipeMacros
+    # The watch's active calories for the day, present only when the member
+    # opted in to counting them; the client uses it to say where the day's
+    # earn-back came from.
+    watch_kcal: float | None = None
     entries: list[DiaryEntryOut]
     exercise: list[ExerciseOut] = []
     burned: float = 0.0
@@ -1221,8 +1230,16 @@ class FitnessOut(BaseModel):
     week: list[FitnessWeekDayOut]
     workouts: list[WorkoutOut]
     goals: FitnessGoalsOut
+    # Opt-in: watch active calories raise the day's food budget.
+    count_watch_kcal: bool = False
+
+
+class WatchKcalIn(BaseModel):
+    enabled: bool
 
 
 class IngestResultOut(BaseModel):
     days: int
     workouts: int
+    # Routines checked off by this sync (the per-routine workout opt-in).
+    routines_completed: int = 0

@@ -85,6 +85,7 @@ export function ItemSheet({
   // Recurrence: routines always repeat; appointments may (a weekly work
   // meeting). A new routine starts as a plain daily one.
   const [repeats, setRepeats] = useState(Boolean(item?.repeat) && item?.kind === 'appointment')
+  const [workoutAuto, setWorkoutAuto] = useState(item?.workout_auto_complete ?? false)
   const [repeatType, setRepeatType] = useState<api.RepeatType>(item?.repeat?.type ?? 'weekly')
   const [days, setDays] = useState<number[]>(item?.repeat?.days ?? EVERY_DAY)
   const [interval, setInterval] = useState(item?.repeat?.interval ?? 1)
@@ -145,6 +146,7 @@ export function ItemSheet({
       all_day: kind === 'appointment' && !repeatingAppt ? allDay : false,
       date_for: recurs ? null : date || null,
       repeat,
+      workout_auto_complete: isRoutine ? workoutAuto : false,
     }
     try {
       if (creating) await api.createItem(payload)
@@ -342,6 +344,29 @@ export function ItemSheet({
                 </div>
               )}
               {!weeklyReady && <p className="text-danger mt-1.5 text-xs">Pick at least one day.</p>}
+            </div>
+          )}
+
+          {isRoutine && (
+            <div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={workoutAuto}
+                onClick={() => setWorkoutAuto((v) => !v)}
+                className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left"
+              >
+                <span className="text-sm font-semibold text-fg/85">A workout checks it off</span>
+                <span className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${workoutAuto ? 'bg-accent' : 'bg-fg/15'}`}>
+                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-fg transition-all ${workoutAuto ? 'left-[1.125rem]' : 'left-0.5'}`} />
+                </span>
+              </button>
+              {workoutAuto && (
+                <p className="mt-1.5 px-1 text-xs text-fg/45">
+                  When someone's watch syncs a workout, their check on this routine is marked
+                  done for that day.
+                </p>
+              )}
             </div>
           )}
 

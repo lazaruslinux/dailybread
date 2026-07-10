@@ -7,8 +7,10 @@ import {
   Footprints,
   HeartPulse,
   Link2,
+  Scale,
   Timer,
   Unplug,
+  Watch,
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import * as api from '../lib/api'
@@ -631,6 +633,307 @@ function MetricDetail({
   )
 }
 
+// ---- weight trend -----------------------------------------------------------------
+
+const LB_PER_KG = 2.20462
+const lb1 = (kg: number) => Math.round(kg * LB_PER_KG * 10) / 10
+
+type WeighPoint = { date: string; t: number; kg: number; fat: number | null }
+
+// The last 90 days of weigh-ins, oldest first, with dates as timestamps so
+// the chart can place sparse entries at their honest positions in time.
+function weighSeries(weights: api.WeightEntry[]): WeighPoint[] {
+  const cutoff = Date.now() - 90 * 86400_000
+  return weights
+    .map((w) => ({
+      date: w.date_for,
+      t: new Date(w.date_for + 'T00:00:00').getTime(),
+      kg: w.weight_kg,
+      fat: w.body_fat_pct,
+    }))
+    .filter((p) => p.t >= cutoff)
+    .sort((a, b) => a.t - b.t)
+}
+
+// One time-scaled line panel. Weight and body fat live on different scales,
+// so each gets its own panel with its own y range — never two scales on one
+// chart — while t0/t1 keep the two panels' time axes aligned. Every point
+// gets a full-height tap column split at the midpoints between neighbours.
+function LinePanel({
+  points,
+  pick,
+  t0,
+  t1,
+  height,
+  colorVar,
+  goal,
+  selected,
+  onSelect,
+}: {
+  points: WeighPoint[]
+  pick: (p: WeighPoint) => number
+  t0: number
+  t1: number
+  height: number
+  colorVar: string
+  goal?: number | null
+  selected: string | null
+  onSelect: (date: string) => void
+}) {
+  const W = 320
+  const PAD_X = 10
+  const PAD_Y = 12
+  const span = Math.max(t1 - t0, 86400_000)
+  const vals = points.map(pick)
+  let vmin = Math.min(...vals)
+  let vmax = Math.max(...vals)
+  // Fold the goal into the range only when it's near the data; a far-off
+  // goal would flatten the line into noise, so it stays a stat instead.
+  const spread = vmax - vmin
+  if (goal != null && goal >= vmin - spread && goal <= vmax + spread) {
+    vmin = Math.min(vmin, goal)
+    vmax = Math.max(vmax, goal)
+  }
+  const pad = (vmax - vmin) * 0.15 || Math.max(vmax * 0.03, 1)
+  vmin -= pad
+  vmax += pad
+  const x = (t: number) => PAD_X + ((t - t0) / span) * (W - 2 * PAD_X)
+  const y = (v: number) => PAD_Y + (1 - (v - vmin) / (vmax - vmin)) * (height - 2 * PAD_Y)
+  const path = points
+    .map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)} ${y(pick(p)).toFixed(1)}`)
+    .join(' ')
+  const goalY = goal != null && goal > vmin && goal < vmax ? y(goal) : null
+  return (
+    <svg viewBox={`0 0 ${W} ${height}`} className="w-full" role="img">
+      {goalY !== null && (
+        <>
+          <line
+            x1={0}
+            x2={W}
+            y1={goalY}
+            y2={goalY}
+            stroke="currentColor"
+            className="text-fg/25"
+            strokeDasharray="4 4"
+            strokeWidth={1}
+          />
+          <text
+            x={W - 2}
+            y={goalY - 4}
+            textAnchor="end"
+            fontSize={9}
+            fontWeight={600}
+            fill="currentColor"
+            className="text-fg/40"
+          >
+            GOAL
+          </text>
+        </>
+      )}
+      <path
+        d={path}
+        fill="none"
+        stroke={`var(${colorVar})`}
+        strokeWidth={2}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      {points.map((p) => (
+        <circle
+          key={p.date}
+          cx={x(p.t)}
+          cy={y(pick(p))}
+          r={selected === p.date ? 5 : 3.5}
+          fill={`var(${colorVar})`}
+          stroke="var(--surface)"
+          strokeWidth={2}
+        />
+      ))}
+      {points.map((p, i) => {
+        const left = i === 0 ? 0 : (x(points[i - 1].t) + x(p.t)) / 2
+        const right = i === points.length - 1 ? W : (x(p.t) + x(points[i + 1].t)) / 2
+        return (
+          <rect
+            key={p.date}
+            x={left}
+            y={0}
+            width={right - left}
+            height={height}
+            fill="transparent"
+            role="button"
+            aria-label={fmtReadoutDate(p.date)}
+            onClick={() => onSelect(p.date)}
+            style={{ cursor: 'pointer' }}
+          />
+        )
+      })}
+    </svg>
+  )
+}
+
+// The card's small static preview of the same series.
+function WeightSparkline({ points }: { points: WeighPoint[] }) {
+  const W = 96
+  const H = 36
+  const t0 = points[0].t
+  const span = Math.max(points[points.length - 1].t - t0, 86400_000)
+  const vals = points.map((p) => p.kg)
+  const vmin = Math.min(...vals)
+  const spread = Math.max(...vals) - vmin || 1
+  const path = points
+    .map(
+      (p, i) =>
+        `${i ? 'L' : 'M'}${(3 + ((p.t - t0) / span) * (W - 6)).toFixed(1)} ${(
+          4 +
+          (1 - (p.kg - vmin) / spread) * (H - 8)
+        ).toFixed(1)}`,
+    )
+    .join(' ')
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-hidden>
+      <path
+        d={path}
+        fill="none"
+        stroke="var(--fit-weight)"
+        strokeWidth={2}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+function WeightCard({ points, onOpen }: { points: WeighPoint[]; onOpen: () => void }) {
+  const latest = points[points.length - 1]
+  return (
+    <button type="button" onClick={onOpen} className="glass relative flex items-center gap-3 p-4 text-left">
+      <div className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
+          <Scale className="h-3.5 w-3.5" style={{ color: 'var(--fit-weight)' }} /> Weight
+        </span>
+        <p className="mt-1 text-[11px] text-fg/45">Last weigh-in · {fmtShortDate(latest.date)}</p>
+        <p className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fit-weight)' }}>
+          {lb1(latest.kg).toLocaleString()}
+          <span className="ml-1 text-sm font-semibold">lb</span>
+          {latest.fat !== null && (
+            <span className="ml-2 text-sm font-semibold" style={{ color: 'var(--fit-bodyfat)' }}>
+              {latest.fat}% fat
+            </span>
+          )}
+        </p>
+      </div>
+      {points.length > 1 && <WeightSparkline points={points} />}
+      <ChevronRight className="h-4 w-4 shrink-0 text-fg/30" />
+    </button>
+  )
+}
+
+function WeightDetail({ health, onClose }: { health: api.Health; onClose: () => void }) {
+  const [selected, setSelected] = useState<string | null>(null)
+  const points = weighSeries(health.weights)
+  const latest = points[points.length - 1]
+  const first = points[0]
+  const fatPoints = points.filter((p) => p.fat !== null)
+  // The right edge is today, so a stretch without weigh-ins shows as the
+  // honest flat gap it is.
+  const t0 = first.t
+  const t1 = Math.max(latest.t, new Date().setHours(0, 0, 0, 0))
+  const goalKg = health.profile?.goal_weight_kg ?? null
+
+  const sel = selected !== null ? points.find((p) => p.date === selected) ?? null : null
+  const delta = points.length > 1 ? lb1(latest.kg) - lb1(first.kg) : null
+
+  return (
+    <Sheet onClose={onClose}>
+      <h3 className="mb-1 flex items-center gap-2 text-lg font-bold">
+        <Scale className="h-5 w-5" style={{ color: 'var(--fit-weight)' }} />
+        Weight
+      </h3>
+      <p className="text-[11px] text-fg/45">Last weigh-in</p>
+      <p className="text-3xl font-bold tracking-tight" style={{ color: 'var(--fit-weight)' }}>
+        {lb1(latest.kg).toLocaleString()}
+        <span className="ml-1 text-base font-semibold">lb</span>
+      </p>
+
+      <div className="mt-4 flex flex-col gap-4">
+        <div>
+          <p className="mb-2 h-4 text-xs text-fg/55">
+            {sel
+              ? `${fmtReadoutDate(sel.date)} · ${lb1(sel.kg)} lb${
+                  sel.fat !== null ? ` · ${sel.fat}% fat` : ''
+                }`
+              : 'Last 90 days · tap a point'}
+          </p>
+          <LinePanel
+            points={points}
+            pick={(p) => p.kg}
+            t0={t0}
+            t1={t1}
+            height={120}
+            colorVar="--fit-weight"
+            goal={goalKg}
+            selected={selected}
+            onSelect={(d) => setSelected(selected === d ? null : d)}
+          />
+          <div className="mt-1 flex justify-between text-[10px] font-semibold text-fg/35">
+            <span>{fmtShortDate(first.date)}</span>
+            <span>Today</span>
+          </div>
+        </div>
+
+        <div>
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--fit-bodyfat)' }}>
+            Body fat %
+          </p>
+          {fatPoints.length > 0 ? (
+            <LinePanel
+              points={fatPoints}
+              pick={(p) => p.fat as number}
+              t0={t0}
+              t1={t1}
+              height={64}
+              colorVar="--fit-bodyfat"
+              goal={health.profile?.goal_body_fat_pct ?? null}
+              selected={selected}
+              onSelect={(d) => setSelected(selected === d ? null : d)}
+            />
+          ) : (
+            <p className="rounded-xl bg-fg/5 px-4 py-3 text-xs text-fg/50">
+              If your scale measures body fat, add Body Fat Percentage to the metrics your
+              exporter sends and it draws here alongside the weight line.
+            </p>
+          )}
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <DetailStat label="Latest" value={`${lb1(latest.kg)} lb`} sub={fmtShortDate(latest.date)} />
+          <DetailStat
+            label="Change"
+            value={
+              delta === null ? '–' : `${delta > 0 ? '+' : ''}${Math.round(delta * 10) / 10} lb`
+            }
+            sub={delta === null ? undefined : `since ${fmtShortDate(first.date)}`}
+          />
+          <DetailStat
+            label="Goal"
+            value={goalKg === null ? '–' : `${lb1(goalKg)} lb`}
+            sub={
+              goalKg === null
+                ? undefined
+                : `${Math.round(Math.abs(lb1(latest.kg) - lb1(goalKg)) * 10) / 10} lb to go`
+            }
+          />
+        </div>
+
+        <p className="text-xs text-fg/45">
+          Weigh-ins are logged on the You tab, or arrive with your scale's sync. Only you see
+          this.
+        </p>
+      </div>
+    </Sheet>
+  )
+}
+
 function WorkoutRow({ workout }: { workout: api.Workout }) {
   const bits = [
     workout.duration_s ? `${Math.round(workout.duration_s / 60)} min` : null,
@@ -665,13 +968,18 @@ function WorkoutRow({ workout }: { workout: api.Workout }) {
 
 export function Fitness() {
   const [data, setData] = useState<api.Fitness | null>(null)
+  const [health, setHealth] = useState<api.Health | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
   const [detail, setDetail] = useState<MetricDef | null>(null)
+  const [weightOpen, setWeightOpen] = useState(false)
   const [history, setHistory] = useState<api.FitnessWeekDay[] | null>(null)
 
   const refresh = useCallback(async () => {
+    // The weight log rides along for the trend card; if it can't load, the
+    // card just doesn't appear — the rings are the tab's real job.
+    api.getHealthProfile().then(setHealth).catch(() => {})
     try {
       setData(await api.getFitness(api.localDate()))
     } catch (err) {
@@ -702,6 +1010,16 @@ export function Fitness() {
       await refresh()
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Something went wrong')
+    }
+  }
+
+  async function toggleWatchKcal() {
+    if (!data) return
+    try {
+      const res = await api.setWatchKcal(!data.count_watch_kcal)
+      setData((d) => (d ? { ...d, count_watch_kcal: res.enabled } : d))
+    } catch {
+      // The switch simply stays put; the next tap tries again.
     }
   }
 
@@ -772,6 +1090,10 @@ export function Fitness() {
             ))}
           </div>
 
+          {health !== null && weighSeries(health.weights).length > 0 && (
+            <WeightCard points={weighSeries(health.weights)} onOpen={() => setWeightOpen(true)} />
+          )}
+
           {data.workouts.length > 0 && (
             <div className="flex flex-col gap-2">
               <span className="px-1 text-xs font-semibold uppercase tracking-wide text-fg/50">
@@ -808,6 +1130,40 @@ export function Fitness() {
               </button>
             )}
           </div>
+
+          {data.connected && (
+            <div className="glass p-4">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={data.count_watch_kcal}
+                onClick={toggleWatchKcal}
+                className="flex w-full items-center justify-between gap-3 text-left"
+              >
+                <span className="flex min-w-0 items-center gap-3">
+                  <Watch className="h-4 w-4 shrink-0 text-accent-bright" />
+                  <span className="text-sm text-fg/80">Watch calories raise my food budget</span>
+                </span>
+                <span
+                  className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${
+                    data.count_watch_kcal ? 'bg-accent' : 'bg-fg/15'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 h-5 w-5 rounded-full bg-fg transition-all ${
+                      data.count_watch_kcal ? 'left-[1.125rem]' : 'left-0.5'
+                    }`}
+                  />
+                </span>
+              </button>
+              {data.count_watch_kcal && (
+                <p className="mt-2 text-xs text-fg/45">
+                  Days with watch data add the larger of the watch's active calories and your
+                  logged exercise to the diary — never both.
+                </p>
+              )}
+            </div>
+          )}
         </>
       )}
 
@@ -821,6 +1177,9 @@ export function Fitness() {
             onGoals={(goals) => setData((d) => (d ? { ...d, goals } : d))}
             onClose={() => setDetail(null)}
           />
+        )}
+        {weightOpen && health !== null && (
+          <WeightDetail health={health} onClose={() => setWeightOpen(false)} />
         )}
         {connecting && (
           <ConnectSheet

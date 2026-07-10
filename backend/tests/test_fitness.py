@@ -189,6 +189,199 @@ def test_a_deliberate_weigh_in_beats_the_sync(owner):
     assert today_rows and today_rows[0]["weight_kg"] == 88.0
 
 
+def _bodyfat_payload(day: dt.date, fat_qty, weight_qty=200.0) -> dict:
+    """Body fat listed BEFORE weight, the order the exporter doesn't promise:
+    the import must land the weigh-in first anyway."""
+    return {
+        "data": {
+            "metrics": [
+                {
+                    "name": "body_fat_percentage",
+                    "units": "%",
+                    "data": [{"date": _stamp(day, "07:00:00"), "qty": fat_qty}],
+                },
+                {
+                    "name": "weight_body_mass",
+                    "units": "lb",
+                    "data": [{"date": _stamp(day, "07:00:00"), "qty": weight_qty}],
+                },
+            ]
+        }
+    }
+
+
+def _today_weight(client) -> dict:
+    weights = client.get("/me/health").json()["weights"]
+    rows = [w for w in weights if w["date_for"] == TODAY.isoformat()]
+    assert rows
+    return rows[0]
+
+
+def test_body_fat_joins_the_days_weight_entry(owner):
+    token = _mint(owner)
+    assert _send(owner, token, _bodyfat_payload(TODAY, 23.4)).status_code == 200
+    row = _today_weight(owner)
+    assert abs(row["weight_kg"] - 90.72) < 0.01
+    assert row["body_fat_pct"] == 23.4
+
+
+def test_body_fat_fractions_are_understood(owner):
+    # HealthKit stores body fat as a fraction; some exporter versions pass
+    # that straight through.
+    token = _mint(owner)
+    _send(owner, token, _bodyfat_payload(TODAY, 0.234))
+    assert _today_weight(owner)["body_fat_pct"] == 23.4
+
+
+def test_typed_body_fat_beats_the_sync(owner):
+    owner.put(
+        "/me/health/weight",
+        json={"date_for": TODAY.isoformat(), "weight_kg": 88.0, "body_fat_pct": 20.0},
+    )
+    token = _mint(owner)
+    _send(owner, token, _bodyfat_payload(TODAY, 23.4))
+    row = _today_weight(owner)
+    assert row["weight_kg"] == 88.0
+    assert row["body_fat_pct"] == 20.0
+
+
+def test_sync_fills_a_blank_body_fat_on_a_manual_weigh_in(owner):
+    owner.put(
+        "/me/health/weight",
+        json={"date_for": TODAY.isoformat(), "weight_kg": 88.0},
+    )
+    token = _mint(owner)
+    _send(owner, token, _bodyfat_payload(TODAY, 23.4))
+    row = _today_weight(owner)
+    assert row["weight_kg"] == 88.0  # the deliberate weigh-in still wins
+    assert row["body_fat_pct"] == 23.4  # but the blank fat is filled
+
+
+def test_body_fat_without_a_weigh_in_is_skipped(owner):
+    token = _mint(owner)
+    payload = _bodyfat_payload(TODAY, 23.4)
+    del payload["data"]["metrics"][1]  # no weight anywhere
+    assert _send(owner, token, payload).status_code == 200
+    weights = owner.get("/me/health").json()["weights"]
+    assert not [w for w in weights if w["date_for"] == TODAY.isoformat()]
+
+
+# ---- watch calories in the food budget -------------------------------------------
+
+
+def test_watch_kcal_is_off_by_default(owner):
+    token = _mint(owner)
+    _send(owner, token, _payload())  # active_energy 512.5 lands
+    day = owner.get(f"/diary?date={TODAY.isoformat()}").json()
+    assert day["burned"] == 0
+    assert day["watch_kcal"] is None
+    assert day["targets"]["exercise_kcal"] == 0
+
+
+def test_opted_in_watch_kcal_raises_the_budget(owner):
+    assert owner.put("/me/fitness/watch-kcal", json={"enabled": True}).json() == {
+        "enabled": True
+    }
+    token = _mint(owner)
+    _send(owner, token, _payload())
+    day = owner.get(f"/diary?date={TODAY.isoformat()}").json()
+    assert day["burned"] == 512.5
+    assert day["watch_kcal"] == 512.5
+    assert day["targets"]["exercise_kcal"] == 512.5
+
+
+def test_watch_and_manual_log_never_sum(owner):
+    """The budget takes the larger of the two: a logged run is already inside
+    the watch's active total, so summing would count it twice."""
+    owner.put("/me/fitness/watch-kcal", json={"enabled": True})
+    owner.put("/me/health/weight", json={"date_for": TODAY.isoformat(), "weight_kg": 90.0})
+    res = owner.post(
+        "/me/exercise",
+        json={"date_for": TODAY.isoformat(), "activity": "running", "effort": "moderate", "minutes": 120},
+    )
+    assert res.status_code == 201, res.text
+    manual = res.json()["kcal"]
+    token = _mint(owner)
+    _send(owner, token, _payload())  # watch says 512.5
+    day = owner.get(f"/diary?date={TODAY.isoformat()}").json()
+    assert day["burned"] == max(manual, 512.5)
+    assert day["targets"]["exercise_kcal"] == max(manual, 512.5)
+
+
+def test_watch_kcal_toggle_is_adults_only(child):
+    assert child.put("/me/fitness/watch-kcal", json={"enabled": True}).status_code == 403
+
+
+# ---- workout -> routine auto-complete --------------------------------------------
+
+
+def _daily_routine(client, title: str, auto: bool = True, days: list[int] | None = None) -> dict:
+    res = client.post(
+        "/items",
+        json={
+            "kind": "routine",
+            "title": title,
+            "repeat": {"type": "weekly", "days": days or [0, 1, 2, 3, 4, 5, 6]},
+            "workout_auto_complete": auto,
+        },
+    )
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+def _feed_item(client, item_id: int) -> dict:
+    feed = client.get(f"/items/feed?date={TODAY.isoformat()}").json()
+    return next(i for i in feed["today"] if i["id"] == item_id)
+
+
+def test_a_workout_checks_off_an_opted_in_routine(owner):
+    routine = _daily_routine(owner, "Morning run", auto=True)
+    plain = _daily_routine(owner, "Read a book", auto=False)
+    token = _mint(owner)
+    res = _send(owner, token, _payload())
+    assert res.json()["routines_completed"] == 1
+    assert _feed_item(owner, routine["id"])["completed"] is True
+    assert _feed_item(owner, plain["id"])["completed"] is False
+
+
+def test_resent_workouts_do_not_double_complete(owner):
+    routine = _daily_routine(owner, "Morning run")
+    token = _mint(owner)
+    assert _send(owner, token, _payload()).json()["routines_completed"] == 1
+    assert _send(owner, token, _payload()).json()["routines_completed"] == 0
+    assert _feed_item(owner, routine["id"])["completed"] is True
+
+
+def test_a_deliberate_check_is_left_alone(owner):
+    routine = _daily_routine(owner, "Morning run")
+    assert owner.post(f"/items/{routine['id']}/complete?date={TODAY.isoformat()}").status_code == 200
+    token = _mint(owner)
+    assert _send(owner, token, _payload()).json()["routines_completed"] == 0
+
+
+def test_the_routine_must_land_on_the_workout_day(owner):
+    # Scheduled only on a weekday that is NOT today.
+    off_day = [(TODAY.weekday() + 3) % 7]
+    _daily_routine(owner, "Leg day", days=off_day)
+    token = _mint(owner)
+    assert _send(owner, token, _payload()).json()["routines_completed"] == 0
+
+
+def test_only_the_syncing_members_routines_complete(owner, parent):
+    # The second parent's own flagged routine; the owner's workout is not theirs.
+    _daily_routine(parent, "Their run")
+    token = _mint(owner)
+    assert _send(owner, token, _payload()).json()["routines_completed"] == 0
+
+
+def test_the_flag_is_routines_only(owner):
+    res = owner.post(
+        "/items",
+        json={"kind": "task", "title": "Call dentist", "workout_auto_complete": True},
+    )
+    assert res.status_code == 400
+
+
 def test_fitness_data_is_self_only(owner, parent):
     token = _mint(owner)
     _send(owner, token, _payload())
@@ -273,4 +466,4 @@ def test_malformed_payloads_are_survived(owner):
         },
     )
     assert res.status_code == 200
-    assert res.json() == {"days": 0, "workouts": 0}
+    assert res.json() == {"days": 0, "workouts": 0, "routines_completed": 0}

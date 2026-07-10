@@ -424,6 +424,8 @@ export interface Fitness {
   week: FitnessWeekDay[]
   workouts: Workout[]
   goals: FitnessGoals
+  // Opt-in: watch active calories raise the day's food budget.
+  count_watch_kcal: boolean
 }
 
 export interface IngestToken {
@@ -449,6 +451,12 @@ export const getFitnessHistory = (date: string) =>
 // Partial update; an explicit null puts that goal back on the default.
 export const updateFitnessGoals = (goals: Partial<Record<keyof FitnessGoals, number | null>>) =>
   request<FitnessGoals>('/me/fitness/goals', { method: 'PATCH', body: JSON.stringify(goals) })
+
+export const setWatchKcal = (enabled: boolean) =>
+  request<{ enabled: boolean }>('/me/fitness/watch-kcal', {
+    method: 'PUT',
+    body: JSON.stringify({ enabled }),
+  })
 
 // ---- items and the home feed --------------------------------------------------
 
@@ -500,6 +508,8 @@ export interface FeedItem {
   all_day: boolean // all-day appointment
   date_for: string | null // "YYYY-MM-DD"
   repeat: Repeat | null // routines only
+  // Routines only: this routine checks itself off from a synced workout.
+  workout_auto_complete: boolean
   // The requesting member's own view: for a routine, their own check and
   // streak (or, for a non-participant, whether everyone is done). For other
   // kinds, the single shared check.
@@ -551,6 +561,8 @@ export interface ItemPayload {
   all_day?: boolean
   date_for?: string | null
   repeat?: RepeatInput | null // required for routines, ignored otherwise
+  // Routines only: a synced workout checks the routine off for that member.
+  workout_auto_complete?: boolean
   shared_to_feed?: boolean
 }
 
@@ -1027,6 +1039,8 @@ export interface DiaryDay {
   date: string
   targets: NutritionTargets
   consumed: RecipeMacros
+  // The watch's active calories, present only when the member opted in.
+  watch_kcal: number | null
   entries: DiaryEntry[]
   exercise: ExerciseEntry[]
   burned: number

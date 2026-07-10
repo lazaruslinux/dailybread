@@ -18,13 +18,23 @@ from collections import defaultdict
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app import throttle
 from app.db import get_db
 from app.deps import require_adult
 from app.invitecodes import hash_code
-from app.models import FitnessDaily, IngestToken, User, WeightEntry, Workout
+from app.models import (
+    Completion,
+    FitnessDaily,
+    IngestToken,
+    Item,
+    ItemKind,
+    User,
+    WeightEntry,
+    Workout,
+)
+from app.recurrence import occurs_on
 from app.schemas import (
     FitnessDayOut,
     FitnessGoalsIn,
@@ -34,6 +44,7 @@ from app.schemas import (
     FitnessWeekDayOut,
     IngestResultOut,
     IngestTokenOut,
+    WatchKcalIn,
     WorkoutOut,
 )
 
@@ -50,6 +61,7 @@ METRIC_MAP = {
     "resting_heart_rate": ("resting_hr", "avg"),
 }
 WEIGHT_METRIC = "weight_body_mass"
+BODYFAT_METRIC = "body_fat_percentage"
 
 # One shared bucket for bad tokens, same reasoning as signup invites: the
 # tokens are long random secrets, so every wrong guess is a fresh key and
@@ -145,6 +157,10 @@ def _upsert_daily(
 
 def _import_metrics(db: Session, user: User, metrics) -> int:
     touched = 0
+    # Body fat rides on the day's weight entry, so its points wait until every
+    # other metric (weight included) has landed — the exporter doesn't promise
+    # an order within one payload.
+    bodyfat_points: list = []
     for entry in metrics if isinstance(metrics, list) else []:
         if not isinstance(entry, dict):
             continue
@@ -154,6 +170,9 @@ def _import_metrics(db: Session, user: User, metrics) -> int:
 
         if name == WEIGHT_METRIC:
             touched += _import_weight(db, user, points, unit)
+            continue
+        if name == BODYFAT_METRIC:
+            bodyfat_points.extend(points)
             continue
         if name not in METRIC_MAP:
             continue  # metrics we don't track yet are silently fine
@@ -169,7 +188,7 @@ def _import_metrics(db: Session, user: User, metrics) -> int:
             value = sum(values) if combine == "sum" else sum(values) / len(values)
             _upsert_daily(db, user, day, metric, value, unit)
             touched += 1
-    return touched
+    return touched + _import_body_fat(db, user, bodyfat_points)
 
 
 def _import_weight(db: Session, user: User, points, unit: str) -> int:
@@ -200,8 +219,51 @@ def _import_weight(db: Session, user: User, points, unit: str) -> int:
     return touched
 
 
-def _import_workouts(db: Session, user: User, workouts) -> int:
+def _import_body_fat(db: Session, user: User, points) -> int:
+    """Body fat percentage joins the day's weight entry (the column the manual
+    weigh-in form already fills) so the trend chart reads both lines from one
+    log. It only fills a blank: a value someone typed is never overwritten,
+    and a reading on a day with no weigh-in at all has nowhere to live — smart
+    scales send weight and fat together, so that day's weight is normally in
+    the same payload and has already landed by the time this runs."""
+    last_by_day: dict[dt.date, tuple[dt.datetime, float]] = {}
+    for point in points:
+        when = _parse_when(point.get("date")) if isinstance(point, dict) else None
+        qty = _qty(point.get("qty")) if isinstance(point, dict) else None
+        if when is None or qty is None:
+            continue
+        # HealthKit stores body fat as a fraction; the exporter has shipped it
+        # both ways. No human is at 1% body fat, so a value at or below 1 can
+        # only be a fraction.
+        pct = qty * 100.0 if qty <= 1.0 else qty
+        if not (1.0 < pct <= 75.0):
+            continue
+        day = when.date()
+        if day not in last_by_day or when > last_by_day[day][0]:
+            last_by_day[day] = (when, pct)
     touched = 0
+    if last_by_day:
+        # The session doesn't autoflush, and this payload's own weigh-ins are
+        # usually still pending inserts — make them queryable first.
+        db.flush()
+    for day, (_, pct) in last_by_day.items():
+        entry = db.scalar(
+            select(WeightEntry).where(
+                WeightEntry.user_id == user.id, WeightEntry.date_for == day
+            )
+        )
+        if entry is None or entry.body_fat_pct is not None:
+            continue
+        entry.body_fat_pct = round(pct, 1)
+        touched += 1
+    return touched
+
+
+def _import_workouts(db: Session, user: User, workouts) -> tuple[int, set[dt.date]]:
+    """Returns (workouts touched, the days they started on) — the days feed
+    the routine auto-complete pass."""
+    touched = 0
+    days: set[dt.date] = set()
     for entry in workouts if isinstance(workouts, list) else []:
         if not isinstance(entry, dict):
             continue
@@ -238,7 +300,63 @@ def _import_workouts(db: Session, user: User, workouts) -> int:
         heart = entry.get("heartRate")
         row.avg_hr = _qty(heart.get("avg")) if isinstance(heart, dict) else None
         touched += 1
-    return touched
+        days.add(started.date())
+    return touched, days
+
+
+def _auto_complete_routines(db: Session, user: User, days: set[dt.date]) -> int:
+    """Check off this member's opted-in routines on days a workout landed.
+
+    Any workout counts — the opt-in on the routine is the whole contract, the
+    server never matches workout names to titles. Only the syncing member's
+    own slot is filled, only on days the routine actually occurs, and an
+    existing row (done, pending, or cancelled) is never touched, so re-sent
+    windows and deliberate taps both stay authoritative."""
+    if not days:
+        return 0
+    routines = db.scalars(
+        select(Item)
+        .where(
+            Item.family_id == user.family_id,
+            Item.kind == ItemKind.routine,
+            Item.workout_auto_complete.is_(True),
+        )
+        .options(selectinload(Item.assignees))
+    ).all()
+    mine = [
+        r
+        for r in routines
+        if (user.id in {a.id for a in r.assignees}) or (not r.assignees and r.owner_id == user.id)
+    ]
+    if not mine:
+        return 0
+    existing = {
+        (item_id, day)
+        for item_id, day in db.execute(
+            select(Completion.item_id, Completion.date_for).where(
+                Completion.item_id.in_([r.id for r in mine]),
+                Completion.user_id == user.id,
+                Completion.date_for.in_(days),
+            )
+        )
+    }
+    done = 0
+    for routine in mine:
+        for day in days:
+            if (routine.id, day) in existing:
+                continue
+            if not occurs_on(
+                routine.repeat_type,
+                routine.repeat_days,
+                routine.repeat_interval,
+                routine.repeat_anchor,
+                routine.repeat_month_day,
+                day,
+            ):
+                continue
+            db.add(Completion(item_id=routine.id, user_id=user.id, date_for=day))
+            done += 1
+    return done
 
 
 @router.post("/ingest/health", response_model=IngestResultOut)
@@ -250,9 +368,10 @@ def ingest_health(
     user = _ingest_user(db, authorization)
     data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
     days = _import_metrics(db, user, data.get("metrics"))
-    workouts = _import_workouts(db, user, data.get("workouts"))
+    workouts, workout_days = _import_workouts(db, user, data.get("workouts"))
+    routines = _auto_complete_routines(db, user, workout_days)
     db.commit()
-    return IngestResultOut(days=days, workouts=workouts)
+    return IngestResultOut(days=days, workouts=workouts, routines_completed=routines)
 
 
 # ---- the Fitness tab -------------------------------------------------------------
@@ -327,6 +446,7 @@ def my_fitness(
         week=week,
         workouts=[WorkoutOut.model_validate(w) for w in workouts],
         goals=_goals_out(user),
+        count_watch_kcal=user.count_watch_kcal,
     )
 
 
@@ -359,6 +479,20 @@ def update_fitness_goals(
         user.goal_exercise_min = sent["exercise_minutes"]
     db.commit()
     return _goals_out(user)
+
+
+@router.put("/me/fitness/watch-kcal", response_model=WatchKcalIn)
+def set_watch_kcal(
+    payload: WatchKcalIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_adult),
+):
+    """Opt in (or out of) counting the watch's active calories toward the
+    day's food budget. The diary takes the larger of the watch number and the
+    manual exercise log for a day, never the sum."""
+    user.count_watch_kcal = payload.enabled
+    db.commit()
+    return WatchKcalIn(enabled=user.count_watch_kcal)
 
 
 @router.post("/me/fitness/token", response_model=IngestTokenOut)

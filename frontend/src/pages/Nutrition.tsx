@@ -139,7 +139,11 @@ function TargetsCard({ day, onEdit }: { day: api.DiaryDay; onEdit: () => void })
               </div>
               {key === 'calories' && day.targets.exercise_kcal > 0 && (
                 <p className="mt-0.5 text-[11px] text-emerald-500">
-                  includes +{Math.round(day.targets.exercise_kcal)} kcal from exercise
+                  includes +{Math.round(day.targets.exercise_kcal)} kcal from{' '}
+                  {day.watch_kcal !== null &&
+                  day.watch_kcal > day.exercise.reduce((s, e) => s + e.kcal, 0)
+                    ? 'your watch'
+                    : 'exercise'}
                 </p>
               )}
             </div>

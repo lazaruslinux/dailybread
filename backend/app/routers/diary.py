@@ -11,6 +11,7 @@ from app.models import (
     UNIT_TO_BASE,
     DiaryEntry,
     ExerciseEntry,
+    FitnessDaily,
     Food,
     NutritionTarget,
     Recipe,
@@ -184,13 +185,28 @@ def get_day(
     ).all()
     burned = round(sum(w.kcal for w in workouts), 1)
 
+    # Opted-in members earn from the watch too: the day's budget uses the
+    # LARGER of the watch's active calories and the manual log, never the sum
+    # (a logged run is inside the watch total, so summing would double it).
+    watch_kcal = None
+    if user.count_watch_kcal:
+        watch_kcal = db.scalar(
+            select(FitnessDaily.value).where(
+                FitnessDaily.user_id == user.id,
+                FitnessDaily.date_for == date,
+                FitnessDaily.metric == "active_kcal",
+            )
+        )
+    earned = max(burned, watch_kcal or 0.0)
+
     return DiaryDayOut(
         date=date,
-        targets=_targets_out(db, user.id, db.get(NutritionTarget, user.id), burned),
+        targets=_targets_out(db, user.id, db.get(NutritionTarget, user.id), earned),
         consumed=RecipeMacros(**consumed),
+        watch_kcal=watch_kcal,
         entries=[DiaryEntryOut.model_validate(e) for e in entries],
         exercise=[_exercise_out(w) for w in workouts],
-        burned=burned,
+        burned=earned,
     )
 
 
