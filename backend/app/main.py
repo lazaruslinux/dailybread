@@ -12,6 +12,7 @@ from app.routers import (
     auth,
     diary,
     families,
+    fitness,
     foods,
     grocery,
     health,
@@ -67,6 +68,7 @@ app.include_router(auth.router)
 app.include_router(diary.router)
 app.include_router(health.router)
 app.include_router(families.router)
+app.include_router(fitness.router)
 app.include_router(grocery.router)
 app.include_router(items.router)
 app.include_router(foods.router)

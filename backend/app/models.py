@@ -959,3 +959,68 @@ class DigestLog(Base):
     )
     date_for: Mapped[dt.date] = mapped_column(Date)
     kind: Mapped[str] = mapped_column(String(10), default="morning", server_default="morning")
+
+
+# ---- fitness (Apple Health import) ----------------------------------------------
+
+
+class IngestToken(Base):
+    """One member's key for pushing health data in from their phone (the
+    Health Auto Export app POSTs to /ingest/health with it). Stored only as
+    a SHA-256 hash, like invite codes: the plaintext exists exactly once, in
+    the response that minted it. Re-minting replaces the old key."""
+
+    __tablename__ = "ingest_tokens"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    last_used_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class FitnessDaily(Base):
+    """One member's imported number for one day and one metric (steps,
+    active_kcal, exercise_minutes, resting_hr). Re-imports upsert, so the
+    exporter can safely resend whole windows. Self-only, like the diary."""
+
+    __tablename__ = "fitness_daily"
+    __table_args__ = (UniqueConstraint("user_id", "date_for", "metric"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    date_for: Mapped[dt.date] = mapped_column(Date, index=True)
+    metric: Mapped[str] = mapped_column(String(30))
+    value: Mapped[float] = mapped_column(Float)
+    unit: Mapped[str] = mapped_column(String(20))
+
+
+class Workout(Base):
+    """One imported workout. Times are the phone's wall clock, like every
+    other time in the app. external_id is the exporter's stable id, so a
+    re-sent window updates instead of duplicating; workouts without one fall
+    back to (member, start, activity). Self-only, like the diary."""
+
+    __tablename__ = "workouts"
+    __table_args__ = (UniqueConstraint("user_id", "external_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    external_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    activity: Mapped[str] = mapped_column(String(80))
+    started_at: Mapped[dt.datetime] = mapped_column(DateTime, index=True)
+    ended_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    duration_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    kcal: Mapped[float | None] = mapped_column(Float, nullable=True)
+    distance_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    avg_hr: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source: Mapped[str] = mapped_column(String(20), default="apple", server_default="apple")

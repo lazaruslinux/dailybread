@@ -1146,3 +1146,52 @@ class PushKeyOut(BaseModel):
 
 class PushTestOut(BaseModel):
     sent: int
+
+
+# ---- fitness (Apple Health import) -----------------------------------------------
+
+
+class IngestTokenOut(BaseModel):
+    """Shown exactly once, at mint time. The server keeps only the hash."""
+
+    token: str
+    # Where the exporter app should POST, relative to the app's address.
+    path: str
+
+
+class WorkoutOut(BaseModel):
+    id: int
+    activity: str
+    started_at: dt.datetime
+    ended_at: dt.datetime | None
+    duration_s: float | None
+    kcal: float | None
+    distance_m: float | None
+    avg_hr: float | None
+
+    model_config = {"from_attributes": True}
+
+
+class FitnessDayOut(BaseModel):
+    steps: float | None
+    active_kcal: float | None
+    exercise_minutes: float | None
+    resting_hr: float | None
+
+
+class FitnessWeekDayOut(BaseModel):
+    date_for: dt.date
+    steps: float | None
+
+
+class FitnessOut(BaseModel):
+    connected: bool
+    last_sync: dt.datetime | None
+    today: FitnessDayOut
+    week: list[FitnessWeekDayOut]
+    workouts: list[WorkoutOut]
+
+
+class IngestResultOut(BaseModel):
+    days: int
+    workouts: int

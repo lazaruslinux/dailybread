@@ -1,11 +1,12 @@
 import { motion } from 'framer-motion'
-import { CircleUser, House, ShoppingBasket, Utensils, type LucideIcon } from 'lucide-react'
+import { CircleUser, HeartPulse, House, ShoppingBasket, Utensils, type LucideIcon } from 'lucide-react'
 
-export type Tab = 'home' | 'nutrition' | 'kitchen' | 'you'
+export type Tab = 'home' | 'nutrition' | 'fitness' | 'kitchen' | 'you'
 
 const TABS: { id: Tab; label: string; Icon: LucideIcon }[] = [
   { id: 'home', label: 'Home', Icon: House },
   { id: 'nutrition', label: 'Nutrition', Icon: Utensils },
+  { id: 'fitness', label: 'Fitness', Icon: HeartPulse },
   { id: 'kitchen', label: 'Kitchen', Icon: ShoppingBasket },
   { id: 'you', label: 'You', Icon: CircleUser },
 ]

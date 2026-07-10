@@ -120,6 +120,17 @@ Where dailybread is headed, in order. Done items stay for history.
   relays with end-to-end encrypted payloads, so the server stays
   private-network-only with no inbound exposure.
 
+- **Fitness tab (Apple Health import)** — a fifth tab with the day's steps,
+  active calories, exercise minutes, and resting heart rate, a week of step
+  bars, and imported workouts. Data arrives from the member's own phone: an
+  exporter app POSTs Apple Health JSON to an ingest endpoint authenticated
+  by a per-member bearer token (shown once, hash-stored, re-mintable,
+  revocable) — no cloud middleman, no cookies, no CSRF surface. Imports are
+  idempotent (daily metrics upsert per day, workouts on the exporter's
+  stable id), weigh-ins flow into the existing weight log without ever
+  overriding a deliberate in-app entry, and everything imported is
+  self-only: invisible to other members, absent for child accounts.
+
 - **Repeating appointments** — an appointment can carry the same weekly or
   monthly schedule a routine does (the standing work meeting), keeping its
   start and end times and its shared check-off, completed per occurrence; a
@@ -170,9 +181,10 @@ Where dailybread is headed, in order. Done items stay for history.
 
 ## Next
 
-1. **Fitness sync** — workouts flowing into the app and auto-completing
-   matching board routines. Strava first (watch → Strava → server polling);
-   direct Apple Health export as a self-hosted alternative path.
+1. **Fitness follow-through** — trends (weight chart, longer step history),
+   imported workouts auto-completing matching board routines, and an opt-in
+   for counting watch calories toward the day's energy target. Strava as an
+   optional secondary connector if ever wanted.
 
 ## Ongoing polish
 

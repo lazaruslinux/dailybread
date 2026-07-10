@@ -15,6 +15,7 @@ import { Home } from './pages/Home'
 import { Kitchen } from './pages/Kitchen'
 import { Login } from './pages/Login'
 import { Nutrition } from './pages/Nutrition'
+import { Fitness } from './pages/Fitness'
 import { Profile } from './pages/Profile'
 import { Setup } from './pages/Setup'
 import { You } from './pages/You'
@@ -35,6 +36,7 @@ type Overlay = { name: 'profile'; id: number } | { name: 'admin' } | { name: 'ca
 const TAB_TITLE: Record<Tab, string> = {
   home: '', // Home shows the date + greeting instead of a title
   nutrition: 'Nutrition',
+  fitness: 'Fitness',
   kitchen: 'Kitchen',
   you: 'You',
 }
@@ -45,15 +47,17 @@ function AppShell() {
   const [overlay, setOverlay] = useState<Overlay>(null)
   const firstName = user?.display_name.split(/\s+/)[0] ?? ''
 
-  // Kid mode: minors get Home / Kitchen / You — no nutrition area. The server
-  // 403s those APIs regardless; this keeps the door out of sight too.
+  // Kid mode: minors get Home / Kitchen / You — no nutrition or fitness area.
+  // The server 403s those APIs regardless; this keeps the door out of sight too.
   const isMinor = user?.is_minor ?? false
-  const tabs: Tab[] = isMinor ? ['home', 'kitchen', 'you'] : ['home', 'nutrition', 'kitchen', 'you']
+  const tabs: Tab[] = isMinor
+    ? ['home', 'kitchen', 'you']
+    : ['home', 'nutrition', 'fitness', 'kitchen', 'you']
 
   // If the account just became a minor (admin cleared a birthdate mid-session,
   // say), don't leave it stranded on a tab it no longer has.
   useEffect(() => {
-    if (isMinor && tab === 'nutrition') setTab('home')
+    if (isMinor && (tab === 'nutrition' || tab === 'fitness')) setTab('home')
   }, [isMinor, tab])
 
   // Apply this member's saved theme once we know who they are: the one
@@ -121,6 +125,7 @@ function AppShell() {
             <Home onOpenProfile={(id) => setOverlay({ name: 'profile', id })} onOpenKitchen={() => setTab('kitchen')} />
           )}
           {!overlay && tab === 'nutrition' && !isMinor && <Nutrition />}
+          {!overlay && tab === 'fitness' && !isMinor && <Fitness />}
           {!overlay && tab === 'kitchen' && <Kitchen />}
           {!overlay && tab === 'you' && <You onOpenAdmin={() => setOverlay({ name: 'admin' })} />}
         </motion.div>

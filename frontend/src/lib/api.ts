@@ -383,6 +383,55 @@ export const rescuePassword = (userId: number, password: string) =>
 export const deleteFamily = (familyId: number) =>
   request<void>(`/families/${familyId}`, { method: 'DELETE' })
 
+// ---- fitness (Apple Health import) ---------------------------------------------
+
+export interface Workout {
+  id: number
+  activity: string
+  started_at: string
+  ended_at: string | null
+  duration_s: number | null
+  kcal: number | null
+  distance_m: number | null
+  avg_hr: number | null
+}
+
+export interface FitnessDay {
+  steps: number | null
+  active_kcal: number | null
+  exercise_minutes: number | null
+  resting_hr: number | null
+}
+
+export interface FitnessWeekDay {
+  date_for: string
+  steps: number | null
+}
+
+export interface Fitness {
+  connected: boolean
+  last_sync: string | null
+  today: FitnessDay
+  week: FitnessWeekDay[]
+  workouts: Workout[]
+}
+
+export interface IngestToken {
+  token: string
+  path: string
+}
+
+// Self-only, like the diary; the server 403s minors.
+export const getFitness = (date: string) => request<Fitness>(`/me/fitness?date=${date}`)
+
+// The sync key for this member's exporter app. Shown once; re-minting
+// replaces the old key.
+export const mintIngestToken = () =>
+  request<IngestToken>('/me/fitness/token', { method: 'POST' })
+
+export const revokeIngestToken = () =>
+  request<void>('/me/fitness/token', { method: 'DELETE' })
+
 // ---- items and the home feed --------------------------------------------------
 
 // The phone's local calendar date, YYYY-MM-DD. Sent with every "today"
