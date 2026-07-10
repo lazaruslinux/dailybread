@@ -1,7 +1,18 @@
-"""Food layer: server-proxied USDA search + Open Food Facts barcode, custom
-foods, and cross-family isolation. External calls are mocked."""
+"""Food layer: server-proxied USDA search + USDA/Open Food Facts barcode,
+custom foods, and cross-family isolation. External calls are mocked."""
+
+import pytest
 
 from app import foods_api
+from app.config import settings
+
+
+@pytest.fixture(autouse=True)
+def _no_usda_key(monkeypatch):
+    """Barcode tests must not depend on whether the developer's .env carries a
+    USDA key: without one the USDA barcode path is a guaranteed no-op, so the
+    OFF mocks below stay authoritative. USDA-path tests mock the function."""
+    monkeypatch.setattr(settings, "usda_api_key", "")
 
 
 def test_search_is_proxied(owner, monkeypatch):
@@ -45,14 +56,14 @@ def test_barcode_lookup_is_proxied(owner, monkeypatch):
         assert code == "3017620422003"
         return foods_api.FoodResult("off", code, "Nutella", "Ferrero", 539.0, 6.3, 57.5, 30.9)
 
-    monkeypatch.setattr(foods_api, "lookup_barcode", fake_barcode)
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", fake_barcode)
     res = owner.get("/foods/barcode/3017620422003")
     assert res.status_code == 200, res.text
     assert res.json()["name"] == "Nutella" and res.json()["source"] == "off"
 
 
 def test_barcode_not_found_is_404(owner, monkeypatch):
-    monkeypatch.setattr(foods_api, "lookup_barcode", lambda code: None)
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", lambda code: None)
     assert owner.get("/foods/barcode/0000000000000").status_code == 404
 
 
@@ -205,7 +216,7 @@ def test_scanned_barcode_resolves_a_custom_food_locally(owner, monkeypatch):
     def must_not_be_called(code):
         raise AssertionError("barcode lookup left the server")
 
-    monkeypatch.setattr(foods_api, "lookup_barcode", must_not_be_called)
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", must_not_be_called)
     made = _custom_food(owner, barcode="4099999999991")
 
     res = owner.get("/foods/barcode/4099999999991")
@@ -219,7 +230,7 @@ def test_custom_food_barcode_is_family_private(owner, other, monkeypatch):
     # Another household scanning the same code gets nothing from family A's
     # entry — it falls through to Open Food Facts like any unknown code.
     _custom_food(owner, barcode="4099999999991")
-    monkeypatch.setattr(foods_api, "lookup_barcode", lambda code: None)
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", lambda code: None)
     assert other.get("/foods/barcode/4099999999991").status_code == 404
 
 
@@ -235,7 +246,7 @@ def test_barcode_resolves_from_the_shared_cache_before_off(owner, monkeypatch):
     def must_not_be_called(code):
         raise AssertionError("barcode lookup left the server")
 
-    monkeypatch.setattr(foods_api, "lookup_barcode", must_not_be_called)
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", must_not_be_called)
     res = owner.get("/foods/barcode/3017620422003")
     assert res.status_code == 200, res.text
     assert res.json()["source"] == "off" and res.json()["name"] == "Nutella"
@@ -252,7 +263,7 @@ def test_bad_barcodes_are_rejected(owner):
 
 
 def test_editing_a_custom_food_keeps_or_updates_its_barcode(owner, monkeypatch):
-    monkeypatch.setattr(foods_api, "lookup_barcode", lambda code: None)
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", lambda code: None)
     made = _custom_food(owner, barcode="4099999999991")
     # An edit that sends the barcode back keeps it; sending null clears it.
     payload = {"name": "Trail mix deluxe", "brand": "", "barcode": "4099999999991",
@@ -277,7 +288,7 @@ def test_scanned_product_defaults_to_its_label_serving_and_is_cached(owner, monk
             serving="1 pita (60 g)", serving_amount=60.0, base_unit="g",
         )
 
-    monkeypatch.setattr(foods_api, "lookup_barcode", off_hit)
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", off_hit)
     res = owner.get("/foods/barcode/4012345678901")
     assert res.status_code == 200, res.text
     first = res.json()
@@ -288,7 +299,7 @@ def test_scanned_product_defaults_to_its_label_serving_and_is_cached(owner, monk
     def must_not_be_called(code):
         raise AssertionError("second scan left the server")
 
-    monkeypatch.setattr(foods_api, "lookup_barcode", must_not_be_called)
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", must_not_be_called)
     again = owner.get("/foods/barcode/4012345678901").json()
     assert again["id"] == first["id"]
     assert again["servings"] == first["servings"]
@@ -304,7 +315,7 @@ def test_liquid_scan_keeps_volume_units(owner, monkeypatch):
             serving="8 fl oz (240 mL)", serving_amount=240.0, base_unit="ml",
         )
 
-    monkeypatch.setattr(foods_api, "lookup_barcode", off_hit)
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", off_hit)
     body = owner.get("/foods/barcode/4023456789012").json()
     assert body["base_unit"] == "ml"
     assert body["servings"][0]["grams"] == 240.0
@@ -408,3 +419,99 @@ def test_gtin_normalization():
     assert foods_api._norm_gtin("030000012345") == "30000012345"
     assert foods_api._norm_gtin(" 0300-0001 2345") == "30000012345"
     assert foods_api._norm_gtin(None) == ""
+
+
+def _usda_hit(code):
+    return foods_api.FoodResult(
+        "usda", code, "Pure Maple Syrup", "Butternut Mountain Farm",
+        333.0, 0.0, 87.0, 0.0, serving="1/4 cup (60 ml)",
+        serving_amount=60.0, base_unit="ml",
+    )
+
+
+def test_barcode_prefers_usda_branded(owner, monkeypatch):
+    code = "022200001234"
+
+    def must_not_be_called(c):
+        raise AssertionError("OFF must not be asked when USDA answers")
+
+    monkeypatch.setattr(settings, "usda_api_key", "test-key")
+    monkeypatch.setattr(foods_api, "lookup_barcode_usda", lambda c, k: _usda_hit(c))
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", must_not_be_called)
+    body = owner.get(f"/foods/barcode/{code}").json()
+    assert body["source"] == "usda"
+    assert body["source_id"] == code
+    assert body["name"] == "Pure Maple Syrup"
+
+    # Second scan: answered from the shared cache, neither API asked.
+    def usda_must_not(c, k):
+        raise AssertionError("cache should answer the re-scan")
+
+    monkeypatch.setattr(foods_api, "lookup_barcode_usda", usda_must_not)
+    again = owner.get(f"/foods/barcode/{code}").json()
+    assert again["id"] == body["id"]
+
+
+def test_barcode_falls_back_to_off(owner, monkeypatch):
+    code = "5901234123457"
+    monkeypatch.setattr(foods_api, "lookup_barcode_usda", lambda c, k: None)
+    monkeypatch.setattr(
+        foods_api,
+        "lookup_barcode_off",
+        lambda c: foods_api.FoodResult("off", c, "Biscuits", "Foreign Brand", 480.0, 6.0, 60.0, 22.0),
+    )
+    body = owner.get(f"/foods/barcode/{code}").json()
+    assert body["source"] == "off"
+    assert body["name"] == "Biscuits"
+
+
+def test_barcode_usda_error_still_tries_off(owner, monkeypatch):
+    code = "4001234567890"
+
+    def usda_down(c, k):
+        raise foods_api.FoodApiError("down")
+
+    monkeypatch.setattr(foods_api, "lookup_barcode_usda", usda_down)
+    monkeypatch.setattr(
+        foods_api,
+        "lookup_barcode_off",
+        lambda c: foods_api.FoodResult("off", c, "Rye Crispbread", "", 350.0, 10.0, 70.0, 2.0),
+    )
+    assert owner.get(f"/foods/barcode/{code}").status_code == 200
+
+
+def test_barcode_404_when_both_miss(owner, monkeypatch):
+    monkeypatch.setattr(foods_api, "lookup_barcode_usda", lambda c, k: None)
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", lambda c: None)
+    assert owner.get("/foods/barcode/9999999999999").status_code == 404
+
+
+def test_usda_barcode_requires_exact_gtin(monkeypatch):
+    # FDC's text search fuzzy-matches digits: only an exact normalised gtin
+    # counts, and among duplicates the newest label wins.
+    payload = {
+        "foods": [
+            {"fdcId": 1, "description": "Wrong Product", "dataType": "Branded",
+             "gtinUpc": "099900001111", "publishedDate": "2024-01-01", "foodNutrients": []},
+            {"fdcId": 2, "description": "Old Label", "dataType": "Branded",
+             "gtinUpc": "0022200001234", "publishedDate": "2019-01-01", "foodNutrients": []},
+            {"fdcId": 3, "description": "New Label", "dataType": "Branded",
+             "gtinUpc": "022200001234", "publishedDate": "2023-05-01", "foodNutrients": []},
+        ]
+    }
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return payload
+
+    monkeypatch.setattr(foods_api.httpx, "get", lambda *a, **k: FakeResponse())
+    result = foods_api.lookup_barcode_usda("022200001234", "test-key")
+    assert result is not None
+    assert result.name == "New Label"
+    assert result.source_id == "022200001234"
+
+    payload["foods"] = payload["foods"][:1]
+    assert foods_api.lookup_barcode_usda("022200001234", "test-key") is None
+    assert foods_api.lookup_barcode_usda("022200001234", "") is None

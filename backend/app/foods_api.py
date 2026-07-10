@@ -239,7 +239,52 @@ def _serving_fields(size, unit) -> dict:
     return {"serving_amount": amount, "base_unit": base}
 
 
-def lookup_barcode(barcode: str) -> FoodResult | None:
+def lookup_barcode_usda(barcode: str, api_key: str) -> FoodResult | None:
+    """Look a barcode up in USDA's Branded dataset — label-accurate for US
+    products, so it's tried before Open Food Facts. Returns None when there is
+    no exact match (or no API key: keyless installs just use the OFF path)."""
+    if not api_key:
+        return None
+    # FDC only matches the gtinUpc string exactly as stored — almost always
+    # the 14-digit zero-padded GTIN, occasionally the bare code — so a scanned
+    # UPC-A/EAN-13 is tried padded first, then raw. A miss falls through to
+    # Open Food Facts anyway, so the second request only costs on rare codes.
+    hits: list[dict] = []
+    for query in dict.fromkeys((barcode.zfill(14), barcode)):
+        try:
+            r = httpx.get(
+                USDA_SEARCH_URL,
+                params={
+                    "api_key": api_key,
+                    "query": query,
+                    "pageSize": 10,
+                    "dataType": "Branded",
+                },
+                headers={"User-Agent": _UA},
+                timeout=_TIMEOUT,
+            )
+        except httpx.HTTPError as e:
+            raise FoodApiError("Couldn't reach the food database.") from e
+        if r.status_code >= 400:
+            raise FoodApiError("Food search failed.")
+        # Guard against fuzzy digit matches: only an exact normalised gtinUpc
+        # counts; among duplicates the newest label wins.
+        want = _norm_gtin(barcode)
+        hits = [f for f in r.json().get("foods", []) if _norm_gtin(f.get("gtinUpc")) == want]
+        if hits:
+            break
+    if not hits:
+        return None
+    best = max(hits, key=lambda f: f.get("publishedDate") or "")
+    result = _usda_food_result(best)
+    # Cache rows from a scan are keyed by the barcode, not the fdcId, so the
+    # next scan of this product resolves locally. Search-cached rows keep the
+    # fdcId; the digit lengths (12-13 vs 7-8) keep the two from colliding.
+    result.source_id = str(barcode)
+    return result
+
+
+def lookup_barcode_off(barcode: str) -> FoodResult | None:
     """Look a barcode up in Open Food Facts. Returns None if not found."""
     try:
         r = httpx.get(

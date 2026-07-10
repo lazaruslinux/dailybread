@@ -108,8 +108,9 @@ def lookup_barcode(
     """Resolve a scanned barcode, checking home before asking the internet:
     first the family's own custom foods (a product they entered by hand after
     an unknown scan), then foods already cached from earlier lookups, and only
-    then Open Food Facts. Scanning something you've scanned before never
-    leaves the server."""
+    then the internet — USDA's Branded dataset first (label-accurate for US
+    products), Open Food Facts as the fallback. Scanning something you've
+    scanned before never leaves the server."""
     if not code.isdigit() or not (6 <= len(code) <= 14):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "That doesn't look like a barcode")
 
@@ -127,11 +128,14 @@ def lookup_barcode(
     if ours is not None:
         return ours
 
+    # Barcode-cached usda rows keep the scanned code in source_id; search-
+    # cached usda rows keep the fdcId. Barcodes run 12-13 digits, fdcIds 7-8,
+    # so a scan can't accidentally match a search row.
     cached = db.scalar(
         select(Food)
         .where(
             Food.family_id.is_(None),
-            Food.source == FoodSource.off,
+            Food.source.in_((FoodSource.usda, FoodSource.off)),
             Food.source_id == code,
         )
         .options(selectinload(Food.servings))
@@ -141,10 +145,17 @@ def lookup_barcode(
     if cached is not None:
         return cached
 
+    # USDA being down must not break scanning — treat its errors as a miss
+    # and let Open Food Facts answer.
     try:
-        result = foods_api.lookup_barcode(code)
-    except foods_api.FoodApiError as e:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)) from e
+        result = foods_api.lookup_barcode_usda(code, settings.usda_api_key)
+    except foods_api.FoodApiError:
+        result = None
+    if result is None:
+        try:
+            result = foods_api.lookup_barcode_off(code)
+        except foods_api.FoodApiError as e:
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)) from e
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No product found for that barcode")
 
@@ -153,7 +164,7 @@ def lookup_barcode(
     # home, and the label serving rides along for the ingredient default.
     food = Food(
         family_id=None,
-        source=FoodSource.off,
+        source=FoodSource(result.source),
         source_id=code,
         name=result.name,
         brand=result.brand,
