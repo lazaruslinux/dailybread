@@ -64,7 +64,7 @@ export function JournalCard() {
   return (
     <div className="glass p-4">
       <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-fg/50">
-        <NotebookPen className="h-3.5 w-3.5 text-accent-bright" /> Daily journal
+        <NotebookPen className="h-3.5 w-3.5 text-fg/50" /> Daily journal
       </span>
       <p className="mt-1 font-display text-lg leading-tight text-fg">{formatDay(today)}</p>
       <p className="mb-3 mt-1 text-xs text-fg/45">

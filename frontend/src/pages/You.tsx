@@ -13,7 +13,7 @@ import { Profile } from './Profile'
 // Little preview swatch per theme so the choice reads at a glance.
 const SWATCH: Record<Theme, string> = {
   light: 'bg-[linear-gradient(135deg,#f7f4ee,#b45309)]',
-  dark: 'bg-[linear-gradient(135deg,#4ade80,#08090a)]',
+  dark: 'bg-[linear-gradient(135deg,#3bb977,#08090a)]',
 }
 
 function ThemePicker({ userId, stored }: { userId: number; stored: Theme | null }) {
@@ -82,14 +82,14 @@ export function You({ onOpenAdmin }: { onOpenAdmin: () => void }) {
           onClick={() => setChangingPassword(true)}
           className="glass flex items-center gap-3 p-4 text-left font-semibold text-fg/80 transition-colors hover:text-fg"
         >
-          <KeyRound className="h-4 w-4 text-accent-bright" /> Change password
+          <KeyRound className="h-4 w-4 text-fg/55" /> Change password
         </button>
         {user.is_admin && (
           <button
             onClick={onOpenAdmin}
             className="glass flex items-center gap-3 p-4 text-left font-semibold text-fg/80 transition-colors hover:text-fg"
           >
-            <Users className="h-4 w-4 text-accent-bright" /> Family members
+            <Users className="h-4 w-4 text-fg/55" /> Family members
           </button>
         )}
         <button

@@ -1189,7 +1189,7 @@ export function Fitness() {
           )}
 
           <div className="glass flex items-center gap-3 p-4">
-            <Link2 className="h-4 w-4 shrink-0 text-accent-bright" />
+            <Link2 className="h-4 w-4 shrink-0 text-fg/55" />
             <p className="min-w-0 flex-1 text-sm text-fg/60">
               {data.connected
                 ? data.last_sync
@@ -1224,7 +1224,7 @@ export function Fitness() {
                 className="flex w-full items-center justify-between gap-3 text-left"
               >
                 <span className="flex min-w-0 items-center gap-3">
-                  <Watch className="h-4 w-4 shrink-0 text-accent-bright" />
+                  <Watch className="h-4 w-4 shrink-0 text-fg/55" />
                   <span className="text-sm text-fg/80">Watch workouts raise my food budget</span>
                 </span>
                 <span

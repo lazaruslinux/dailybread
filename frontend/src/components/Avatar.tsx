@@ -48,7 +48,7 @@ export function Avatar({
         />
       ) : (
         <div
-          className={`flex items-center justify-center rounded-full bg-gradient-to-br from-accent-bright/60 to-accent-strong/60 font-bold text-white ${s.circle} ${className}`}
+          className={`flex items-center justify-center rounded-full bg-gradient-to-br from-avatar-1/80 to-avatar-2/80 font-bold text-white ${s.circle} ${className}`}
         >
           {initialsOf(name)}
         </div>

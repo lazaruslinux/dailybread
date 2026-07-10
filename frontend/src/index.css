@@ -19,6 +19,8 @@
   --color-fit-hr: var(--fit-hr);
   --color-fit-weight: var(--fit-weight);
   --color-fit-bodyfat: var(--fit-bodyfat);
+  --color-avatar-1: var(--avatar-1);
+  --color-avatar-2: var(--avatar-2);
 }
 
 /* ---- Default theme: Light Amber (warm near-white paper, deep-amber accents) - */
@@ -45,6 +47,11 @@
   --accent-bright: #92400e; /* dark enough to read on paper */
   --gold: #a16207; /* deep amber for the verse label on white */
 
+  /* Initials-avatar gradient. Its own tokens, NOT the accent pair: people
+     should stay warm in every theme instead of inheriting the UI color. */
+  --avatar-1: #b45309;
+  --avatar-2: #92400e;
+
   /* Fitness metric identities. One fixed hue per metric, both themes;
      validated (lightness band, chroma, CVD separation, 3:1 contrast)
      against this theme's paper surface — don't eyeball replacements. */
@@ -68,9 +75,10 @@
   --fg: #ffffff;
 
   --bg-base: #08090a;
-  --aurora-1: rgba(22, 101, 52, 0.34);
+  /* Toned down 2026-07-10: the glow should be felt, not seen. */
+  --aurora-1: rgba(22, 101, 52, 0.22);
   --aurora-2: rgba(6, 30, 20, 0);
-  --aurora-3: rgba(20, 83, 45, 0.32);
+  --aurora-3: rgba(20, 83, 45, 0.21);
 
   --glass-bg: rgba(255, 255, 255, 0.045);
   --glass-border: rgba(255, 255, 255, 0.1);
@@ -80,8 +88,14 @@
 
   --accent: #166534;
   --accent-strong: #14532d;
-  --accent-bright: #4ade80;
+  /* A calm jade (7:1 on the sheet surface), not the old neon green-400 —
+     links and highlights should sit in the forest, not glow out of it. */
+  --accent-bright: #3bb977;
   --gold: #fcd34d;
+
+  /* People stay warm on the dark ground too: clay, not theme green. */
+  --avatar-1: #a97455;
+  --avatar-2: #7d543a;
 
   /* Fitness metric identities, re-picked for the dark surface (not a flip
      of the light set); validated like the light ones. */
