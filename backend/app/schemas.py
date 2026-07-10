@@ -1180,8 +1180,13 @@ class FitnessDayOut(BaseModel):
 
 
 class FitnessWeekDayOut(BaseModel):
+    """One day of the trailing week, every metric — the tab's mini charts."""
+
     date_for: dt.date
     steps: float | None
+    active_kcal: float | None
+    exercise_minutes: float | None
+    resting_hr: float | None
 
 
 class FitnessOut(BaseModel):

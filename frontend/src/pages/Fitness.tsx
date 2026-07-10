@@ -7,6 +7,16 @@ import { Button, FormError } from '../components/ui'
 
 // The Fitness tab: imported Apple Health numbers, self-only like the diary.
 // Nothing here is visible to other family members or villages, ever.
+//
+// Design note: the layout takes its cues from the familiar phone fitness
+// summary (rings up top, a grid of metric cards with mini charts) but the
+// rendering is deliberately our own — three separate rings rather than the
+// trademark concentric trio, our validated metric palette rather than
+// red/green/cyan, our labels, our glass. Familiar shape, our identity.
+
+// Daily goals behind the rings. Family defaults for now; per-member goals
+// can become a setting once real use says which ones people want to tune.
+const GOALS = { steps: 10000, active_kcal: 500, exercise_minutes: 30 }
 
 const DAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] // Date.getDay(), Monday-shifted
 
@@ -112,58 +122,160 @@ function ConnectSheet({ onClose, onDone }: { onClose: () => void; onDone: () => 
   )
 }
 
-// ---- pieces ---------------------------------------------------------------------
+// ---- rings ----------------------------------------------------------------------
 
-function StatTile({
+function Ring({
+  colorVar,
+  fraction,
   icon: Icon,
-  label,
-  value,
-  unit,
+  size = 76,
 }: {
+  colorVar: string
+  fraction: number
   icon: typeof Footprints
-  label: string
-  value: string
-  unit?: string
+  size?: number
 }) {
+  const stroke = 7
+  const r = (size - stroke) / 2
+  const c = 2 * Math.PI * r
+  const filled = Math.min(Math.max(fraction, 0), 1)
   return (
-    <div className="glass flex flex-col gap-1 p-4">
-      <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
-        <Icon className="h-3.5 w-3.5 text-accent-bright" /> {label}
-      </span>
-      <span className="text-2xl font-bold tracking-tight">
-        {value}
-        {unit && <span className="ml-1 text-sm font-semibold text-fg/45">{unit}</span>}
-      </span>
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="currentColor"
+          className="text-fg/10"
+          strokeWidth={stroke}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke={`var(${colorVar})`}
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={c * (1 - filled)}
+        />
+      </svg>
+      <Icon
+        className="absolute left-1/2 top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 text-fg/60"
+        strokeWidth={2}
+      />
     </div>
   )
 }
 
-function WeekBars({ week }: { week: api.FitnessWeekDay[] }) {
-  const max = Math.max(...week.map((d) => d.steps ?? 0), 1)
+function RingStat({
+  colorVar,
+  icon,
+  label,
+  value,
+  goal,
+  unit,
+}: {
+  colorVar: string
+  icon: typeof Footprints
+  label: string
+  value: number | null
+  goal: number
+  unit?: string
+}) {
+  return (
+    <div className="flex flex-1 flex-col items-center gap-2">
+      <Ring colorVar={colorVar} fraction={(value ?? 0) / goal} icon={icon} />
+      <div className="text-center">
+        <p className="text-lg font-bold leading-tight" style={{ color: `var(${colorVar})` }}>
+          {fmtNumber(value)}
+          {unit && <span className="ml-0.5 text-[11px] font-semibold">{unit}</span>}
+        </p>
+        <p className="text-[11px] leading-tight text-fg/45">
+          of {goal.toLocaleString()}
+          {unit ? ` ${unit}` : ''}
+        </p>
+        <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-fg/50">
+          {label}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ---- metric cards ---------------------------------------------------------------
+
+function MiniBars({
+  week,
+  pick,
+  colorVar,
+  unit,
+}: {
+  week: api.FitnessWeekDay[]
+  pick: (d: api.FitnessWeekDay) => number | null
+  colorVar: string
+  unit: string
+}) {
+  const values = week.map(pick)
+  const max = Math.max(...values.map((v) => v ?? 0), 1)
+  return (
+    <div className="mt-3 flex items-end justify-between gap-1" style={{ height: 44 }}>
+      {week.map((day, i) => {
+        const v = values[i]
+        const date = new Date(day.date_for + 'T00:00:00')
+        const letter = DAY_LETTERS[(date.getDay() + 6) % 7]
+        const h = v ? Math.max(5, Math.round((v / max) * 36)) : 3
+        return (
+          <div key={day.date_for} className="flex flex-1 flex-col items-center gap-1">
+            <div
+              className="w-full max-w-4 rounded-[3px]"
+              style={{
+                height: h,
+                background: v
+                  ? `var(${colorVar})`
+                  : 'color-mix(in srgb, var(--fg) 10%, transparent)',
+              }}
+              title={v ? `${Math.round(v).toLocaleString()} ${unit}` : 'No data'}
+            />
+            <span className="text-[9px] font-semibold text-fg/35">{letter}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function MetricCard({
+  icon: Icon,
+  label,
+  colorVar,
+  value,
+  unit,
+  week,
+  pick,
+}: {
+  icon: typeof Footprints
+  label: string
+  colorVar: string
+  value: number | null
+  unit?: string
+  week: api.FitnessWeekDay[]
+  pick: (d: api.FitnessWeekDay) => number | null
+}) {
   return (
     <div className="glass p-4">
-      <span className="mb-3 block text-xs font-semibold uppercase tracking-wide text-fg/50">
-        Steps this week
+      <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
+        <Icon className="h-3.5 w-3.5" style={{ color: `var(${colorVar})` }} /> {label}
       </span>
-      <div className="flex items-end justify-between gap-2" style={{ height: 72 }}>
-        {week.map((day) => {
-          const date = new Date(day.date_for + 'T00:00:00')
-          const letter = DAY_LETTERS[(date.getDay() + 6) % 7]
-          const h = day.steps ? Math.max(6, Math.round((day.steps / max) * 64)) : 4
-          return (
-            <div key={day.date_for} className="flex flex-1 flex-col items-center gap-1.5">
-              <div
-                className={`w-full max-w-7 rounded-md ${
-                  day.steps ? 'bg-accent-bright/70' : 'bg-fg/10'
-                }`}
-                style={{ height: h }}
-                title={day.steps ? `${Math.round(day.steps).toLocaleString()} steps` : 'No data'}
-              />
-              <span className="text-[10px] font-semibold text-fg/40">{letter}</span>
-            </div>
-          )
-        })}
-      </div>
+      <p className="mt-1 text-[11px] text-fg/45">Today</p>
+      <p className="text-2xl font-bold tracking-tight" style={{ color: `var(${colorVar})` }}>
+        {fmtNumber(value)}
+        {unit && <span className="ml-1 text-sm font-semibold">{unit}</span>}
+      </p>
+      <MiniBars week={week} pick={pick} colorVar={colorVar} unit={unit ?? label.toLowerCase()} />
     </div>
   )
 }
@@ -177,8 +289,11 @@ function WorkoutRow({ workout }: { workout: api.Workout }) {
   ].filter(Boolean)
   return (
     <div className="glass flex items-center gap-3 p-4">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-bright/15">
-        <Flame className="h-5 w-5 text-accent-bright" />
+      <div
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+        style={{ background: 'color-mix(in srgb, var(--fit-active) 16%, transparent)' }}
+      >
+        <Flame className="h-5 w-5" style={{ color: 'var(--fit-active)' }} />
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate font-semibold text-fg/90">{workout.activity}</p>
@@ -249,14 +364,74 @@ export function Fitness() {
 
       {(data.connected || hasAnything) && (
         <>
-          <div className="grid grid-cols-2 gap-2">
-            <StatTile icon={Footprints} label="Steps" value={fmtNumber(data.today.steps)} />
-            <StatTile icon={Flame} label="Active" value={fmtNumber(data.today.active_kcal)} unit="kcal" />
-            <StatTile icon={Timer} label="Exercise" value={fmtNumber(data.today.exercise_minutes)} unit="min" />
-            <StatTile icon={HeartPulse} label="Resting HR" value={fmtNumber(data.today.resting_hr)} unit="bpm" />
+          <div className="glass p-5">
+            <span className="mb-4 block text-xs font-semibold uppercase tracking-wide text-fg/50">
+              Today's rings
+            </span>
+            <div className="flex items-start gap-2">
+              <RingStat
+                colorVar="--fit-steps"
+                icon={Footprints}
+                label="Steps"
+                value={data.today.steps}
+                goal={GOALS.steps}
+              />
+              <RingStat
+                colorVar="--fit-active"
+                icon={Flame}
+                label="Active"
+                value={data.today.active_kcal}
+                goal={GOALS.active_kcal}
+                unit="kcal"
+              />
+              <RingStat
+                colorVar="--fit-exercise"
+                icon={Timer}
+                label="Exercise"
+                value={data.today.exercise_minutes}
+                goal={GOALS.exercise_minutes}
+                unit="min"
+              />
+            </div>
           </div>
 
-          <WeekBars week={data.week} />
+          <div className="grid grid-cols-2 gap-2">
+            <MetricCard
+              icon={Footprints}
+              label="Step count"
+              colorVar="--fit-steps"
+              value={data.today.steps}
+              week={data.week}
+              pick={(d) => d.steps}
+            />
+            <MetricCard
+              icon={Flame}
+              label="Active energy"
+              colorVar="--fit-active"
+              value={data.today.active_kcal}
+              unit="kcal"
+              week={data.week}
+              pick={(d) => d.active_kcal}
+            />
+            <MetricCard
+              icon={Timer}
+              label="Exercise"
+              colorVar="--fit-exercise"
+              value={data.today.exercise_minutes}
+              unit="min"
+              week={data.week}
+              pick={(d) => d.exercise_minutes}
+            />
+            <MetricCard
+              icon={HeartPulse}
+              label="Resting HR"
+              colorVar="--fit-hr"
+              value={data.today.resting_hr}
+              unit="bpm"
+              week={data.week}
+              pick={(d) => d.resting_hr}
+            />
+          </div>
 
           {data.workouts.length > 0 && (
             <div className="flex flex-col gap-2">

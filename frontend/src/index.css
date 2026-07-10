@@ -13,6 +13,10 @@
   --color-accent-bright: var(--accent-bright);
   --color-fg: var(--fg);
   --color-gold: var(--gold);
+  --color-fit-steps: var(--fit-steps);
+  --color-fit-active: var(--fit-active);
+  --color-fit-exercise: var(--fit-exercise);
+  --color-fit-hr: var(--fit-hr);
 }
 
 /* ---- Default theme: Light Amber (warm near-white paper, deep-amber accents) - */
@@ -38,6 +42,14 @@
   --accent-strong: #92400e; /* amber-800, gradient partner */
   --accent-bright: #92400e; /* dark enough to read on paper */
   --gold: #a16207; /* deep amber for the verse label on white */
+
+  /* Fitness metric identities. One fixed hue per metric, both themes;
+     validated (lightness band, chroma, CVD separation, 3:1 contrast)
+     against this theme's paper surface — don't eyeball replacements. */
+  --fit-steps: #7c4dea;
+  --fit-active: #d94f10;
+  --fit-exercise: #0c8f82;
+  --fit-hr: #2563eb;
 
   /* Danger (delete, errors). On paper the ink must be deep enough to read; a
      light rose would wash out, which is why the tint alone isn't the text. */
@@ -66,6 +78,13 @@
   --accent-strong: #14532d;
   --accent-bright: #4ade80;
   --gold: #fcd34d;
+
+  /* Fitness metric identities, re-picked for the dark surface (not a flip
+     of the light set); validated like the light ones. */
+  --fit-steps: #8b5cf6;
+  --fit-active: #ea580c;
+  --fit-exercise: #0d9488;
+  --fit-hr: #3b82f6;
 
   /* Light rose reads on the near-black surface here. */
   --danger-fg: #fda4af; /* rose-300 */

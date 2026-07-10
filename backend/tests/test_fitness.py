@@ -151,7 +151,10 @@ def test_import_lands_on_the_fitness_tab(owner):
     assert len(week) == 7
     assert week[-1]["date_for"] == TODAY.isoformat()
     assert week[-1]["steps"] == 8000
-    assert week[0]["steps"] is None
+    assert week[-1]["active_kcal"] == 512.5
+    assert week[-1]["exercise_minutes"] == 34
+    assert week[-1]["resting_hr"] == 60
+    assert week[0]["steps"] is None and week[0]["active_kcal"] is None
 
 
 def test_resending_a_window_never_duplicates(owner):

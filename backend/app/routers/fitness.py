@@ -294,10 +294,13 @@ def my_fitness(
         ),
         week=[
             FitnessWeekDayOut(
-                date_for=week_start + dt.timedelta(days=i),
-                steps=metric(week_start + dt.timedelta(days=i), "steps"),
+                date_for=day,
+                steps=metric(day, "steps"),
+                active_kcal=metric(day, "active_kcal"),
+                exercise_minutes=metric(day, "exercise_minutes"),
+                resting_hr=metric(day, "resting_hr"),
             )
-            for i in range(7)
+            for day in (week_start + dt.timedelta(days=i) for i in range(7))
         ],
         workouts=[WorkoutOut.model_validate(w) for w in workouts],
     )
