@@ -5,9 +5,10 @@ nobody is assigned; the whole household for an unassigned family-visible
 card), a little before the card's start time. reminder_log keeps a row per
 card per day so a restart or a racing tick never double-sends.
 
-Card times are wall-clock local times, so the loop compares them against the
-server's local clock - in a container that means setting the TZ environment
-variable to the household's timezone.
+Card times are wall-clock local times. The loop compares them against each
+FAMILY's clock: families.timezone when set, otherwise the server's own local
+clock (the TZ environment variable) - so households in different timezones
+on one install each get their reminders and digests at their own hours.
 """
 
 import asyncio
@@ -19,10 +20,12 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from app.clock import family_now
 from app.config import settings
 from app.db import SessionLocal
 from app.models import (
     DigestLog,
+    Family,
     Item,
     ItemKind,
     PushSubscription,
@@ -92,6 +95,14 @@ def _recipients(db: Session, item: Item) -> list[User]:
     return [owner] if owner is not None else []
 
 
+def _family_clocks(db: Session, now: dt.datetime) -> dict[int, dt.datetime]:
+    """Every family's local "now", from the server's."""
+    return {
+        family_id: family_now(now, tz)
+        for family_id, tz in db.execute(select(Family.id, Family.timezone))
+    }
+
+
 def _already_reminded(db: Session, item: Item, day: dt.date) -> bool:
     """Claim the (item, day) pair; True means someone else already has."""
     db.add(ReminderLog(item_id=item.id, date_for=day))
@@ -110,41 +121,47 @@ def reminder_tick(now: dt.datetime) -> int:
     # router pulls in the whole schema graph, which tests may stub around.
     from app.routers.items import _completions_by_item, _occurs, _routine_participants
 
-    today = now.date()
-    window_start = now.time()
-    window_end = (now + dt.timedelta(minutes=settings.reminder_lead_minutes)).time()
-    if window_end < window_start:
-        window_end = dt.time(23, 59, 59)  # clamp at midnight; next day's tick picks up the rest
-
     sent = 0
     with SessionLocal() as db:
+        clocks = _family_clocks(db, now)
+        # Near midnight, "today" can differ between families; fetch dated
+        # cards for every family's calendar date and settle per item below.
+        candidate_days = {local.date() for local in clocks.values()} or {now.date()}
         items = (
             db.scalars(
                 select(Item)
                 .options(selectinload(Item.assignees))
                 .where(
                     Item.time_of_day.is_not(None),
-                    Item.time_of_day > window_start,
-                    Item.time_of_day <= window_end,
-                    (Item.date_for == today) | (Item.repeat_type.is_not(None)),
+                    Item.date_for.in_(candidate_days) | Item.repeat_type.is_not(None),
                 )
             )
             .unique()
             .all()
         )
-        due = [
-            item
-            for item in items
-            # Anything recurring (routines, repeating appointments) is due only
-            # on a day its schedule lands on; dated one-offs came in via the
-            # date_for == today filter above.
-            if item.repeat_type is None or _occurs(item, today)
-        ]
+        # Each card is judged on ITS family's clock: inside the lead window,
+        # and (for anything recurring) on a day its schedule lands on.
+        due: list[tuple[Item, dt.date]] = []
+        for item in items:
+            local = clocks.get(item.family_id, now)
+            today = local.date()
+            window_start = local.time()
+            window_end = (local + dt.timedelta(minutes=settings.reminder_lead_minutes)).time()
+            if window_end < window_start:
+                window_end = dt.time(23, 59, 59)  # clamp at midnight; the next day picks up the rest
+            if not (window_start < item.time_of_day <= window_end):
+                continue
+            if item.repeat_type is None:
+                if item.date_for != today:
+                    continue
+            elif not _occurs(item, today):
+                continue
+            due.append((item, today))
         if not due:
             return 0
-        comps = _completions_by_item(db, due)
+        comps = _completions_by_item(db, [item for item, _ in due])
 
-        for item in due:
+        for item, today in due:
             rows = comps[item.id]
             # A pending row (kid mode: awaiting parent approval) counts as
             # "already acted" here — the kid did the thing; don't nag them.
@@ -210,9 +227,12 @@ def _claim_digest(db: Session, user_id: int, day: dt.date, kind: str) -> bool:
         return False
 
 
-def _due_users(db: Session, today: dt.date, kind: str) -> list[User]:
+def _due_users(
+    db: Session, kind: str, clocks: dict[int, dt.datetime], now: dt.datetime
+) -> list[tuple[User, dt.datetime]]:
     """Adults with a subscribed device whose `kind` push hasn't been handled
-    today. Minors never receive anything scheduled — the board is the
+    on their family's current date, each paired with their family's local
+    "now". Minors never receive anything scheduled — the board is the
     parents' to run."""
     subscribed = (
         db.scalars(
@@ -223,18 +243,24 @@ def _due_users(db: Session, today: dt.date, kind: str) -> list[User]:
         .unique()
         .all()
     )
-    handled = set(
-        db.scalars(
-            select(DigestLog.user_id).where(
-                DigestLog.date_for == today, DigestLog.kind == kind
+    candidate_days = {local.date() for local in clocks.values()} or {now.date()}
+    handled = {
+        (user_id, day)
+        for user_id, day in db.execute(
+            select(DigestLog.user_id, DigestLog.date_for).where(
+                DigestLog.date_for.in_(candidate_days), DigestLog.kind == kind
             )
         )
-    )
-    return [
-        u
-        for u in subscribed
-        if u.id not in handled and u.family_id is not None and not u.is_minor
-    ]
+    }
+    due: list[tuple[User, dt.datetime]] = []
+    for u in subscribed:
+        if u.family_id is None or u.is_minor:
+            continue
+        local = clocks.get(u.family_id, now)
+        if (u.id, local.date()) in handled:
+            continue
+        due.append((u, local))
+    return due
 
 
 def _todays_board(db: Session, user: User, now: dt.datetime) -> tuple[int, Item | None]:
@@ -351,15 +377,19 @@ def digest_tick(now: dt.datetime) -> int:
     the day's sign-off, pointing at mood, status, and journal.
 
     Empty boards and non-trackers stay quiet, but still claim their row, so
-    a card added at 9:01 doesn't ring a belated good-morning."""
-    today = now.date()
+    a card added at 9:01 doesn't ring a belated good-morning.
+
+    Every window and date is the FAMILY's, not the server's: a household
+    three timezones over gets its good-morning at its own 7am."""
     sent = 0
     with SessionLocal() as db:
-        if settings.digest_hour <= now.hour < 12:
-            for user in _due_users(db, today, "morning"):
+        clocks = _family_clocks(db, now)
+        for user, local in _due_users(db, "morning", clocks, now):
+            if settings.digest_hour <= local.hour < 12:
+                today = local.date()
                 if not _claim_digest(db, user.id, today, "morning"):
                     continue
-                count, next_item = _todays_board(db, user, now)
+                count, next_item = _todays_board(db, user, local)
                 if count == 0:
                     continue
                 body = f"{count} item{'' if count == 1 else 's'} on today's board."
@@ -377,33 +407,38 @@ def digest_tick(now: dt.datetime) -> int:
                     },
                 )
 
-        if settings.midday_hour <= now.hour < 17:
-            due = _due_users(db, today, "midday")
-            trackers = {u.id for u in _food_trackers(db, due, today)}
-            for user in due:
-                if not _claim_digest(db, user.id, today, "midday"):
-                    continue
-                if user.id not in trackers:
-                    continue  # claimed quietly: logging lunch later won't ping
-                left = _calories_left(db, user, today)
-                budget = (
-                    f"{left:,} calories left for the day."
-                    if left >= 0
-                    else f"{-left:,} calories over so far."
-                )
-                sent += send_to_user(
-                    db,
-                    user.id,
-                    {
-                        "title": "Mid-day check",
-                        "body": f"What's for lunch? {budget}",
-                        "tag": f"midday-{today.isoformat()}",
-                        "url": "/",
-                    },
-                )
+        due = [
+            (user, local)
+            for user, local in _due_users(db, "midday", clocks, now)
+            if settings.midday_hour <= local.hour < 17
+        ]
+        trackers = {u.id for u in _food_trackers(db, [u for u, _ in due], now.date())}
+        for user, local in due:
+            today = local.date()
+            if not _claim_digest(db, user.id, today, "midday"):
+                continue
+            if user.id not in trackers:
+                continue  # claimed quietly: logging lunch later won't ping
+            left = _calories_left(db, user, today)
+            budget = (
+                f"{left:,} calories left for the day."
+                if left >= 0
+                else f"{-left:,} calories over so far."
+            )
+            sent += send_to_user(
+                db,
+                user.id,
+                {
+                    "title": "Mid-day check",
+                    "body": f"What's for lunch? {budget}",
+                    "tag": f"midday-{today.isoformat()}",
+                    "url": "/",
+                },
+            )
 
-        if settings.evening_hour <= now.hour < 22:
-            for user in _due_users(db, today, "evening"):
+        for user, local in _due_users(db, "evening", clocks, now):
+            if settings.evening_hour <= local.hour < 22:
+                today = local.date()
                 if not _claim_digest(db, user.id, today, "evening"):
                     continue
                 sent += send_to_user(

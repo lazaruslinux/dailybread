@@ -105,7 +105,14 @@ export const bootstrap = (
 ) =>
   request<User>('/auth/bootstrap', {
     method: 'POST',
-    body: JSON.stringify({ username, display_name, password, family_name, birthdate }),
+    body: JSON.stringify({
+      username,
+      display_name,
+      password,
+      family_name,
+      birthdate,
+      timezone: browserTimezone(),
+    }),
   })
 
 export const logout = () => request<void>('/auth/logout', { method: 'POST' })
@@ -337,18 +344,44 @@ export const resetPassword = (id: number) =>
 export interface Family {
   id: number
   name: string
+  // IANA zone driving reminders and digests; null = the server's own clock.
+  timezone: string | null
 }
+
+// The zone this browser lives in, sent by the signup wizards so a family's
+// clock is right from day one without anyone picking from a list.
+export const browserTimezone = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone
 
 // The create-your-family wizard: a family-less account names its household and
 // becomes its head (parent + admin). One family per account, ever.
 export const createFamily = (name: string) =>
-  request<Family>('/families', { method: 'POST', body: JSON.stringify({ name }) })
+  request<Family>('/families', {
+    method: 'POST',
+    body: JSON.stringify({ name, timezone: browserTimezone() }),
+  })
 
 export const getMyFamily = () => request<Family>('/families/me')
 
-// Admin-only. Villages show this name to linked families.
-export const renameFamily = (name: string) =>
-  request<Family>('/families/me', { method: 'PATCH', body: JSON.stringify({ name }) })
+// Admin-only. Villages show this name to linked families; the timezone moves
+// the family's reminders and digests onto its own clock (null = the server's).
+// Leave timezone undefined to change the name alone.
+export const updateFamily = (name: string, timezone?: string | null) =>
+  request<Family>('/families/me', {
+    method: 'PATCH',
+    body: JSON.stringify(timezone === undefined ? { name } : { name, timezone }),
+  })
+
+// Server admin only: reset any account's password, whatever its family — the
+// escape hatch for a household whose only admin is locked out.
+export const rescuePassword = (userId: number, password: string) =>
+  request<User>(`/auth/users/${userId}/rescue`, {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+  })
+
+// Server admin only: remove a household and everything it owns.
+export const deleteFamily = (familyId: number) =>
+  request<void>(`/families/${familyId}`, { method: 'DELETE' })
 
 // ---- items and the home feed --------------------------------------------------
 

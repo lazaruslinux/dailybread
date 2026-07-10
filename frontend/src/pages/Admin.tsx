@@ -558,22 +558,126 @@ function InviteHouseholdSheet({ onClose }: { onClose: () => void }) {
 // ---- the server overview ---------------------------------------------------------
 
 // Server admin only: every village, family, and member on the install, as an
-// indented tree. Read-only by design — management still happens per family.
+// indented tree — plus the two powers that deliberately reach across the
+// family wall: rescuing a locked-out password, and removing a household.
+function RescueSheet({
+  target,
+  onClose,
+  onDone,
+}: {
+  target: api.OverviewUser
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    if (password.length < 8) {
+      setError('Passwords need at least 8 characters.')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      await api.rescuePassword(target.id, password)
+      onDone()
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Something went wrong')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Sheet onClose={onClose}>
+      <h3 className="mb-1 text-lg font-bold">Reset {target.display_name}'s password</h3>
+      <p className="mb-4 text-sm text-fg/60">
+        For when a household has locked itself out. @{target.username} is signed out
+        everywhere; hand them the new password however you normally would.
+      </p>
+      <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+        <Field
+          label="New password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          maxLength={128}
+        />
+        <FormError message={error} />
+        <Button type="submit" disabled={busy || !password}>
+          {busy ? 'Resetting…' : 'Reset password'}
+        </Button>
+      </form>
+    </Sheet>
+  )
+}
+
+function RemoveFamilySheet({
+  family,
+  onClose,
+  onRemoved,
+}: {
+  family: api.OverviewFamily
+  onClose: () => void
+  onRemoved: () => void
+}) {
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function confirm() {
+    setBusy(true)
+    setError(null)
+    try {
+      await api.deleteFamily(family.id)
+      onRemoved()
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Something went wrong.')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Sheet onClose={onClose}>
+      <p className="mb-1 font-bold">Remove {family.name}?</p>
+      <p className="mb-5 text-sm text-fg/55">
+        Their members, board, kitchen, and everything else they own leaves the server with
+        them. Recipe copies other families saved stay put. This cannot be undone.
+      </p>
+      <FormError message={error} />
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <Button variant="ghost" onClick={onClose} disabled={busy}>
+          Keep them
+        </Button>
+        <Button variant="danger" onClick={confirm} disabled={busy}>
+          {busy ? 'Removing' : 'Remove'}
+        </Button>
+      </div>
+    </Sheet>
+  )
+}
+
 function ServerOverview() {
+  const { user } = useAuth()
   const [tree, setTree] = useState<api.Overview | null>(null)
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [rescuing, setRescuing] = useState<api.OverviewUser | null>(null)
+  const [removing, setRemoving] = useState<api.OverviewFamily | null>(null)
+
+  async function load() {
+    try {
+      setTree(await api.getOverview())
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Could not load the overview.')
+    }
+  }
 
   async function toggle() {
     const next = !open
     setOpen(next)
-    if (next && tree === null) {
-      try {
-        setTree(await api.getOverview())
-      } catch (err) {
-        setError(err instanceof api.ApiError ? err.message : 'Could not load the overview.')
-      }
-    }
+    if (next && tree === null) await load()
   }
 
   const userRow = (u: api.OverviewUser) => (
@@ -583,12 +687,30 @@ function ServerOverview() {
       <span className="text-[10px] font-semibold uppercase tracking-wide text-fg/40">
         {u.is_owner ? 'server admin' : u.is_admin ? `${ROLE_LABEL[u.role]} · admin` : ROLE_LABEL[u.role]}
       </span>
+      <button
+        onClick={() => setRescuing(u)}
+        className="ml-auto shrink-0 rounded-full p-1.5 text-fg/40 transition-colors hover:bg-fg/10 hover:text-fg"
+        aria-label={`Reset ${u.display_name}'s password`}
+      >
+        <KeyRound className="h-3.5 w-3.5" />
+      </button>
     </p>
   )
 
   const familyBlock = (f: api.OverviewFamily) => (
     <div key={f.id} className="flex flex-col gap-1">
-      <p className="pl-4 text-sm font-semibold text-fg/80">{f.name}</p>
+      <p className="flex items-center gap-2 pl-4 text-sm font-semibold text-fg/80">
+        {f.name}
+        {f.id !== user?.family_id && (
+          <button
+            onClick={() => setRemoving(f)}
+            className="ml-auto shrink-0 rounded-full p-1.5 text-fg/40 transition-colors hover:bg-red-500/15 hover:text-red-400"
+            aria-label={`Remove ${f.name}`}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </p>
       {f.users.map(userRow)}
     </div>
   )
@@ -631,22 +753,46 @@ function ServerOverview() {
           )}
         </div>
       )}
+      <AnimatePresence>
+        {rescuing && (
+          <RescueSheet
+            target={rescuing}
+            onClose={() => setRescuing(null)}
+            onDone={() => setRescuing(null)}
+          />
+        )}
+        {removing && (
+          <RemoveFamilySheet
+            family={removing}
+            onClose={() => setRemoving(null)}
+            onRemoved={() => {
+              setRemoving(null)
+              void load()
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }
 
 // ---- rename the family ---------------------------------------------------------
 
+// Every zone the browser knows, for the family-clock picker.
+const TIMEZONES: string[] =
+  typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : []
+
 function RenameFamilySheet({
   current,
   onClose,
   onRenamed,
 }: {
-  current: string
+  current: api.Family
   onClose: () => void
   onRenamed: () => void
 }) {
-  const [name, setName] = useState(current)
+  const [name, setName] = useState(current.name)
+  const [timezone, setTimezone] = useState(current.timezone ?? '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -655,7 +801,7 @@ function RenameFamilySheet({
     setBusy(true)
     setError(null)
     try {
-      await api.renameFamily(name.trim())
+      await api.updateFamily(name.trim(), timezone === '' ? null : timezone)
       onRenamed()
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Something went wrong')
@@ -678,6 +824,27 @@ function RenameFamilySheet({
           maxLength={80}
           required
         />
+        <label className="block min-w-0">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
+            Family clock
+          </span>
+          <select
+            className="field"
+            value={timezone}
+            onChange={(e) => setTimezone(e.target.value)}
+          >
+            <option value="">Server default</option>
+            {TIMEZONES.map((zone) => (
+              <option key={zone} value={zone}>
+                {zone.replaceAll('_', ' ')}
+              </option>
+            ))}
+          </select>
+          <span className="mt-1.5 block text-xs text-fg/45">
+            Reminders and the morning digest arrive on this clock. Leave it on Server default
+            when your family lives where the server does.
+          </span>
+        </label>
         <FormError message={error} />
         <Button type="submit" disabled={busy || !name.trim()}>
           {busy ? 'Saving…' : 'Save'}
@@ -803,7 +970,7 @@ export function Admin() {
         {inviting && <InviteHouseholdSheet onClose={() => setInviting(false)} />}
         {renaming && family && (
           <RenameFamilySheet
-            current={family.name}
+            current={family}
             onClose={() => setRenaming(false)}
             onRenamed={() => {
               setRenaming(false)

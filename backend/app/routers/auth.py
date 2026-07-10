@@ -5,6 +5,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.clock import valid_timezone
 from app.config import settings
 from app.db import get_db
 from app.deps import get_current_user, require_admin
@@ -22,6 +23,7 @@ from app.schemas import (
     InviteCodeIn,
     InviteRedeemIn,
     LoginIn,
+    RescuePasswordIn,
     ResetPasswordOut,
     SetupOut,
     SignupInviteIn,
@@ -60,7 +62,9 @@ def bootstrap(data: BootstrapIn, response: Response, db: Session = Depends(get_d
     if user_count:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Already initialized")
 
-    family = Family(name=data.family_name.strip())
+    if data.timezone is not None and not valid_timezone(data.timezone):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown timezone")
+    family = Family(name=data.family_name.strip(), timezone=data.timezone)
     db.add(family)
     db.flush()
     user = User(
@@ -181,6 +185,34 @@ def server_overview(db: Session = Depends(get_db), admin: User = Depends(require
 
     solo = [family_out(f) for fid, f in families.items() if fid not in in_a_village]
     return OverviewOut(villages=villages, solo_families=solo, homeless_users=homeless)
+
+
+@router.post("/users/{user_id}/rescue", response_model=UserOut)
+def rescue_password(
+    user_id: int,
+    data: RescuePasswordIn,
+    response: Response,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Server admin only: reset ANY account's password, whatever its family.
+    Per-family management deliberately can't reach across the wall, so
+    without this a household whose only admin forgot their password would be
+    locked out for good. The bump ends the account's old sessions, exactly
+    like an in-family reset."""
+    if not admin.is_owner:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Server admin only")
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such user")
+
+    user.password_hash = hash_password(data.password)
+    user.token_version += 1
+    if user.id == admin.id:
+        set_session_cookie(response, str(user.id), user.token_version)
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 # ---- signup invites --------------------------------------------------------------

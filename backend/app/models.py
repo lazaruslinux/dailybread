@@ -40,6 +40,11 @@ class Family(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(80))
+    # IANA zone name ("America/Phoenix"). Reminders, digests, and anything
+    # else schedule-shaped run on this clock. NULL = the server's own clock
+    # (see app.clock), which is right whenever everyone lives where the
+    # server does.
+    timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 

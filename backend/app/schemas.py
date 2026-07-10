@@ -77,6 +77,9 @@ class BootstrapIn(BaseModel):
     # Optional: prefills the Nutrition health profile (one birthdate per
     # member — see models.User.birthdate).
     birthdate: dt.date | None = None
+    # IANA zone name; the wizard sends the browser's so the family's clock
+    # is right from day one. None = the server's clock.
+    timezone: str | None = Field(default=None, max_length=64)
 
 
 class CreateUserIn(BootstrapIn):
@@ -94,13 +97,22 @@ class CreateUserIn(BootstrapIn):
 
 class FamilyIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
+    # Omitted = unchanged (PATCH); None sent explicitly = the server's clock.
+    timezone: str | None = Field(default=None, max_length=64)
 
 
 class FamilyOut(BaseModel):
     id: int
     name: str
+    timezone: str | None
 
     model_config = {"from_attributes": True}
+
+
+class RescuePasswordIn(BaseModel):
+    """Server admin resetting a locked-out account, whatever its family."""
+
+    password: str = Field(min_length=8, max_length=128)
 
 
 class UpdateUserIn(BaseModel):

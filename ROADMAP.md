@@ -33,6 +33,12 @@ Where dailybread is headed, in order. Done items stay for history.
   all data is family-scoped with zero cross-family visibility, enforced by
   isolation tests written before the feature; first-login wizard for new
   households.
+- **Multi-family server hardening** — per-family clocks (reminders and
+  digests fire on each household's own timezone, set silently from the
+  browser at signup, adjustable in the admin sheet); a server-admin rescue
+  reset for a household that locked itself out; and family offboarding that
+  removes a household and everything it owns while saved recipe copies stay
+  with their new owners.
 - **Board v2** — four card kinds (Routine / Task / Activity / Appointment)
   with per-kind schedule rules, recurrence (weekly / every-N-weeks /
   monthly), multi-assignee cards with per-person routine check-off, a
