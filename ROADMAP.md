@@ -186,18 +186,18 @@ Where dailybread is headed, in order. Done items stay for history.
   code" on the sign-in screen, is greeted by name, chooses their own
   password, gets a four-step tour, and founds their own family — invites
   never join an existing one. Pre-sign-in screens default to the dark theme.
+- **Food + photo fine-tuning** — food search results ranked and deduped
+  (branded products found by name, duplicate spam collapsed, shouty
+  all-caps names tamed); barcode lookups answered by the USDA branded
+  database first with Open Food Facts as fallback, for label-accurate
+  numbers; a product-info confirm step everywhere a scan or pick lands;
+  a faster barcode scanner (higher camera resolution, focused decode
+  region, torch); and a pinch-zoom circular crop when choosing an
+  avatar photo.
 
 ## Next
 
-1. **Food + photo fine-tuning** — food search results ranked and deduped
-   (branded products found by name, duplicate spam collapsed, shouty
-   all-caps names tamed); barcode lookups answered by the USDA branded
-   database first with Open Food Facts as fallback, for label-accurate
-   numbers; a product-info confirm step everywhere a scan or pick lands
-   (the recipe builder currently adds silently); a faster barcode scanner
-   (higher camera resolution, focused decode region, torch); and a
-   pinch-zoom circular crop when choosing an avatar photo.
-2. **Fitness follow-through** — trends (weight chart, with body fat
+1. **Fitness follow-through** — trends (weight chart, with body fat
    percentage synced from the health exporter as a second line), imported
    workouts auto-completing matching board routines, and an opt-in for
    counting watch calories toward the day's energy target. Strava as an

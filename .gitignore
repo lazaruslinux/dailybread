@@ -6,6 +6,7 @@
 
 # Data (never commit real or local data)
 data/
+media/
 postgres-data/
 dumps/
 *.dump
