@@ -183,7 +183,7 @@ export function ItemSheet({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <motion.div
@@ -191,7 +191,7 @@ export function ItemSheet({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 40 }}
         transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-        className="glass max-h-[90svh] w-full max-w-sm overflow-y-auto p-6"
+        className="sheet-card max-h-[90svh] w-full max-w-sm overflow-y-auto p-6"
         role="dialog"
         aria-modal="true"
       >

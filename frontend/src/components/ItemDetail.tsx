@@ -112,7 +112,7 @@ export function ItemDetail({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <motion.div
@@ -120,7 +120,7 @@ export function ItemDetail({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 40 }}
         transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-        className="glass max-h-[90svh] w-full max-w-sm overflow-y-auto p-6"
+        className="sheet-card max-h-[90svh] w-full max-w-sm overflow-y-auto p-6"
         role="dialog"
         aria-modal="true"
         data-item-detail
@@ -316,7 +316,7 @@ export function ItemDetail({
               </Button>
             </div>
           )}
-          {!isRoutine && !item.pending && canCheck && onToggle && (
+          {!isRoutine && !item.pending && !item.cancelled && canCheck && onToggle && (
             <Button
               type="button"
               variant={item.completed ? 'ghost' : 'primary'}
@@ -334,7 +334,7 @@ export function ItemDetail({
               )}
             </Button>
           )}
-          {onEdit && (
+          {onEdit && !item.cancelled && (
             <Button type="button" variant="ghost" onClick={onEdit} className="flex items-center justify-center gap-1.5">
               <Pencil className="h-4 w-4" /> Edit card
             </Button>

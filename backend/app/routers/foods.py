@@ -8,7 +8,15 @@ from app import foods_api
 from app.config import settings
 from app.db import get_db
 from app.deps import require_family, require_parent
-from app.models import Food, FoodServing, FoodSource, User
+from app.models import (
+    DiaryEntry,
+    Food,
+    FoodServing,
+    FoodSource,
+    Recipe,
+    RecipeIngredient,
+    User,
+)
 from app.schemas import FOOD_NUTRIENTS, FoodIn, FoodOut, FoodServingOut
 
 router = APIRouter(prefix="/foods", tags=["foods"])
@@ -97,6 +105,46 @@ def search_foods(
     except foods_api.FoodApiError as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)) from e
     return [_result_out(r) for r in results]
+
+
+_RECENT_LIMIT = 8
+
+
+@router.get("/recent", response_model=list[FoodOut])
+def recent_foods(db: Session = Depends(get_db), user: User = Depends(require_family)):
+    """The picker's quick-add shelf: foods this member logged in their diary
+    lately, then foods the family's recipes recently used, deduped and newest
+    first. Personal picks outrank the family's — what YOU eat several times a
+    week is the whole point of the shelf."""
+    mine = db.execute(
+        select(DiaryEntry.food_id, func.max(DiaryEntry.created_at).label("last"))
+        .where(DiaryEntry.user_id == user.id, DiaryEntry.food_id.isnot(None))
+        .group_by(DiaryEntry.food_id)
+        .order_by(func.max(DiaryEntry.created_at).desc())
+        .limit(_RECENT_LIMIT * 2)
+    ).all()
+    cooked = db.execute(
+        select(RecipeIngredient.food_id, func.max(RecipeIngredient.id).label("last"))
+        .join(Recipe, RecipeIngredient.recipe_id == Recipe.id)
+        .where(Recipe.family_id == user.family_id, RecipeIngredient.food_id.isnot(None))
+        .group_by(RecipeIngredient.food_id)
+        .order_by(func.max(RecipeIngredient.id).desc())
+        .limit(_RECENT_LIMIT * 2)
+    ).all()
+
+    ordered_ids: list[int] = []
+    for food_id, _ in [*mine, *cooked]:
+        if food_id not in ordered_ids:
+            ordered_ids.append(food_id)
+        if len(ordered_ids) == _RECENT_LIMIT:
+            break
+    if not ordered_ids:
+        return []
+    rows = db.scalars(
+        select(Food).where(Food.id.in_(ordered_ids)).options(selectinload(Food.servings))
+    ).all()
+    by_id = {f.id: f for f in rows}
+    return [by_id[i] for i in ordered_ids if i in by_id]
 
 
 @router.get("/barcode/{code}", response_model=FoodOut)

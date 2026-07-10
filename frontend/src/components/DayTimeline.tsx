@@ -1,4 +1,4 @@
-import { Check, Hourglass } from 'lucide-react'
+import { Check, Hourglass, X } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import * as api from '../lib/api'
 import { formatTimeRange } from '../lib/moods'
@@ -111,7 +111,7 @@ function TimelineCard({
       onClick={onOpen}
       className={`glass absolute flex cursor-pointer touch-pan-y select-none items-start gap-2 overflow-hidden rounded-xl px-2.5 ${
         roomy ? 'py-2' : 'py-1'
-      } ${item.completed ? 'opacity-55' : ''}`}
+      } ${item.completed || item.cancelled ? 'opacity-55' : ''}`}
       style={{
         top,
         height: height - 3, // breathing room so back-to-back cards don't fuse
@@ -125,13 +125,18 @@ function TimelineCard({
         <button
           type="button"
           aria-label={
-            myPending
-              ? `Withdraw ${item.title}`
-              : item.completed
-                ? `Mark ${item.title} not done`
-                : `Mark ${item.title} done`
+            item.cancelled
+              ? `${item.title} is cancelled`
+              : myPending
+                ? `Withdraw ${item.title}`
+                : item.completed
+                  ? `Mark ${item.title} not done`
+                  : `Mark ${item.title} done`
           }
           onClick={(e) => {
+            // A cancelled card can't be checked; let the tap bubble to the
+            // card and open the detail, where "Put it back on" lives.
+            if (item.cancelled) return
             e.stopPropagation()
             onToggle()
           }}
@@ -147,7 +152,10 @@ function TimelineCard({
             }`}
           >
             {item.completed && <Check className="h-3 w-3 text-emerald-300" strokeWidth={3} />}
-            {!item.completed && myPending && (
+            {!item.completed && item.cancelled && (
+              <X className="h-3 w-3 text-gold" strokeWidth={3} />
+            )}
+            {!item.completed && !item.cancelled && myPending && (
               <Hourglass className="h-2.5 w-2.5 text-amber-300" strokeWidth={2.5} />
             )}
           </span>
@@ -156,7 +164,7 @@ function TimelineCard({
       <div className="min-w-0 flex-1">
         <p
           className={`truncate text-sm font-semibold leading-5 ${
-            item.completed ? 'text-fg/60 line-through decoration-fg/30' : 'text-fg'
+            item.completed || item.cancelled ? 'text-fg/60 line-through decoration-fg/30' : 'text-fg'
           }`}
         >
           {item.title}

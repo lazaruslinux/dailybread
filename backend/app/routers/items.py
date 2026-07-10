@@ -920,6 +920,13 @@ def complete_item(
             )
         )
 
+    if exists is not None and exists.cancelled:
+        # A called-off occurrence can't be done. Putting it back on
+        # (DELETE /cancel) is the only move from here.
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "It's been called off — put it back on first"
+        )
+
     if exists is None:
         # A minor's own tap starts pending until a parent makes it official; a
         # parent's tap (their own card or ?for=<kid>) is official on the spot.

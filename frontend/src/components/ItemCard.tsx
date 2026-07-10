@@ -133,13 +133,18 @@ export function ItemCard({
         <button
           type="button"
           aria-label={
-            myPending
-              ? `Withdraw ${item.title}`
-              : item.completed
-                ? `Mark ${item.title} not done`
-                : `Mark ${item.title} done`
+            item.cancelled
+              ? `${item.title} is cancelled`
+              : myPending
+                ? `Withdraw ${item.title}`
+                : item.completed
+                  ? `Mark ${item.title} not done`
+                  : `Mark ${item.title} done`
           }
           onClick={(e) => {
+            // A cancelled card can't be checked; let the tap bubble to the
+            // card and open the detail, where "Put it back on" lives.
+            if (item.cancelled) return
             e.stopPropagation()
             onToggle()
           }}

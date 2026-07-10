@@ -741,6 +741,9 @@ export const searchFoods = (q: string) =>
 export const lookupBarcode = (code: string) => request<Food>(`/foods/barcode/${code}`)
 
 export const getCustomFoods = () => request<Food[]>('/foods')
+// The picker's quick-add shelf: my recent diary picks + the family's recent
+// recipe ingredients, newest first.
+export const getRecentFoods = () => request<Food[]>('/foods/recent')
 
 export const createCustomFood = (payload: CustomFoodPayload) =>
   request<Food>('/foods', { method: 'POST', body: JSON.stringify(payload) })

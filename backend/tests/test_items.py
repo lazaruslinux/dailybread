@@ -724,6 +724,19 @@ def test_cancel_replaces_a_done_mark_and_is_parent_only(owner, child):
     assert child.post(f"/items/{appt['id']}/cancel?date={TODAY}").status_code == 403
 
 
+def test_a_cancelled_occurrence_refuses_a_done_mark(owner):
+    appt = make_item(owner, kind="appointment", title="Dentist", date_for=TODAY,
+                     time_of_day="14:00", end_time="15:00")
+    owner.post(f"/items/{appt['id']}/cancel?date={TODAY}")
+    res = owner.post(f"/items/{appt['id']}/complete?date={TODAY}")
+    assert res.status_code == 400
+    # Put it back on, and it completes like normal again.
+    owner.delete(f"/items/{appt['id']}/cancel?date={TODAY}")
+    res = owner.post(f"/items/{appt['id']}/complete?date={TODAY}")
+    assert res.status_code == 200
+    assert res.json()["completed"] is True
+
+
 def test_only_events_cancel(owner):
     task = make_item(owner, kind="task", title="Chore")
     assert owner.post(f"/items/{task['id']}/cancel?date={TODAY}").status_code == 400

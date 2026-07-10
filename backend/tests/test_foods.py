@@ -1,6 +1,8 @@
 """Food layer: server-proxied USDA search + USDA/Open Food Facts barcode,
 custom foods, and cross-family isolation. External calls are mocked."""
 
+import datetime as dt
+
 import pytest
 
 from app import foods_api
@@ -250,6 +252,82 @@ def test_barcode_resolves_from_the_shared_cache_before_off(owner, monkeypatch):
     res = owner.get("/foods/barcode/3017620422003")
     assert res.status_code == 200, res.text
     assert res.json()["source"] == "off" and res.json()["name"] == "Nutella"
+
+
+# ---- the recently-used shelf ------------------------------------------------------
+
+
+def _log_diary(client, name: str, source_id: str, **overrides):
+    body = {
+        "date_for": dt.date.today().isoformat(),
+        "slot": "lunch",
+        "amount": 100,
+        "unit": "g",
+        "source": "usda",
+        "source_id": source_id,
+        "name": name,
+        "brand": "",
+        "calories": 100.0,
+        "protein_g": 5.0,
+        "carbs_g": 10.0,
+        "fat_g": 1.0,
+    }
+    body.update(overrides)
+    res = client.post("/diary", json=body)
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+def test_recent_foods_start_empty(owner):
+    assert owner.get("/foods/recent").json() == []
+
+
+def test_recent_foods_are_my_diary_picks_newest_first(owner):
+    _log_diary(owner, "Rolled Oats", "900001")
+    _log_diary(owner, "Greek Yogurt", "900002")
+    names = [f["name"] for f in owner.get("/foods/recent").json()]
+    assert names[:2] == ["Greek Yogurt", "Rolled Oats"]
+
+
+def test_recent_foods_dedupe_repeat_logs(owner):
+    _log_diary(owner, "Rolled Oats", "900001")
+    _log_diary(owner, "Rolled Oats", "900001")
+    names = [f["name"] for f in owner.get("/foods/recent").json()]
+    assert names.count("Rolled Oats") == 1
+
+
+def test_anothers_diary_stays_out_but_family_recipes_count(owner, parent):
+    # The other parent's diary pick is theirs alone...
+    _log_diary(parent, "Secret Snack", "900009")
+    assert owner.get("/foods/recent").json() == []
+    # ...but a food used in a family recipe shows for everyone in the family.
+    res = owner.post(
+        "/recipes",
+        json={
+            "name": "Oat bowl",
+            "servings": 2,
+            "ingredients": [
+                {
+                    "source": "usda",
+                    "source_id": "900010",
+                    "name": "Steel Cut Oats",
+                    "brand": "",
+                    "calories": 100.0,
+                    "protein_g": 5.0,
+                    "carbs_g": 10.0,
+                    "fat_g": 1.0,
+                    "amount": 80,
+                    "unit": "g",
+                }
+            ],
+        },
+    )
+    assert res.status_code == 201, res.text
+    mine = [f["name"] for f in owner.get("/foods/recent").json()]
+    theirs = [f["name"] for f in parent.get("/foods/recent").json()]
+    assert mine == ["Steel Cut Oats"]
+    assert theirs[0] == "Secret Snack"  # their own pick outranks the family's
+    assert "Steel Cut Oats" in theirs
 
 
 def test_bad_barcodes_are_rejected(owner):

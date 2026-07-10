@@ -567,6 +567,7 @@ export function FoodPicker({ onPick, onBack }: { onPick: (food: api.Food) => voi
   const [q, setQ] = useState('')
   const [results, setResults] = useState<api.Food[]>([])
   const [custom, setCustom] = useState<api.Food[]>([])
+  const [recent, setRecent] = useState<api.Food[]>([])
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
@@ -587,9 +588,11 @@ export function FoodPicker({ onPick, onBack }: { onPick: (food: api.Food) => voi
     }
   }
 
-  // The family's custom foods are always shown (they're a short list); load once.
+  // The family's custom foods are always shown (they're a short list); load
+  // once, and the recently-used shelf alongside.
   useEffect(() => {
     api.getCustomFoods().then(setCustom).catch(() => {})
+    api.getRecentFoods().then(setRecent).catch(() => {})
   }, [])
 
   // Debounce search so we don't hit the server on every keystroke.
@@ -660,8 +663,8 @@ export function FoodPicker({ onPick, onBack }: { onPick: (food: api.Food) => voi
             className="field"
             // Inline pad-left clears the search icon; a `pl-9` utility loses to
             // `.field`'s own padding (same specificity, .field defined later).
+            // No autoFocus: the sheet opens calm, the keyboard comes when asked.
             style={{ paddingLeft: '2.25rem' }}
-            autoFocus
           />
         </div>
         <button
@@ -679,6 +682,19 @@ export function FoodPicker({ onPick, onBack }: { onPick: (food: api.Food) => voi
       {looking && <p className="mt-2 px-1 text-sm text-fg/50">Looking up the barcode…</p>}
 
       <div className="mt-3 flex flex-col gap-3">
+        {q.trim().length < 2 && recent.length > 0 && (
+          <div>
+            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-fg/40">
+              Recently used
+            </span>
+            <div className="flex flex-col">
+              {recent.map((f) => (
+                <Row key={`r${f.id}`} food={f} />
+              ))}
+            </div>
+          </div>
+        )}
+
         {shownCustom.length > 0 && (
           <div>
             <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-fg/40">Your foods</span>
@@ -709,7 +725,7 @@ export function FoodPicker({ onPick, onBack }: { onPick: (food: api.Food) => voi
           </div>
         )}
 
-        {q.trim().length < 2 && shownCustom.length === 0 && (
+        {q.trim().length < 2 && shownCustom.length === 0 && recent.length === 0 && (
           <p className="px-2.5 py-6 text-center text-sm text-fg/45">
             Type to search the food database, scan a barcode, or add custom foods first.
           </p>
@@ -781,7 +797,6 @@ function FoodConfirm({
             }}
             className="field px-2 text-center"
             aria-label={`Amount of ${food.name}`}
-            autoFocus
           />
         </div>
         <div className="min-w-0 flex-1">
