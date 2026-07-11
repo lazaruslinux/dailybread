@@ -67,7 +67,7 @@ const CHOICES: {
   hint: string
   Icon: typeof Utensils
 }[] = [
-  { id: 'self_serve', label: 'Self-Serve', hint: 'Everyone fends for themselves', Icon: Utensils },
+  { id: 'self_serve', label: 'Self-Serve', hint: 'Make your own dinner', Icon: Utensils },
   { id: 'homemade', label: 'Homemade', hint: 'Cooked at home', Icon: CookingPot },
   { id: 'go_out', label: 'Go Out', hint: 'Pick a restaurant', Icon: Car },
   { id: 'delivery', label: 'Delivery', hint: 'Order in', Icon: Bike },
@@ -165,7 +165,7 @@ function DetailSheet({
       <p className="mb-4 text-sm text-fg/60">{choice.hint}</p>
       <form onSubmit={submit} noValidate className="flex flex-col gap-3">
         <Field
-          label={choice.id === 'homemade' ? 'What are we making? (optional)' : 'Where? (optional)'}
+          label={choice.id === 'homemade' ? 'What do you want to make? (optional)' : 'Where? (optional)'}
           value={detail}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
             setDetail(e.target.value)
@@ -201,7 +201,7 @@ function DetailSheet({
         )}
         <FormError message={error} />
         <Button type="submit" disabled={busy}>
-          {busy ? 'Saving…' : current ? 'Change my pick' : 'This is my pick'}
+          {busy ? 'Saving…' : current ? 'Change vote' : 'Vote'}
         </Button>
         {onRetract && (
           <button
@@ -604,7 +604,7 @@ export function DinnerPlanner() {
         aria-expanded={showWeek}
         className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-accent-bright/30 bg-accent-bright/10 py-2 text-sm font-semibold text-accent-bright transition-colors hover:bg-accent-bright/20"
       >
-        {showWeek ? 'Hide the week' : 'Plan the week'}
+        {showWeek ? 'Hide Week' : 'Plan Week'}
         {showWeek ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
       </button>
 
@@ -711,7 +711,7 @@ export function DinnerPlanner() {
                     </>
                   ) : (
                     <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-sm font-semibold text-accent-bright">
-                      <Plus className="h-3.5 w-3.5" /> Set
+                      <Plus className="h-3.5 w-3.5" /> Vote
                     </span>
                   )}
                 </button>

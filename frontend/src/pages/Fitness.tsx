@@ -821,7 +821,7 @@ function WeightCard({ points, onOpen }: { points: WeighPoint[]; onOpen: () => vo
           <span className="ml-1 text-sm font-semibold">lb</span>
           {latest.fat !== null && (
             <span className="ml-2 text-sm font-semibold" style={{ color: 'var(--fit-bodyfat)' }}>
-              {latest.fat}% fat
+              {latest.fat}% body fat
             </span>
           )}
         </p>
@@ -864,7 +864,7 @@ function WeightDetail({ health, onClose }: { health: api.Health; onClose: () => 
           <p className="mb-2 h-4 text-xs text-fg/55">
             {sel
               ? `${fmtReadoutDate(sel.date)} · ${lb1(sel.kg)} lb${
-                  sel.fat !== null ? ` · ${sel.fat}% fat` : ''
+                  sel.fat !== null ? ` · ${sel.fat}% body fat` : ''
                 }`
               : 'Last 90 days · tap a point'}
           </p>

@@ -3,11 +3,13 @@ import { CircleUser, HeartPulse, House, ShoppingBasket, Utensils, type LucideIco
 
 export type Tab = 'home' | 'nutrition' | 'fitness' | 'kitchen' | 'you'
 
+// Kitchen rides beside Home (his flow: the kitchen sits next to the living
+// room); Fitness keeps the center seat.
 const TABS: { id: Tab; label: string; Icon: LucideIcon }[] = [
   { id: 'home', label: 'Home', Icon: House },
-  { id: 'nutrition', label: 'Nutrition', Icon: Utensils },
-  { id: 'fitness', label: 'Fitness', Icon: HeartPulse },
   { id: 'kitchen', label: 'Kitchen', Icon: ShoppingBasket },
+  { id: 'fitness', label: 'Fitness', Icon: HeartPulse },
+  { id: 'nutrition', label: 'Nutrition', Icon: Utensils },
   { id: 'you', label: 'You', Icon: CircleUser },
 ]
 

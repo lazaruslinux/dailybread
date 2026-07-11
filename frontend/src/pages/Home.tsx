@@ -559,7 +559,7 @@ export function Home({
 
       <TonightCard onOpenKitchen={onOpenKitchen} />
 
-      <div className="mb-4 flex justify-end" data-view-toggle>
+      <div className="mb-4 flex justify-center" data-view-toggle>
         <div className="flex gap-1 rounded-full border border-fg/10 bg-fg/5 p-1">
           {(
             [
