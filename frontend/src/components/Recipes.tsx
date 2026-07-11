@@ -563,6 +563,42 @@ export function FoodIdentity({ food }: { food: Pick<api.Food, 'brand' | 'serving
 // own custom foods, or scan a product barcode — tap a result to add it as an
 // ingredient. An unknown barcode opens the New Food form prefilled with the
 // code, so entering it once teaches the app the product for good.
+// A growing library shows its newest couple of entries and folds the rest,
+// so the Kitchen stays glanceable however many recipes the family collects.
+const LIBRARY_PREVIEW = 2
+
+function useLibraryPreview<T extends { id: number | null }>(items: T[]) {
+  const [showAll, setShowAll] = useState(false)
+  const folded = !showAll && items.length > LIBRARY_PREVIEW
+  const shown = folded
+    ? [...items].sort((a, b) => (b.id ?? 0) - (a.id ?? 0)).slice(0, LIBRARY_PREVIEW)
+    : items
+  return { shown, folded, showAll, setShowAll }
+}
+
+function LibraryFoldButton({
+  total,
+  showAll,
+  onToggle,
+  noun,
+}: {
+  total: number
+  showAll: boolean
+  onToggle: () => void
+  noun: string
+}) {
+  if (total <= LIBRARY_PREVIEW) return null
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="mt-2 w-full rounded-xl border border-fg/10 bg-fg/5 py-2 text-center text-xs font-semibold text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
+    >
+      {showAll ? 'Show fewer' : `Show all ${total} ${noun}`}
+    </button>
+  )
+}
+
 export function FoodPicker({ onPick, onBack }: { onPick: (food: api.Food) => void; onBack: () => void }) {
   const [q, setQ] = useState('')
   const [results, setResults] = useState<api.Food[]>([])
@@ -1170,6 +1206,7 @@ export function RecipeBox() {
   const [recipes, setRecipes] = useState<api.Recipe[]>([])
   const [error, setError] = useState<string | null>(null)
   const [view, setView] = useState<View>({ mode: 'closed' })
+  const preview = useLibraryPreview(recipes)
   const mounted = useRef(true)
 
   const refresh = useCallback(async () => {
@@ -1229,7 +1266,7 @@ export function RecipeBox() {
           </p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {recipes.map((r) => {
+            {preview.shown.map((r) => {
               const summary = macroSummary(r.per_serving)
               return (
                 <li key={r.id}>
@@ -1253,6 +1290,12 @@ export function RecipeBox() {
             })}
           </ul>
         )}
+        <LibraryFoldButton
+          total={recipes.length}
+          showAll={preview.showAll}
+          onToggle={() => preview.setShowAll((v) => !v)}
+          noun="recipes"
+        />
       </CollapsibleCard>
 
       {view.mode === 'detail' && (
@@ -1649,6 +1692,7 @@ export function CustomFoodBox() {
   const [foods, setFoods] = useState<api.Food[]>([])
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<{ food: api.Food | null } | null>(null)
+  const preview = useLibraryPreview(foods)
   const mounted = useRef(true)
 
   const refresh = useCallback(async () => {
@@ -1696,7 +1740,7 @@ export function CustomFoodBox() {
           </p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {foods.map((f) => {
+            {preview.shown.map((f) => {
               const summary = foodSummary(f)
               const inner = (
                 <>
@@ -1722,6 +1766,12 @@ export function CustomFoodBox() {
             })}
           </ul>
         )}
+        <LibraryFoldButton
+          total={foods.length}
+          showAll={preview.showAll}
+          onToggle={() => preview.setShowAll((v) => !v)}
+          noun="foods"
+        />
       </CollapsibleCard>
 
       {editing && (

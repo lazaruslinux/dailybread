@@ -119,7 +119,9 @@ function AppShell() {
           transition={{ duration: 0.18 }}
         >
           {overlay?.name === 'profile' && <Profile userId={overlay.id} />}
-          {overlay?.name === 'admin' && <Admin />}
+          {overlay?.name === 'admin' && (
+            <Admin onOpenProfile={(id) => setOverlay({ name: 'profile', id })} />
+          )}
           {overlay?.name === 'calendar' && <Calendar />}
           {!overlay && tab === 'home' && (
             <Home onOpenProfile={(id) => setOverlay({ name: 'profile', id })} onOpenKitchen={() => setTab('kitchen')} />

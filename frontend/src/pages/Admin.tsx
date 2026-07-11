@@ -3,6 +3,7 @@ import { Copy, Home, KeyRound, ListTree, Pencil, Plus, ShieldCheck, Trash2, X } 
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
+import { Avatar } from '../components/Avatar'
 import { Sheet } from '../components/Recipes'
 import { Button, Field, FormError } from '../components/ui'
 
@@ -12,27 +13,23 @@ import { Button, Field, FormError } from '../components/ui'
 
 const ROLE_LABEL: Record<api.Role, string> = { parent: 'Parent', child: 'Child' }
 
-function initialsOf(name: string): string {
-  return name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? '')
-    .join('')
-}
-
 // ---- member row -------------------------------------------------------------
 
 function MemberRow({
   member,
+  mood,
   isSelf,
   onEdit,
   onDelete,
+  onOpen,
   index,
 }: {
   member: api.User
+  mood: api.Mood | null
   isSelf: boolean
   onEdit: () => void
   onDelete: () => void
+  onOpen?: () => void
   index: number
 }) {
   return (
@@ -44,17 +41,24 @@ function MemberRow({
       transition={{ delay: index * 0.04, type: 'spring', stiffness: 300, damping: 26 }}
       className="glass flex items-center gap-4 p-4"
     >
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent-bright/60 to-accent-strong/60 text-sm font-bold">
-        {initialsOf(member.display_name)}
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-2 truncate font-semibold text-fg">
-          {member.display_name}
-          {isSelf && <span className="text-[10px] font-semibold text-fg/40">you</span>}
-        </p>
-        <p className="truncate text-sm text-fg/55">@{member.username}</p>
-      </div>
+      {/* The person themselves (photo, mood, name) taps through to their
+          profile; the admin machinery stays on the buttons to the right. */}
+      <button
+        type="button"
+        onClick={onOpen}
+        disabled={!onOpen}
+        className="flex min-w-0 flex-1 items-center gap-4 text-left"
+        aria-label={onOpen ? `Open ${member.display_name}'s profile` : undefined}
+      >
+        <Avatar name={member.display_name} src={api.avatarUrl(member)} mood={mood} />
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-2 truncate font-semibold text-fg">
+            {member.display_name}
+            {isSelf && <span className="text-[10px] font-semibold text-fg/40">you</span>}
+          </span>
+          <span className="block truncate text-sm text-fg/55">@{member.username}</span>
+        </span>
+      </button>
 
       <div className="flex shrink-0 items-center gap-1.5">
         <span className="rounded-full bg-fg/10 px-2.5 py-1 text-[11px] font-semibold text-fg/70">
@@ -856,9 +860,10 @@ function RenameFamilySheet({
 
 // ---- the dashboard ------------------------------------------------------------
 
-export function Admin() {
+export function Admin({ onOpenProfile }: { onOpenProfile?: (id: number) => void }) {
   const { user } = useAuth()
   const [members, setMembers] = useState<api.User[] | null>(null)
+  const [moods, setMoods] = useState<Map<number, api.Mood | null>>(new Map())
   const [family, setFamily] = useState<api.Family | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [sheet, setSheet] = useState<{ open: boolean; member: api.User | null }>({
@@ -873,6 +878,12 @@ export function Admin() {
     try {
       setMembers(await api.listUsers())
       setFamily(await api.getMyFamily())
+      // Moods ride on the same payload the Home strip reads; a miss just
+      // means badge-less avatars here.
+      api
+        .getFamily()
+        .then((fam) => setMoods(new Map(fam.map((m) => [m.id, m.mood]))))
+        .catch(() => {})
       setLoadError(null)
     } catch (err) {
       setLoadError(err instanceof api.ApiError ? err.message : 'Could not load family members.')
@@ -911,10 +922,12 @@ export function Admin() {
             <MemberRow
               key={m.id}
               member={m}
+              mood={moods.get(m.id) ?? null}
               index={i}
               isSelf={m.id === user?.id}
               onEdit={() => setSheet({ open: true, member: m })}
               onDelete={() => setDeleting(m)}
+              onOpen={onOpenProfile ? () => onOpenProfile(m.id) : undefined}
             />
           ))}
         </AnimatePresence>
