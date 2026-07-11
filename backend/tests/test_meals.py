@@ -97,3 +97,48 @@ def test_a_recipe_night_reports_its_per_serving_nutrition(owner):
     # A custom-title night has no recipe, so no figures.
     owner.put("/meals", json={"date_for": TODAY, "custom_title": "Pizza out"})
     assert owner.get(f"/meals?start={TODAY}&end={TODAY}").json()[0]["per_serving"] is None
+
+
+# ---- dinner time ------------------------------------------------------------------
+
+
+def test_a_time_stands_alone_before_any_pick(owner):
+    res = owner.put("/meals/time", json={"date_for": TODAY, "time_of_day": "17:00"})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["time_of_day"] == "17:00:00"
+    assert body["recipe_id"] is None and body["custom_title"] is None
+    listed = owner.get(f"/meals?start={TODAY}&end={TODAY}").json()
+    assert listed[0]["time_of_day"] == "17:00:00"
+
+
+def test_locking_dinner_keeps_the_time_and_unlocking_too(owner):
+    owner.put("/meals/time", json={"date_for": TODAY, "time_of_day": "17:30"})
+    owner.put("/meals", json={"date_for": TODAY, "custom_title": "Tacos"})
+    listed = owner.get(f"/meals?start={TODAY}&end={TODAY}").json()
+    assert listed[0]["custom_title"] == "Tacos"
+    assert listed[0]["time_of_day"] == "17:30:00"
+    # Unlock: the pick clears, the time stays — dinner's still at 5:30.
+    owner.delete(f"/meals?date={TODAY}")
+    listed = owner.get(f"/meals?start={TODAY}&end={TODAY}").json()
+    assert listed[0]["custom_title"] is None
+    assert listed[0]["time_of_day"] == "17:30:00"
+
+
+def test_clearing_the_time_on_a_pickless_night_removes_the_row(owner):
+    owner.put("/meals/time", json={"date_for": TODAY, "time_of_day": "18:00"})
+    res = owner.put("/meals/time", json={"date_for": TODAY, "time_of_day": None})
+    assert res.status_code == 200
+    assert owner.get(f"/meals?start={TODAY}&end={TODAY}").json() == []
+
+
+def test_clearing_a_time_that_was_never_set_is_a_404(owner):
+    res = owner.put("/meals/time", json={"date_for": TODAY, "time_of_day": None})
+    assert res.status_code == 404
+
+
+def test_kids_cannot_set_the_time(owner, child):
+    assert (
+        child.put("/meals/time", json={"date_for": TODAY, "time_of_day": "17:00"}).status_code
+        == 403
+    )

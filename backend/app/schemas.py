@@ -499,12 +499,22 @@ class MealIn(BaseModel):
     custom_title: str | None = Field(default=None, max_length=120)
 
 
+class MealTimeIn(BaseModel):
+    """Set (or clear, with null) when dinner happens. Independent of the
+    pick: a time can exist before anyone knows what's cooking."""
+
+    date_for: dt.date
+    slot: MealSlot = MealSlot.dinner
+    time_of_day: dt.time | None = None
+
+
 class MealOut(BaseModel):
     date_for: dt.date
     slot: MealSlot
     recipe_id: int | None
     recipe_name: str | None  # joined for display; None for a custom title
     custom_title: str | None
+    time_of_day: dt.time | None = None
     # The recipe's computed per-serving nutrition, so the menu can show what a
     # night amounts to without another request. None for custom-title nights.
     per_serving: "RecipeMacros | None" = None

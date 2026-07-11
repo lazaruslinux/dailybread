@@ -28,6 +28,74 @@ function addDays(d: Date, n: number): Date {
 
 const mealTitle = (m: api.Meal | undefined) => m?.recipe_name ?? m?.custom_title ?? null
 
+// "17:15:00" -> "5:15 PM"
+function fmtMealTime(t: string): string {
+  const [h, m] = t.split(':').map(Number)
+  return new Date(2000, 0, 1, h, m).toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+// Every quarter hour of the day, for the Set Time picker.
+const TIME_OPTIONS = Array.from({ length: 96 }, (_, i) => {
+  const h = Math.floor(i / 4)
+  const m = (i % 4) * 15
+  const value = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`
+  return { value, label: fmtMealTime(value) }
+})
+
+// The Set Time sheet: a 15-minute-increment picker for when dinner happens.
+function TimeSheet({
+  current,
+  onSave,
+  onClose,
+}: {
+  current: string | null
+  onSave: (time: string | null) => Promise<void>
+  onClose: () => void
+}) {
+  const [value, setValue] = useState(current ?? '17:30:00')
+  const [busy, setBusy] = useState(false)
+  async function save(t: string | null) {
+    setBusy(true)
+    try {
+      await onSave(t)
+      onClose()
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Sheet onClose={onClose}>
+      <h3 className="mb-1 text-lg font-bold">Dinner time</h3>
+      <p className="mb-4 text-sm text-fg/55">When does dinner happen tonight?</p>
+      <select
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        className="field px-3"
+        aria-label="Dinner time"
+      >
+        {TIME_OPTIONS.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+      <div className="mt-4 flex flex-col gap-2">
+        <Button type="button" onClick={() => void save(value)} disabled={busy} className="w-full">
+          {busy ? 'Saving…' : 'Save'}
+        </Button>
+        {current !== null && (
+          <Button type="button" variant="ghost" onClick={() => void save(null)} disabled={busy} className="w-full">
+            Clear the time
+          </Button>
+        )}
+      </div>
+    </Sheet>
+  )
+}
+
 // The night's per-serving figures as readable pills. Only nutrients the
 // recipe actually knows are shown — never a misleading zero.
 function MacroPills({ ps }: { ps: api.RecipeMacros }) {
@@ -511,6 +579,7 @@ export function DinnerPlanner() {
   const [planning, setPlanning] = useState<string | null>(null) // dayISO in the DayPlanSheet
   const [weekPlans, setWeekPlans] = useState<Record<string, api.DinnerPlan>>({})
   const [showWeek, setShowWeek] = useState(false)
+  const [settingTime, setSettingTime] = useState(false)
   const [plan, setPlan] = useState<api.DinnerPlan | null>(null)
 
   const days = useMemo(
@@ -570,6 +639,23 @@ export function DinnerPlanner() {
             {mealTitle(tonight) ?? 'Dinner Plan'}
           </h2>
         </div>
+      </div>
+
+      <div className="mt-2 flex items-center gap-2.5">
+        {tonight?.time_of_day && (
+          <span className="text-lg font-bold tracking-tight text-fg/90">
+            {fmtMealTime(tonight.time_of_day)}
+          </span>
+        )}
+        {isParent && (
+          <button
+            type="button"
+            onClick={() => setSettingTime(true)}
+            className="rounded-lg border border-fg/10 bg-fg/5 px-2.5 py-1.5 text-xs font-semibold text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
+          >
+            Set Time
+          </button>
+        )}
       </div>
 
       {tonight?.per_serving && <MacroPills ps={tonight.per_serving} />}
@@ -732,6 +818,16 @@ export function DinnerPlanner() {
             onChanged={refresh}
           />
         )}
+        {settingTime && (
+          <TimeSheet
+            current={tonight?.time_of_day ?? null}
+            onSave={async (t) => {
+              await api.setMealTime(todayISO, t)
+              await refresh()
+            }}
+            onClose={() => setSettingTime(false)}
+          />
+        )}
       </AnimatePresence>
     </section>
   )
@@ -740,17 +836,19 @@ export function DinnerPlanner() {
 // The slim Home strip: tonight's dinner when one is planned, tapping through
 // to the Kitchen. Renders nothing on unplanned days — the board shouldn't nag.
 export function TonightCard({ onOpenKitchen }: { onOpenKitchen: () => void }) {
-  const [title, setTitle] = useState<string | null>(null)
+  const [meal, setMeal] = useState<api.Meal | null>(null)
 
   useEffect(() => {
     const today = toISO(new Date())
     api
       .getMeals(today, today)
-      .then((ms) => setTitle(mealTitle(ms.find((m) => m.slot === 'dinner'))))
+      .then((ms) => setMeal(ms.find((m) => m.slot === 'dinner') ?? null))
       .catch(() => {})
   }, [])
 
-  if (!title) return null
+  const title = mealTitle(meal ?? undefined)
+  // A bare time is still worth the strip: "dinner's at 5" beats silence.
+  if (!title && !meal?.time_of_day) return null
   return (
     <button
       type="button"
@@ -763,7 +861,10 @@ export function TonightCard({ onOpenKitchen }: { onOpenKitchen: () => void }) {
         <span className="mr-2 text-[11px] font-semibold uppercase tracking-widest text-fg/40">
           Tonight
         </span>
-        <span className="font-semibold text-fg/90">{title}</span>
+        {meal?.time_of_day && (
+          <span className="mr-2 font-bold text-fg/90">{fmtMealTime(meal.time_of_day)}</span>
+        )}
+        {title && <span className="font-semibold text-fg/90">{title}</span>}
       </span>
     </button>
   )

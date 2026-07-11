@@ -764,6 +764,8 @@ export interface Meal {
   recipe_id: number | null
   recipe_name: string | null
   custom_title: string | null
+  // When dinner happens ("HH:MM:SS"), independent of what it is.
+  time_of_day: string | null
   per_serving: RecipeMacros | null
 }
 
@@ -779,6 +781,13 @@ export const setMeal = (payload: {
 
 export const clearMeal = (date: string) =>
   request<void>(`/meals?date=${date}`, { method: 'DELETE' })
+
+// Set (or clear, with null) when dinner happens, without touching the pick.
+export const setMealTime = (date_for: string, time_of_day: string | null) =>
+  request<Meal>('/meals/time', {
+    method: 'PUT',
+    body: JSON.stringify({ date_for, time_of_day }),
+  })
 
 export const pushRecipeToGrocery = (recipeId: number, listId: number | null) =>
   request<{ added: number }>(`/recipes/${recipeId}/grocery`, {

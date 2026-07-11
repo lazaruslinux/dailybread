@@ -15,6 +15,7 @@ from app.schemas import (
     DinnerVoterOut,
     MealIn,
     MealOut,
+    MealTimeIn,
 )
 
 router = APIRouter(prefix="/meals", tags=["meals"])
@@ -32,6 +33,7 @@ def _out(meal: Meal) -> MealOut:
         recipe_id=meal.recipe_id,
         recipe_name=recipe.name if recipe is not None else None,
         custom_title=meal.custom_title,
+        time_of_day=meal.time_of_day,
         per_serving=per_serving_macros(recipe) if recipe is not None else None,
     )
 
@@ -100,6 +102,39 @@ def set_meal(
     return _out(meal)
 
 
+@router.put("/time", response_model=MealOut)
+def set_meal_time(
+    data: MealTimeIn,
+    db: Session = Depends(get_db),
+    parent: User = Depends(require_parent),
+):
+    """Set (or clear) when the slot's meal happens, without touching what it
+    is. Clearing the time on a night that has no pick removes the row."""
+    meal = db.scalar(
+        select(Meal).where(
+            Meal.family_id == parent.family_id,
+            Meal.date_for == data.date_for,
+            Meal.slot == data.slot,
+        )
+    )
+    if meal is None:
+        if data.time_of_day is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "No time set for that day")
+        meal = Meal(family_id=parent.family_id, date_for=data.date_for, slot=data.slot)
+        db.add(meal)
+    meal.time_of_day = data.time_of_day
+    if meal.time_of_day is None and meal.recipe_id is None and not meal.custom_title:
+        db.delete(meal)
+        db.commit()
+        return MealOut(
+            date_for=data.date_for, slot=data.slot,
+            recipe_id=None, recipe_name=None, custom_title=None, time_of_day=None,
+        )
+    db.commit()
+    db.refresh(meal)
+    return _out(meal)
+
+
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)
 def clear_meal(
     date_for: dt.date = Query(alias="date"),
@@ -107,7 +142,9 @@ def clear_meal(
     db: Session = Depends(get_db),
     parent: User = Depends(require_parent),
 ):
-    """Un-plan a day's slot. Clearing an unplanned day is a quiet no-op."""
+    """Un-plan a day's slot. A set time survives the unpick (dinner is still
+    at 5, we just don't know what it is again); a timeless row goes away.
+    Clearing an unplanned day is a quiet no-op."""
     meal = db.scalar(
         select(Meal).where(
             Meal.family_id == parent.family_id,
@@ -116,7 +153,11 @@ def clear_meal(
         )
     )
     if meal is not None:
-        db.delete(meal)
+        if meal.time_of_day is not None:
+            meal.recipe_id = None
+            meal.custom_title = None
+        else:
+            db.delete(meal)
         db.commit()
 
 

@@ -558,6 +558,11 @@ class Meal(Base):
         ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True
     )
     custom_title: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # When dinner happens, independent of what it is. A row may carry ONLY a
+    # time (recipe and title both NULL) — "dinner's at 5" is a real plan even
+    # before anyone knows what's cooking — so "planned" checks must look at
+    # the pick fields, never at row existence.
+    time_of_day: Mapped[dt.time | None] = mapped_column(Time, nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )
