@@ -142,15 +142,15 @@ export function Profile({ userId }: { userId: number }) {
         <div className="relative">
           <Avatar
             name={profile.display_name}
-            mood={profile.mood}
+            verseStreak={profile.verse_streak}
             size="lg"
             src={api.avatarUrl(profile)}
             className={avatarBusy ? 'opacity-50' : ''}
           />
           {canEditAvatar && (
-            // A camera pip in the top corner (the mood badge owns the bottom
-            // one). The label wraps a hidden picker; accept="image/*" lets a
-            // phone offer camera or library.
+            // A camera pip in the top corner (the streak badge owns the
+            // bottom one). The label wraps a hidden picker; accept="image/*"
+            // lets a phone offer camera or library.
             <label
               aria-label="Change photo"
               className="absolute -right-1 -top-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-accent text-white shadow-lg ring-2 ring-[var(--bg-base)] transition-transform hover:scale-105"
@@ -169,6 +169,12 @@ export function Profile({ userId }: { userId: number }) {
         <div>
           <h2 className="text-2xl font-bold tracking-tight">{profile.display_name}</h2>
           <p className="text-sm text-fg/50">@{profile.username}</p>
+          {moodMeta && (
+            <p className="mt-1.5 flex items-center justify-center gap-1.5 text-sm text-fg/70">
+              <moodMeta.Icon className={`h-4 w-4 ${moodMeta.tint}`} strokeWidth={2.5} />
+              {moodMeta.label}
+            </p>
+          )}
           {canEditAvatar && profile.avatar_updated_at && (
             <button
               onClick={removeAvatar}
@@ -283,7 +289,7 @@ export function Profile({ userId }: { userId: number }) {
               })}
             </div>
             <p className="mt-3 text-xs leading-relaxed text-fg/35">
-              The family sees your mood on your avatar. Tap the current one to clear it.
+              The family sees your mood on your profile. Tap the current one to clear it.
             </p>
           </>
         ) : moodMeta ? (

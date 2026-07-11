@@ -85,8 +85,10 @@ function PrefSwitch({
   )
 }
 
-// Daily verse check-offs: enable the reading streak, and optionally show the
-// streak number (never the reading history) to village members.
+// The daily-verses opt-in: receiving the day's three verses at all, with the
+// check-offs and reading streak as part of the package. Off by default for
+// new accounts, so this card doubles as the gentle nudge to try it. Village
+// sharing lives with the other village toggles, under Villages.
 function VersePrefsCard() {
   const [verses, setVerses] = useState<api.Verses | null>(null)
 
@@ -94,9 +96,9 @@ function VersePrefsCard() {
     api.getVerses().then(setVerses).catch(() => {})
   }, [])
 
-  async function save(patch: { enabled?: boolean; share?: boolean }) {
+  async function save(enabled: boolean) {
     try {
-      setVerses(await api.setVerseSettings(patch))
+      setVerses(await api.setVerseSettings({ enabled }))
     } catch {
       // The switch stays put; the next tap tries again.
     }
@@ -109,23 +111,15 @@ function VersePrefsCard() {
         <BookOpen className="h-3.5 w-3.5 text-gold/80" /> Daily verses
       </span>
       <p className="mb-3 text-sm text-fg/55">
-        Check off the day's three verses as you read them and build a streak. The little book
-        by your avatar shows the family how many days you've kept it going.
+        {verses.enabled
+          ? "Three short verses wait at the bottom of your board each day. Check them off as you read and the little book by your avatar keeps your streak."
+          : "Three short verses, chosen for the day, waiting quietly at the bottom of your board, with a streak for every day you read all three. A small habit that's easy to keep."}
       </p>
-      <div className="flex flex-col gap-2">
-        <PrefSwitch
-          label="Check off daily verses"
-          checked={verses.enabled}
-          onToggle={() => void save({ enabled: !verses.enabled })}
-        />
-        {verses.enabled && (
-          <PrefSwitch
-            label="Show my streak to villages"
-            checked={verses.share}
-            onToggle={() => void save({ share: !verses.share })}
-          />
-        )}
-      </div>
+      <PrefSwitch
+        label="Opt-in to daily Bible verses"
+        checked={verses.enabled}
+        onToggle={() => void save(!verses.enabled)}
+      />
     </div>
   )
 }

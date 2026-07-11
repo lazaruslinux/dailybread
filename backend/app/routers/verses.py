@@ -79,7 +79,7 @@ def _verses_out(db: Session, user: User, date_for: dt.date) -> VersesOut:
         )
     )
     return VersesOut(
-        enabled=user.verse_streak_enabled,
+        enabled=user.verses_enabled,
         share=user.share_verse_streak,
         checks=[i in checked for i in range(VERSES_PER_DAY)],
         streak=streaks_for(db, [user.id], dt.date.today()).get(user.id, 0),
@@ -103,8 +103,8 @@ def check_verse(
     user: User = Depends(require_family),
 ):
     _check_date(data.date_for)
-    if not user.verse_streak_enabled:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Turn on verse check-offs first")
+    if not user.verses_enabled:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Turn on daily verses first")
     exists = db.scalar(
         select(VerseCheck).where(
             VerseCheck.user_id == user.id,
@@ -153,7 +153,7 @@ def verse_settings(
     streak, honestly)."""
     sent = data.model_dump(exclude_unset=True)
     if "enabled" in sent and sent["enabled"] is not None:
-        user.verse_streak_enabled = sent["enabled"]
+        user.verses_enabled = sent["enabled"]
     if "share" in sent and sent["share"] is not None:
         user.share_verse_streak = sent["share"]
     db.commit()

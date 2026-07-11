@@ -9,13 +9,18 @@ import {
   checkVillageCode,
   createVillage,
   deleteVillage,
+  getVerses,
   joinVillage,
   leaveVillage,
   listVillages,
   regenerateInvite,
+  setVerseSettings,
   updateMyProfile,
+  type Verses,
   type Village,
+  type VillageParent,
 } from '../lib/api'
+import { Avatar } from './Avatar'
 import { CollapsibleCard } from './CollapsibleCard'
 import { Sheet } from './Recipes'
 import { Button, Field, FormError } from './ui'
@@ -246,6 +251,56 @@ function JoinSheet({ onClose, onJoined }: { onClose: () => void; onJoined: () =>
   )
 }
 
+// The streak share rides the verses settings, not the profile; plural label
+// on purpose — more streaks may join it someday.
+function StreakShareToggle({ onChanged }: { onChanged: () => void }) {
+  const [state, setState] = useState<Verses | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    getVerses().then(setState).catch(() => {})
+  }, [])
+
+  if (!state?.enabled) return null // nothing to share without the verses opt-in
+  async function flip() {
+    if (!state) return
+    setBusy(true)
+    try {
+      setState(await setVerseSettings({ share: !state.share }))
+      onChanged()
+    } catch {
+      // switch stays; next tap retries
+    }
+    setBusy(false)
+  }
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={state.share}
+      disabled={busy}
+      onClick={flip}
+      className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left"
+    >
+      <span className="min-w-0 pr-2">
+        <span className="block text-sm font-semibold text-fg/85">
+          Share my streaks with Villages
+        </span>
+        <span className="block text-xs text-fg/45">
+          Only the number crosses — never which verses or which days
+        </span>
+      </span>
+      <span
+        className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${state.share ? 'bg-accent' : 'bg-fg/15'}`}
+      >
+        <span
+          className={`absolute top-0.5 h-5 w-5 rounded-full bg-fg transition-all ${state.share ? 'left-[1.125rem]' : 'left-0.5'}`}
+        />
+      </span>
+    </button>
+  )
+}
+
 function PresenceToggle({ initial, onChanged }: { initial: boolean; onChanged: () => void }) {
   const [on, setOn] = useState(initial)
   const [busy, setBusy] = useState(false)
@@ -272,7 +327,7 @@ function PresenceToggle({ initial, onChanged }: { initial: boolean; onChanged: (
     >
       <span className="min-w-0 pr-2">
         <span className="block text-sm font-semibold text-fg/85">
-          Share my mood to other villages
+          Share my mood and status with Villages
         </span>
         <span className="block text-xs text-fg/45">
           Off means village families see only your name and photo, never how your day is going
@@ -289,6 +344,49 @@ function PresenceToggle({ initial, onChanged }: { initial: boolean; onChanged: (
   )
 }
 
+// A village-mate at arm's length: the mini profile. Only what that parent
+// chose to share crosses the wall — status and mood ride the presence
+// toggle, the streak its own — and when nothing is shared the card says so
+// plainly instead of pretending to be empty.
+function MiniProfileSheet({ parent, onClose }: { parent: VillageParent; onClose: () => void }) {
+  const moodMeta = parent.mood ? MOODS[parent.mood.level] : null
+  const streak = parent.verse_streak ?? 0
+  const isPrivate = !parent.presence && streak === 0
+  return (
+    <Sheet onClose={onClose}>
+      <div className="flex flex-col items-center gap-3 py-2 text-center" data-mini-profile>
+        <Avatar name={parent.display_name} src={avatarUrl(parent)} verseStreak={parent.verse_streak} size="lg" />
+        <h3 className="text-xl font-bold tracking-tight">{parent.display_name}</h3>
+        {isPrivate ? (
+          <p className="text-sm text-fg/45">This profile is private</p>
+        ) : (
+          <div className="flex w-full flex-col gap-2">
+            {parent.status && (
+              <p className="font-reading text-[15px] leading-relaxed text-fg/75">
+                "{parent.status}"
+              </p>
+            )}
+            {moodMeta && (
+              <div className={`mx-auto flex items-center gap-2 rounded-full px-3.5 py-1.5 ${moodMeta.chip}`}>
+                <moodMeta.Icon className={`h-4 w-4 ${moodMeta.tint}`} strokeWidth={2.5} />
+                <span className="text-sm font-semibold text-fg/80">Mood · {moodMeta.label}</span>
+              </div>
+            )}
+            {streak > 0 && (
+              <div className="mx-auto flex items-center gap-2 rounded-full border border-gold/40 bg-gold/10 px-3.5 py-1.5">
+                <BookOpen className="h-4 w-4 text-gold" strokeWidth={2.5} />
+                <span className="text-sm font-semibold text-gold">
+                  {streak}-day reading streak
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </Sheet>
+  )
+}
+
 export function VillagesCard() {
   const { user } = useAuth()
   const [villages, setVillages] = useState<Village[]>([])
@@ -302,6 +400,7 @@ export function VillagesCard() {
   } | null>(null)
   const [armedLeave, setArmedLeave] = useState<number | null>(null)
   const [deleting, setDeleting] = useState<Village | null>(null)
+  const [viewing, setViewing] = useState<VillageParent | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
 
   const refresh = useCallback(() => {
@@ -365,7 +464,10 @@ export function VillagesCard() {
         )}
 
         {villages.length > 0 && user && !user.is_minor && (
-          <PresenceToggle initial={user.village_presence} onChanged={refresh} />
+          <>
+            <PresenceToggle initial={user.village_presence} onChanged={refresh} />
+            <StreakShareToggle onChanged={refresh} />
+          </>
         )}
 
         {villages.map((v) => (
@@ -381,43 +483,25 @@ export function VillagesCard() {
                     {f.name}
                   </p>
                   <div className="flex flex-wrap gap-3">
-                    {f.parents.map((p) => {
-                      const MoodIcon = p.mood ? MOODS[p.mood.level].Icon : null
-                      return (
-                        <span key={p.id} className="flex w-14 flex-col items-center gap-1">
-                          <span className="relative">
-                            {p.avatar_updated_at ? (
-                              <img
-                                src={avatarUrl(p) ?? undefined}
-                                alt=""
-                                className="h-9 w-9 rounded-full border border-fg/10 object-cover"
-                              />
-                            ) : (
-                              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-avatar-1/80 to-avatar-2/80 text-xs font-bold text-white">
-                                {p.display_name
-                                  .split(/\s+/)
-                                  .slice(0, 2)
-                                  .map((w) => w[0]?.toUpperCase() ?? '')
-                                  .join('')}
-                              </span>
-                            )}
-                            {MoodIcon && p.mood && (
-                              <span className="absolute -bottom-0.5 -right-1 rounded-full border border-fg/15 bg-[var(--bg-base,#111)] p-0.5">
-                                <MoodIcon className={`h-3 w-3 ${MOODS[p.mood.level].tint}`} />
-                              </span>
-                            )}
-                            {p.verse_streak != null && p.verse_streak > 0 && (
-                              <span className="absolute -bottom-0.5 -left-1.5 flex items-center gap-px rounded-full border border-gold/40 bg-[var(--bg-base,#111)] px-1 py-0.5 text-[7px] font-bold text-gold">
-                                <BookOpen className="h-2.5 w-2.5" strokeWidth={2.5} />x{p.verse_streak}
-                              </span>
-                            )}
-                          </span>
-                          <span className="w-full truncate text-center text-[10px] text-fg/55">
-                            {p.display_name.split(/\s+/)[0]}
-                          </span>
+                    {f.parents.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setViewing(p)}
+                        aria-label={`Open ${p.display_name}'s profile`}
+                        className="flex w-14 flex-col items-center gap-1 rounded-xl py-1 transition-opacity hover:opacity-80"
+                      >
+                        <Avatar
+                          name={p.display_name}
+                          src={avatarUrl(p)}
+                          verseStreak={p.verse_streak}
+                          size="md"
+                        />
+                        <span className="w-full truncate text-center text-[10px] text-fg/55">
+                          {p.display_name.split(/\s+/)[0]}
                         </span>
-                      )
-                    })}
+                      </button>
+                    ))}
                   </div>
                 </div>
               ))}
@@ -542,6 +626,7 @@ export function VillagesCard() {
             onClose={() => setReveal(null)}
           />
         )}
+        {viewing && <MiniProfileSheet parent={viewing} onClose={() => setViewing(null)} />}
       </AnimatePresence>
     </CollapsibleCard>
   )

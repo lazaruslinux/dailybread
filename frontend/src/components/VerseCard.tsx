@@ -36,9 +36,14 @@ export function VerseCard() {
     return () => window.clearTimeout(foldTimer.current)
   }, [])
 
-  const enabled = state?.enabled ?? false
-  const checked = enabled && (state?.checks[idx] ?? false)
-  const allRead = enabled && (state?.checks.every(Boolean) ?? false)
+  // The verses themselves are the opt-in now: members who haven't turned
+  // them on see nothing here at all (and nothing while the answer loads, so
+  // opted-out boards never flash the card).
+  if (state === null || !state.enabled) return null
+
+  const enabled = true
+  const checked = state.checks[idx] ?? false
+  const allRead = state.checks.every(Boolean)
 
   async function toggle() {
     if (!state) return

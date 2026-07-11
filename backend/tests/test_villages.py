@@ -429,8 +429,10 @@ def test_presence_is_opt_in_hidden_stays_hidden_and_status_stays_home(village, o
     assert owner.patch("/me/profile", json={"village_presence": True}).status_code == 200
     row = owner_row(other)
     assert row["mood"] == {"level": "sunny", "hidden": False}
-    # Statuses never cross the wall at all — mood is the whole share.
-    assert "status" not in row
+    # Presence carries today's status line too (2026-07-11: the mini
+    # profile shows it); it was set before opting in, and it shows now.
+    assert row["status"] == "Baking day"
+    assert row["presence"] is True
 
     # A hidden mood reads exactly like no mood, opt-in or not.
     owner.put("/me/mood", json={"date_for": today, "level": "stormy", "hidden": True})

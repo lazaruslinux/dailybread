@@ -17,7 +17,6 @@ const ROLE_LABEL: Record<api.Role, string> = { parent: 'Parent', child: 'Child' 
 
 function MemberRow({
   member,
-  mood,
   isSelf,
   onEdit,
   onDelete,
@@ -25,7 +24,6 @@ function MemberRow({
   index,
 }: {
   member: api.User
-  mood: api.Mood | null
   isSelf: boolean
   onEdit: () => void
   onDelete: () => void
@@ -50,7 +48,7 @@ function MemberRow({
         className="flex min-w-0 flex-1 items-center gap-4 text-left"
         aria-label={onOpen ? `Open ${member.display_name}'s profile` : undefined}
       >
-        <Avatar name={member.display_name} src={api.avatarUrl(member)} mood={mood} />
+        <Avatar name={member.display_name} src={api.avatarUrl(member)} />
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2 truncate font-semibold text-fg">
             {member.display_name}
@@ -863,7 +861,6 @@ function RenameFamilySheet({
 export function Admin({ onOpenProfile }: { onOpenProfile?: (id: number) => void }) {
   const { user } = useAuth()
   const [members, setMembers] = useState<api.User[] | null>(null)
-  const [moods, setMoods] = useState<Map<number, api.Mood | null>>(new Map())
   const [family, setFamily] = useState<api.Family | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [sheet, setSheet] = useState<{ open: boolean; member: api.User | null }>({
@@ -878,12 +875,6 @@ export function Admin({ onOpenProfile }: { onOpenProfile?: (id: number) => void 
     try {
       setMembers(await api.listUsers())
       setFamily(await api.getMyFamily())
-      // Moods ride on the same payload the Home strip reads; a miss just
-      // means badge-less avatars here.
-      api
-        .getFamily()
-        .then((fam) => setMoods(new Map(fam.map((m) => [m.id, m.mood]))))
-        .catch(() => {})
       setLoadError(null)
     } catch (err) {
       setLoadError(err instanceof api.ApiError ? err.message : 'Could not load family members.')
@@ -922,7 +913,6 @@ export function Admin({ onOpenProfile }: { onOpenProfile?: (id: number) => void 
             <MemberRow
               key={m.id}
               member={m}
-              mood={moods.get(m.id) ?? null}
               index={i}
               isSelf={m.id === user?.id}
               onEdit={() => setSheet({ open: true, member: m })}

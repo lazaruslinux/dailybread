@@ -1272,9 +1272,14 @@ export interface VillageParent {
   // The photo handle: village parents' avatar images are served across the
   // family wall (nothing else is).
   avatar_updated_at: string | null
+  // Whether this parent shares mood/status at all; the mini profile says
+  // "private" honestly when off.
+  presence: boolean
   // Present only when that parent opted in (village_presence) and the mood
-  // isn't hidden; hidden reads exactly like unset. Statuses never cross.
+  // isn't hidden; hidden reads exactly like unset.
   mood: Mood | null
+  // Today's status line, empty unless presence is on.
+  status: string
   // Reading streak, by its own opt-in (share_verse_streak). The number only.
   verse_streak: number | null
 }

@@ -24,7 +24,7 @@ export function FamilyStrip({
           onClick={() => onOpen(m.id)}
           className="flex min-w-0 flex-col items-center gap-1.5 rounded-xl px-1 py-1 transition-opacity hover:opacity-80"
         >
-          <Avatar name={m.display_name} mood={m.mood} verseStreak={m.verse_streak} src={avatarUrl(m)} />
+          <Avatar name={m.display_name} verseStreak={m.verse_streak} src={avatarUrl(m)} />
           <span className="max-w-14 truncate text-[11px] font-medium text-fg/60">
             {m.display_name.split(/\s+/)[0]}
           </span>

@@ -37,7 +37,13 @@ def _shepherded(owner: User, viewer: User) -> bool:
     return viewer.id == owner.id or viewer.role == Role.parent or not owner.is_minor
 
 
-def _profile_out(user: User, mood: Mood | None, viewer: User, today: dt.date) -> ProfileOut:
+def _profile_out(
+    user: User,
+    mood: Mood | None,
+    viewer: User,
+    today: dt.date,
+    verse_streak: int | None = None,
+) -> ProfileOut:
     return ProfileOut(
         id=user.id,
         username=user.username,
@@ -52,6 +58,7 @@ def _profile_out(user: User, mood: Mood | None, viewer: User, today: dt.date) ->
         bio=_daily_status(user, today) if _shepherded(user, viewer) else "",
         created_at=user.created_at,
         mood=_visible_mood(mood, viewer, user),
+        verse_streak=verse_streak,
     )
 
 
@@ -118,7 +125,7 @@ def family(
     from app.routers.verses import streaks_for
 
     streaks = streaks_for(
-        db, [u.id for u in members if u.verse_streak_enabled], dt.date.today()
+        db, [u.id for u in members if u.verses_enabled], dt.date.today()
     )
     return [
         _member_out(u, moods.get(u.id), viewer, verse_streak=streaks.get(u.id) or None)
@@ -141,7 +148,14 @@ def profile(
     mood = db.scalar(
         select(Mood).where(Mood.user_id == user.id, Mood.date_for == date_for)
     )
-    return _profile_out(user, mood, viewer, date_for)
+    from app.routers.verses import streaks_for
+
+    streak = (
+        streaks_for(db, [user.id], dt.date.today()).get(user.id)
+        if user.verses_enabled
+        else None
+    )
+    return _profile_out(user, mood, viewer, date_for, verse_streak=streak or None)
 
 
 @router.patch("/me/profile", response_model=ProfileOut)

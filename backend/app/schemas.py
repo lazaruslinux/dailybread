@@ -1118,7 +1118,13 @@ class VillageParentOut(BaseModel):
     id: int
     display_name: str
     avatar_updated_at: dt.datetime | None = None
+    # Whether this parent shares mood/status at all — the mini profile uses
+    # it to say "private" honestly instead of guessing from empty fields.
+    presence: bool = False
     mood: MoodOut | None = None
+    # Today's status line, empty unless presence is on (statuses clear
+    # themselves overnight like moods).
+    status: str = ""
     # Reading streak, present ONLY when that parent opted in to sharing it
     # (share_verse_streak) and it's > 0. The number, nothing else.
     verse_streak: int | None = None

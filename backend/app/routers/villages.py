@@ -98,8 +98,9 @@ def _village_out(db: Session, village: Village, viewer_family_id: int) -> Villag
     ).all()
     # The faces of the village: every member family's PARENTS. Children are
     # never shown across the family wall, whatever their birthdate says.
-    # A parent who opted in (village_presence) also shares today's mood
-    # (unless hidden — hidden reads exactly like unset). Statuses stay home.
+    # A parent who opted in (village_presence) shares today's mood (unless
+    # hidden — hidden reads exactly like unset) AND today's status line, for
+    # the mini profile. Boards, kitchens, and calendars still never cross.
     from app.models import Mood
 
     parents_by_family: dict[int, list[VillageParentOut]] = {}
@@ -124,7 +125,7 @@ def _village_out(db: Session, village: Village, viewer_family_id: int) -> Villag
 
         streaks = streaks_for(
             db,
-            [u.id for u in parents if u.share_verse_streak and u.verse_streak_enabled],
+            [u.id for u in parents if u.share_verse_streak and u.verses_enabled],
             today,
         )
         for user in parents:
@@ -135,11 +136,13 @@ def _village_out(db: Session, village: Village, viewer_family_id: int) -> Villag
                     id=user.id,
                     display_name=user.display_name,
                     avatar_updated_at=user.avatar_updated_at,
+                    presence=sharing,
                     mood=(
                         MoodOut.model_validate(mood)
                         if sharing and mood is not None and not mood.hidden
                         else None
                     ),
+                    status=(user.bio if sharing and user.status_date == today else ""),
                     verse_streak=streaks.get(user.id) or None,
                 )
             )

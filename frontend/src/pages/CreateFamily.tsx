@@ -29,7 +29,7 @@ const TOUR: { title: string; body: string; versesChoice?: boolean }[] = [
   },
   {
     title: 'Daily bread, if you want it',
-    body: "Three short verses wait at the bottom of the board each day. Turn on check-offs to mark them read and build a streak — a little book by your avatar shows how many days you've kept it going. You can change this anytime in You.",
+    body: "Three short verses, chosen for the day, can wait at the bottom of your board. Opting in includes the little streak game: check all three off and a small book by your avatar counts the days you keep it going. Change your mind anytime in You.",
     versesChoice: true,
   },
 ]
@@ -61,7 +61,7 @@ function WelcomeTour({ firstName, onDone }: { firstName: string; onDone: () => v
               onClick={toggleVerses}
               className="mt-3 flex w-full items-center justify-between gap-3 rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left"
             >
-              <span className="text-sm font-semibold text-fg/85">Check off daily verses</span>
+              <span className="text-sm font-semibold text-fg/85">Opt-in to daily Bible verses</span>
               <span className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${wantVerses ? 'bg-accent' : 'bg-fg/15'}`}>
                 <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-fg transition-all ${wantVerses ? 'left-[1.125rem]' : 'left-0.5'}`} />
               </span>

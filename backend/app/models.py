@@ -211,10 +211,12 @@ class User(Base):
     goal_steps: Mapped[int | None] = mapped_column(Integer, nullable=True)
     goal_active_kcal: Mapped[int | None] = mapped_column(Integer, nullable=True)
     goal_exercise_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Opt-in: the member checks off the day's three verses and builds a
-    # reading streak. share_verse_streak additionally shows that streak to
-    # village members (family always sees it).
-    verse_streak_enabled: Mapped[bool] = mapped_column(
+    # Opt-in: the member receives the daily verses at all — the Home card,
+    # the check-offs, and the reading streak come as one package. Off by
+    # default for new accounts; the welcome tour (and You) offers it.
+    # share_verse_streak additionally shows the streak NUMBER to village
+    # members (family always sees it).
+    verses_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
     share_verse_streak: Mapped[bool] = mapped_column(
