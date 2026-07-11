@@ -1,5 +1,5 @@
 import { AnimatePresence } from 'framer-motion'
-import { Copy, Plus } from 'lucide-react'
+import { BookOpen, Copy, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { MOODS } from '../lib/moods'
@@ -393,7 +393,7 @@ export function VillagesCard() {
                                 className="h-9 w-9 rounded-full border border-fg/10 object-cover"
                               />
                             ) : (
-                              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-accent-bright/60 to-accent-strong/60 text-xs font-bold text-fg">
+                              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-avatar-1/80 to-avatar-2/80 text-xs font-bold text-white">
                                 {p.display_name
                                   .split(/\s+/)
                                   .slice(0, 2)
@@ -404,6 +404,11 @@ export function VillagesCard() {
                             {MoodIcon && p.mood && (
                               <span className="absolute -bottom-0.5 -right-1 rounded-full border border-fg/15 bg-[var(--bg-base,#111)] p-0.5">
                                 <MoodIcon className={`h-3 w-3 ${MOODS[p.mood.level].tint}`} />
+                              </span>
+                            )}
+                            {p.verse_streak != null && p.verse_streak > 0 && (
+                              <span className="absolute -bottom-0.5 -left-1.5 flex items-center gap-px rounded-full border border-gold/40 bg-[var(--bg-base,#111)] px-1 py-0.5 text-[7px] font-bold text-gold">
+                                <BookOpen className="h-2.5 w-2.5" strokeWidth={2.5} />x{p.verse_streak}
                               </span>
                             )}
                           </span>

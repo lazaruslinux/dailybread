@@ -890,6 +890,28 @@ class FamilyMemberOut(UserOut):
     """
 
     mood: MoodOut | None = None
+    # The member's verse-reading streak, when they've opted in and it's > 0.
+    # Only the number crosses — never which verses or which days.
+    verse_streak: int | None = None
+
+
+class VersesOut(BaseModel):
+    enabled: bool
+    share: bool
+    checks: list[bool]  # today's three, in verse order
+    streak: int
+
+
+class VerseCheckIn(BaseModel):
+    date_for: dt.date
+    verse_idx: int = Field(ge=0, le=2)
+
+
+class VerseSettingsIn(BaseModel):
+    """Only the fields sent change."""
+
+    enabled: bool | None = None
+    share: bool | None = None
 
 
 class ProfileOut(FamilyMemberOut):
@@ -1097,6 +1119,9 @@ class VillageParentOut(BaseModel):
     display_name: str
     avatar_updated_at: dt.datetime | None = None
     mood: MoodOut | None = None
+    # Reading streak, present ONLY when that parent opted in to sharing it
+    # (share_verse_streak) and it's > 0. The number, nothing else.
+    verse_streak: int | None = None
 
 
 class VillageFamilyOut(BaseModel):

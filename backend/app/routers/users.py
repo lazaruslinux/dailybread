@@ -75,7 +75,9 @@ def _visible_mood(mood: Mood | None, viewer: User, owner: User) -> MoodOut | Non
     return MoodOut.model_validate(mood)
 
 
-def _member_out(user: User, mood: Mood | None, viewer: User) -> FamilyMemberOut:
+def _member_out(
+    user: User, mood: Mood | None, viewer: User, verse_streak: int | None = None
+) -> FamilyMemberOut:
     return FamilyMemberOut(
         id=user.id,
         username=user.username,
@@ -88,6 +90,7 @@ def _member_out(user: User, mood: Mood | None, viewer: User) -> FamilyMemberOut:
         birthdate=user.birthdate,
         is_minor=user.is_minor,
         mood=_visible_mood(mood, viewer, user),
+        verse_streak=verse_streak,
     )
 
 
@@ -110,7 +113,17 @@ def family(
             select(Mood).where(Mood.date_for == date_for, Mood.user_id.in_(member_ids))
         )
     }
-    return [_member_out(u, moods.get(u.id), viewer) for u in members]
+    # Reading streaks ride along for opted-in members: the family always sees
+    # the number (it sits beside the name), never the reading history.
+    from app.routers.verses import streaks_for
+
+    streaks = streaks_for(
+        db, [u.id for u in members if u.verse_streak_enabled], dt.date.today()
+    )
+    return [
+        _member_out(u, moods.get(u.id), viewer, verse_streak=streaks.get(u.id) or None)
+        for u in members
+    ]
 
 
 @router.get("/users/{user_id}/profile", response_model=ProfileOut)

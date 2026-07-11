@@ -917,6 +917,8 @@ export interface Mood {
 
 export interface FamilyMember extends User {
   mood: Mood | null
+  // Verse-reading streak: present when the member opted in and it's > 0.
+  verse_streak: number | null
 }
 
 export interface Profile extends FamilyMember {
@@ -925,6 +927,26 @@ export interface Profile extends FamilyMember {
 }
 
 export const getFamily = () => request<FamilyMember[]>(`/users?date=${localDate()}`)
+
+// ---- daily verses ----------------------------------------------------------------
+
+export interface Verses {
+  enabled: boolean
+  share: boolean
+  checks: boolean[] // today's three, in verse order
+  streak: number
+}
+
+export const getVerses = () => request<Verses>(`/me/verses?date=${localDate()}`)
+export const checkVerse = (idx: number) =>
+  request<Verses>('/me/verses/check', {
+    method: 'POST',
+    body: JSON.stringify({ date_for: localDate(), verse_idx: idx }),
+  })
+export const uncheckVerse = (idx: number) =>
+  request<Verses>(`/me/verses/check?date=${localDate()}&idx=${idx}`, { method: 'DELETE' })
+export const setVerseSettings = (s: { enabled?: boolean; share?: boolean }) =>
+  request<Verses>('/me/verses/settings', { method: 'PUT', body: JSON.stringify(s) })
 
 export const getProfile = (id: number) =>
   request<Profile>(`/users/${id}/profile?date=${localDate()}`)
@@ -1253,6 +1275,8 @@ export interface VillageParent {
   // Present only when that parent opted in (village_presence) and the mood
   // isn't hidden; hidden reads exactly like unset. Statuses never cross.
   mood: Mood | null
+  // Reading streak, by its own opt-in (share_verse_streak). The number only.
+  verse_streak: number | null
 }
 
 export interface VillageFamily {

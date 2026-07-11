@@ -211,6 +211,15 @@ class User(Base):
     goal_steps: Mapped[int | None] = mapped_column(Integer, nullable=True)
     goal_active_kcal: Mapped[int | None] = mapped_column(Integer, nullable=True)
     goal_exercise_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Opt-in: the member checks off the day's three verses and builds a
+    # reading streak. share_verse_streak additionally shows that streak to
+    # village members (family always sees it).
+    verse_streak_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    share_verse_streak: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     # Opt-in: the watch's WORKOUT calories raise the day's food budget — only
     # deliberate workouts, never the all-day active total (the calorie
     # target's activity level already covers baseline movement). The diary
@@ -1056,3 +1065,23 @@ class Workout(Base):
     # full-resolution track. Present only when the exporter sends route data.
     route: Mapped[list | None] = mapped_column(JSON, nullable=True)
     source: Mapped[str] = mapped_column(String(20), default="apple", server_default="apple")
+
+
+class VerseCheck(Base):
+    """One member's check on one of the day's three verses. A day with all
+    three checked counts toward that member's reading streak. Self-owned like
+    the journal: which verses, on which days, is nobody else's data — only the
+    streak NUMBER is ever surfaced, and beyond the family only by opt-in."""
+
+    __tablename__ = "verse_checks"
+    __table_args__ = (
+        UniqueConstraint("user_id", "date_for", "verse_idx", name="uq_verse_check"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    date_for: Mapped[dt.date] = mapped_column(Date, index=True)
+    verse_idx: Mapped[int] = mapped_column(Integer)  # 0..2, the day's three
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

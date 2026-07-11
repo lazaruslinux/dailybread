@@ -118,6 +118,15 @@ def _village_out(db: Session, village: Village, viewer_family_id: int) -> Villag
                 select(Mood).where(Mood.date_for == today, Mood.user_id.in_(sharer_ids))
             )
         } if sharer_ids else {}
+        # Reading streaks cross the wall only by their own opt-in, separate
+        # from mood presence; the number is all that travels.
+        from app.routers.verses import streaks_for
+
+        streaks = streaks_for(
+            db,
+            [u.id for u in parents if u.share_verse_streak and u.verse_streak_enabled],
+            today,
+        )
         for user in parents:
             mood = moods.get(user.id)
             sharing = user.village_presence
@@ -131,6 +140,7 @@ def _village_out(db: Session, village: Village, viewer_family_id: int) -> Villag
                         if sharing and mood is not None and not mood.hidden
                         else None
                     ),
+                    verse_streak=streaks.get(user.id) or None,
                 )
             )
     active = _invite_active(village, _utcnow())

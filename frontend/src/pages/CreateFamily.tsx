@@ -1,12 +1,16 @@
 import { useState, type FormEvent } from 'react'
-import { ApiError } from '../lib/api'
+import { ApiError, setVerseSettings } from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { AuthShell, Brand, Button, Field, FormError } from '../components/ui'
 
 // A short feature tour for accounts that just arrived via an invite code
-// (the sessionStorage flag is set at redeem time). Static on purpose: four
-// ideas, then straight into naming the family.
-const TOUR: { title: string; body: string }[] = [
+// (the sessionStorage flag is set at redeem time). Static on purpose: five
+// ideas, then straight into naming the family. The verses step carries the
+// one interactive choice; it's remembered here and applied right after the
+// family is founded (the setting needs a family to save onto).
+const VERSES_OPTIN_KEY = 'db-verses-optin'
+
+const TOUR: { title: string; body: string; versesChoice?: boolean }[] = [
   {
     title: 'Your day, one board',
     body: "Routines, tasks, and appointments live on a shared family board that knows what time it is. Check things off as you go, and turn on notifications to get a nudge on your phone shortly before anything with a time.",
@@ -23,11 +27,25 @@ const TOUR: { title: string; body: string }[] = [
     title: 'Yours, together',
     body: 'Every member gets their own sign-in, a daily mood, and a private journal. Later, villages can link your family with another one to share recipes, and nothing more, unless you choose it.',
   },
+  {
+    title: 'Daily bread, if you want it',
+    body: "Three short verses wait at the bottom of the board each day. Turn on check-offs to mark them read and build a streak — a little book by your avatar shows how many days you've kept it going. You can change this anytime in You.",
+    versesChoice: true,
+  },
 ]
 
 function WelcomeTour({ firstName, onDone }: { firstName: string; onDone: () => void }) {
   const [step, setStep] = useState(0)
+  const [wantVerses, setWantVerses] = useState(false)
   const last = step === TOUR.length - 1
+
+  function toggleVerses() {
+    const next = !wantVerses
+    setWantVerses(next)
+    if (next) sessionStorage.setItem(VERSES_OPTIN_KEY, '1')
+    else sessionStorage.removeItem(VERSES_OPTIN_KEY)
+  }
+
   return (
     <AuthShell>
       <Brand subtitle={step === 0 ? `Welcome aboard, ${firstName}. A quick look around:` : ''} />
@@ -35,6 +53,20 @@ function WelcomeTour({ firstName, onDone }: { firstName: string; onDone: () => v
         <div>
           <h2 className="mb-2 text-lg font-bold">{TOUR[step].title}</h2>
           <p className="text-sm leading-relaxed text-fg/60">{TOUR[step].body}</p>
+          {TOUR[step].versesChoice && (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={wantVerses}
+              onClick={toggleVerses}
+              className="mt-3 flex w-full items-center justify-between gap-3 rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left"
+            >
+              <span className="text-sm font-semibold text-fg/85">Check off daily verses</span>
+              <span className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${wantVerses ? 'bg-accent' : 'bg-fg/15'}`}>
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-fg transition-all ${wantVerses ? 'left-[1.125rem]' : 'left-0.5'}`} />
+              </span>
+            </button>
+          )}
         </div>
         <div className="flex items-center justify-center gap-1.5">
           {TOUR.map((_, i) => (
@@ -96,6 +128,12 @@ export function CreateFamily() {
     setBusy(true)
     try {
       await createFamily(name)
+      // The tour's verses opt-in couldn't save until a family existed; apply
+      // it now. A miss is harmless — the You page has the same switch.
+      if (sessionStorage.getItem(VERSES_OPTIN_KEY) === '1') {
+        sessionStorage.removeItem(VERSES_OPTIN_KEY)
+        setVerseSettings({ enabled: true }).catch(() => {})
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.')
       setBusy(false)
