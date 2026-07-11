@@ -263,12 +263,11 @@ def _due_users(
     on their family's current date, each paired with their family's local
     "now". Minors never receive anything scheduled — the board is the
     parents' to run."""
+    # No SQL DISTINCT here: since push_prefs, a User row carries a json
+    # column, and Postgres json has no equality operator to dedupe on.
+    # .unique() collapses the join's duplicates by ORM identity instead.
     subscribed = (
-        db.scalars(
-            select(User)
-            .join(PushSubscription, PushSubscription.user_id == User.id)
-            .distinct()
-        )
+        db.scalars(select(User).join(PushSubscription, PushSubscription.user_id == User.id))
         .unique()
         .all()
     )
@@ -645,12 +644,13 @@ def _dinner_pass(db: Session, clocks: dict[int, dt.datetime], now: dt.datetime) 
             "tag": f"dinner-{meal.date_for.isoformat()}",
             "url": "/",
         }
+        # Same as _due_users: no SQL DISTINCT over a User row (json column);
+        # .unique() dedupes the join by identity.
         adults = (
             db.scalars(
                 select(User)
                 .join(PushSubscription, PushSubscription.user_id == User.id)
                 .where(User.family_id == meal.family_id)
-                .distinct()
             )
             .unique()
             .all()
