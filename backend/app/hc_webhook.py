@@ -50,9 +50,11 @@ def _local(raw, tz_name: str | None) -> dt.datetime | None:
         return None
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=dt.timezone.utc)
-    # family_now handles the zone lookup and the naive-ify; feed it the local
-    # server equivalent first so a NULL zone means "server clock", as always.
-    return family_now(parsed.astimezone(), tz_name)
+    # family_now handles the zone lookup; feed it the server-local equivalent
+    # so a NULL zone means "server clock", as always. Its no-zone path returns
+    # the input untouched — still aware here — so strip explicitly: everything
+    # downstream stores and compares naive wall times.
+    return family_now(parsed.astimezone(), tz_name).replace(tzinfo=None)
 
 
 def _points(payload: dict, key: str) -> list[dict]:

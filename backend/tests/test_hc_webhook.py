@@ -90,7 +90,8 @@ def test_hc_resends_never_duplicate(owner):
 def test_hc_times_land_on_the_familys_clock(owner):
     """03:00 UTC is the previous evening in Phoenix: the steps must file
     under the family-local day, not the UTC one."""
-    owner.patch("/families/me", json={"timezone": "America/Phoenix"})
+    res = owner.patch("/families/me", json={"name": "Home", "timezone": "America/Phoenix"})
+    assert res.status_code == 200, res.text
     token = _mint(owner)
     payload = {
         "app_version": "1.4.0",
