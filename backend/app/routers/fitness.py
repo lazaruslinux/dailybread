@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app import throttle
+from app import hc_webhook, throttle
 from app.db import get_db
 from app.deps import require_adult
 from app.invitecodes import hash_code
@@ -288,6 +288,51 @@ def _parse_route(raw) -> list | None:
     return pts
 
 
+def _upsert_workout(
+    db: Session,
+    user: User,
+    *,
+    external_id: str | None,
+    activity: str,
+    started_at: dt.datetime,
+    ended_at: dt.datetime | None,
+    duration_s: float | None,
+    kcal: float | None,
+    distance_m: float | None,
+    avg_hr: float | None,
+    route: list | None,
+) -> None:
+    """The one idempotent workout write both dialects (Apple and Android)
+    share: a stable exporter id wins, otherwise (member, start, activity).
+    A resend without route data never erases a trace already stored."""
+    if external_id:
+        row = db.scalar(
+            select(Workout).where(
+                Workout.user_id == user.id, Workout.external_id == external_id
+            )
+        )
+    else:
+        row = db.scalar(
+            select(Workout).where(
+                Workout.user_id == user.id,
+                Workout.started_at == started_at,
+                Workout.activity == activity,
+            )
+        )
+    if row is None:
+        row = Workout(family_id=user.family_id, user_id=user.id, external_id=external_id)
+        db.add(row)
+    row.activity = activity
+    row.started_at = started_at
+    row.ended_at = ended_at
+    row.duration_s = duration_s
+    row.kcal = kcal
+    row.distance_m = distance_m
+    row.avg_hr = avg_hr
+    if route is not None:
+        row.route = route
+
+
 def _import_workouts(db: Session, user: User, workouts) -> tuple[int, set[dt.date]]:
     """Returns (workouts touched, the days they started on) — the days feed
     the routine auto-complete pass."""
@@ -302,42 +347,26 @@ def _import_workouts(db: Session, user: User, workouts) -> tuple[int, set[dt.dat
         activity = entry.get("name")
         if started is None or not isinstance(activity, str) or not activity.strip():
             continue
-        activity = activity.strip()[:80]
         external = entry.get("id") if isinstance(entry.get("id"), str) else None
-        if external:
-            external = external[:64]
-            row = db.scalar(
-                select(Workout).where(
-                    Workout.user_id == user.id, Workout.external_id == external
-                )
-            )
-        else:
-            row = db.scalar(
-                select(Workout).where(
-                    Workout.user_id == user.id,
-                    Workout.started_at == started,
-                    Workout.activity == activity,
-                )
-            )
-        if row is None:
-            row = Workout(family_id=user.family_id, user_id=user.id, external_id=external)
-            db.add(row)
-        row.activity = activity
-        row.started_at = started
-        row.ended_at = _parse_when(entry.get("end"))
-        row.duration_s = _qty(entry.get("duration"))
-        row.kcal = _qty(entry.get("activeEnergyBurned"))
-        row.distance_m = _distance_m(entry.get("distance"))
         heart = entry.get("heartRate")
-        row.avg_hr = _qty(heart.get("avg")) if isinstance(heart, dict) else None
-        # A re-send without route data must not erase a trace we already have
-        # (the exporter's route toggle can be flipped either way later).
         route = _parse_route(entry.get("route"))
         if route is not None:
-            row.route = route
             saw_route = True
         elif first_keys is None:
             first_keys = sorted(entry.keys())
+        _upsert_workout(
+            db,
+            user,
+            external_id=external[:64] if external else None,
+            activity=activity.strip()[:80],
+            started_at=started,
+            ended_at=_parse_when(entry.get("end")),
+            duration_s=_qty(entry.get("duration")),
+            kcal=_qty(entry.get("activeEnergyBurned")),
+            distance_m=_distance_m(entry.get("distance")),
+            avg_hr=_qty(heart.get("avg")) if isinstance(heart, dict) else None,
+            route=route,
+        )
         touched += 1
         days.add(started.date())
     if touched and not saw_route:
@@ -409,9 +438,16 @@ def ingest_health(
     authorization: str | None = Header(default=None),
 ):
     user = _ingest_user(db, authorization)
-    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
-    days = _import_metrics(db, user, data.get("metrics"))
-    workouts, workout_days = _import_workouts(db, user, data.get("workouts"))
+    if hc_webhook.looks_like(payload):
+        # The Android dialect (HC Webhook / Health Connect); same token, same
+        # idempotent writes, times converted onto the family's clock.
+        days, workouts, workout_days = hc_webhook.import_payload(
+            db, user, payload, _upsert_daily, _upsert_workout
+        )
+    else:
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        days = _import_metrics(db, user, data.get("metrics"))
+        workouts, workout_days = _import_workouts(db, user, data.get("workouts"))
     routines = _auto_complete_routines(db, user, workout_days)
     db.commit()
     return IngestResultOut(days=days, workouts=workouts, routines_completed=routines)

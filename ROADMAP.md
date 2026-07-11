@@ -202,6 +202,23 @@ Where dailybread is headed, in order. Done items stay for history.
   opt-in that counts watch active calories toward the day's food budget,
   taking the larger of the watch number and the manual exercise log so
   nothing is counted twice.
+- **A night of lived-in fixes** — dinner votes say "Vote"; the dinner plan
+  carries a time of day (quarter-hour picks that survive locking and
+  unlocking the menu, shown on the Home strip); recipe and custom-food
+  libraries fold to their newest two with a show-all; the family-members
+  list got faces, moods, and tap-through to profiles; Kitchen sits beside
+  Home in the tab bar; cancelled stays cancelled.
+- **Daily verse streaks (opt-in)** — members who turn it on check off the
+  day's three verses; a fully-read day folds the card to a slim line and
+  feeds a streak, worn as a small book badge beside the avatar. Enabled in
+  the welcome tour or You; the streak number (never the reading history)
+  shows to the family, and to villages only by a second opt-in.
+- **Android / Pixel Watch fitness** — the ingest endpoint now speaks a
+  second dialect: HC Webhook, an open-source Android bridge that reads
+  Health Connect (Pixel Watch, Fitbit, Samsung) and posts on a schedule
+  with the same sync key. UTC times land on the family's clock. The
+  connect flow asks which phone the data lives on. No routes or
+  per-session calories from that side yet; the Apple path is unchanged.
 
 ## Next
 
@@ -223,12 +240,6 @@ Where dailybread is headed, in order. Done items stay for history.
 
 ## Parked
 
-- **Android fitness adapter (future release)** — Health Connect is Android's
-  HealthKit, and community bridge apps can POST it to a webhook. The ingest
-  endpoint, tokens, and all the Fitness UI are already platform-neutral; the
-  work is a second payload parser for whichever bridge gets blessed, after
-  vetting one for background-sync reliability. Deliberately after the Apple
-  path is polished with a real household on it.
 - **Adult member role** — parent permissions without admin, for grown members
   who aren't heads of household. Today the roles are Parent and Child only.
 

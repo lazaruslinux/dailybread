@@ -87,13 +87,17 @@ different zones on one install each get their mornings at their own hour.
 
 ## Fitness ingest
 
-`POST /api/ingest/health` accepts the JSON that the Health Auto Export iOS
-app sends on a schedule. It authenticates with a per-member bearer token
-(stored hashed, mintable and revocable from the app) instead of the session
-cookie, so the endpoint a phone automation hits has no CSRF surface. Imports
-are idempotent: daily metrics upsert on (member, day, metric) and workouts on
-the exporter's stable id, so re-sending a whole window is always safe.
-Everything imported is self-only, like the diary.
+`POST /api/ingest/health` accepts two dialects on one endpoint, sniffed from
+the payload shape: the JSON that Health Auto Export (iOS) sends, and the JSON
+that HC Webhook (Android, reading Health Connect — Pixel Watch, Fitbit,
+Samsung) sends. Both authenticate with a per-member bearer token (stored
+hashed, mintable and revocable from the app) instead of the session cookie,
+so the endpoint a phone automation hits has no CSRF surface. Imports are
+idempotent: daily metrics upsert on (member, day, metric) and workouts on the
+exporter's stable id (or member + start + activity when there isn't one), so
+re-sending a whole window is always safe. Apple payloads carry local wall
+times; Android payloads carry UTC and are converted onto the family's clock
+before day bucketing. Everything imported is self-only, like the diary.
 
 ## Auth and sessions
 

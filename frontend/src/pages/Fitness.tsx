@@ -157,7 +157,27 @@ function CopyRow({ label, value }: { label: string; value: string }) {
   )
 }
 
+type Platform = 'apple' | 'android'
+
+const PLATFORM_COPY: Record<Platform, { title: string; intro: string; after: string }> = {
+  apple: {
+    title: 'Connect Apple Health',
+    intro:
+      'Your phone sends the numbers here itself; no cloud service ever sees them. You need an iPhone app that can send Apple Health data to a web address on a schedule (Health Auto Export is the one the docs walk through). This makes a sync key for it. If you already have one, this replaces it.',
+    after:
+      'Point the exporter app at this address, add the header below, and choose which metrics to send — turn on route data for the little run maps.',
+  },
+  android: {
+    title: 'Connect Health Connect',
+    intro:
+      'Pixel Watch, Fitbit, and Samsung data all land in Health Connect on your phone, and a small bridge app sends it here on a schedule; no cloud service ever sees it. HC Webhook (free, open source, on Google Play) is the one this was built against. This makes a sync key for it. If you already have one, this replaces it.',
+    after:
+      'In HC Webhook: add this address as the webhook URL, add the header below as a custom header, grant it the Health Connect permissions you want to share (steps, calories, heart rate, exercise, weight, body fat), and pick a schedule.',
+  },
+}
+
 function ConnectSheet({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [platform, setPlatform] = useState<Platform | null>(null)
   const [minted, setMinted] = useState<api.IngestToken | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -174,17 +194,33 @@ function ConnectSheet({ onClose, onDone }: { onClose: () => void; onDone: () => 
     }
   }
 
+  if (platform === null) {
+    return (
+      <Sheet onClose={onClose}>
+        <h3 className="mb-1 text-lg font-bold">Connect your watch</h3>
+        <p className="mb-4 text-sm text-fg/60">
+          What kind of phone does the data live on? Either way it flows straight from your
+          phone to your own server.
+        </p>
+        <div className="flex flex-col gap-2">
+          <Button type="button" onClick={() => setPlatform('apple')} className="w-full">
+            iPhone + Apple Watch
+          </Button>
+          <Button type="button" variant="ghost" onClick={() => setPlatform('android')} className="w-full">
+            Android + Pixel Watch
+          </Button>
+        </div>
+      </Sheet>
+    )
+  }
+
+  const copy = PLATFORM_COPY[platform]
   return (
     <Sheet onClose={minted ? onDone : onClose}>
-      <h3 className="mb-1 text-lg font-bold">Connect Apple Health</h3>
+      <h3 className="mb-1 text-lg font-bold">{copy.title}</h3>
       {minted === null ? (
         <>
-          <p className="mb-4 text-sm text-fg/60">
-            Your phone sends the numbers here itself; no cloud service ever sees them. You
-            need an iPhone app that can send Apple Health data to a web address on a
-            schedule (Health Auto Export is the one the docs walk through). This makes a
-            sync key for it. If you already have one, this replaces it.
-          </p>
+          <p className="mb-4 text-sm text-fg/60">{copy.intro}</p>
           <FormError message={error} />
           <Button onClick={mint} disabled={busy}>
             {busy ? 'Making a key…' : 'Make my sync key'}
@@ -193,8 +229,7 @@ function ConnectSheet({ onClose, onDone }: { onClose: () => void; onDone: () => 
       ) : (
         <div className="flex flex-col gap-4">
           <p className="text-sm text-fg/60">
-            Point the exporter app at this address, add the header below, and choose which
-            metrics to send. The key is shown only this once.
+            {copy.after} The key is shown only this once.
           </p>
           <CopyRow label="Send to" value={`${window.location.origin}${minted.path}`} />
           <CopyRow label="Authorization header" value={`Bearer ${minted.token}`} />
@@ -1121,10 +1156,10 @@ export function Fitness() {
           <HeartPulse className="h-8 w-8 text-accent-bright" />
           <p className="font-semibold text-fg/90">Your day, in numbers</p>
           <p className="text-sm text-fg/55">
-            Steps, workouts, and weigh-ins from your Apple Watch land here, straight from
+            Steps, workouts, and weigh-ins from your watch land here, straight from
             your phone to your own server. Only you can see them.
           </p>
-          <Button onClick={() => setConnecting(true)}>Connect Apple Health</Button>
+          <Button onClick={() => setConnecting(true)}>Connect your watch</Button>
         </div>
       )}
 
