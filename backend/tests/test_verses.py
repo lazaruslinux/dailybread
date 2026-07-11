@@ -110,3 +110,17 @@ def test_village_streak_needs_its_own_opt_in(owner, other):
     assert my_row()["verse_streak"] is None
     owner.put("/me/verses/settings", json={"share": True})
     assert my_row()["verse_streak"] == 1
+
+
+def test_a_phone_past_midnight_still_counts_today(owner):
+    """The client's calendar can be a day ahead of the server's (the write
+    guard allows the drift). Checks dated 'tomorrow' anchor the streak walk
+    so the badge appears immediately, not after the server's midnight."""
+    _enable(owner)
+    tomorrow = (dt.date.today() + dt.timedelta(days=1)).isoformat()
+    for i in range(3):
+        assert _check(owner, i, date=tomorrow).status_code == 200
+    assert _me(owner, date=tomorrow)["streak"] == 1
+    members = owner.get(f"/users?date={TODAY}").json()
+    me = next(m for m in members if m["username"] == "owner")
+    assert me["verse_streak"] == 1

@@ -50,6 +50,9 @@ export function VerseCard() {
     try {
       const next = checked ? await api.uncheckVerse(idx) : await api.checkVerse(idx)
       setState(next)
+      // The strip's book badge should update the moment the streak does;
+      // Home already refreshes on this event.
+      window.dispatchEvent(new Event('db:profile-changed'))
       if (next.checks.every(Boolean)) {
         // Let the last check land visually, then fold for the day.
         foldTimer.current = window.setTimeout(() => setCollapsed(true), 700)

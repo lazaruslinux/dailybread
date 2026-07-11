@@ -9,6 +9,7 @@ import {
   checkVillageCode,
   createVillage,
   deleteVillage,
+  getMe,
   getVerses,
   joinVillage,
   leaveVillage,
@@ -282,13 +283,8 @@ function StreakShareToggle({ onChanged }: { onChanged: () => void }) {
       onClick={flip}
       className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left"
     >
-      <span className="min-w-0 pr-2">
-        <span className="block text-sm font-semibold text-fg/85">
-          Share my streaks with Villages
-        </span>
-        <span className="block text-xs text-fg/45">
-          Only the number crosses — never which verses or which days
-        </span>
+      <span className="min-w-0 pr-2 text-sm font-semibold text-fg/85">
+        Share login/activity streaks with Villages
       </span>
       <span
         className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${state.share ? 'bg-accent' : 'bg-fg/15'}`}
@@ -304,6 +300,14 @@ function StreakShareToggle({ onChanged }: { onChanged: () => void }) {
 function PresenceToggle({ initial, onChanged }: { initial: boolean; onChanged: () => void }) {
   const [on, setOn] = useState(initial)
   const [busy, setBusy] = useState(false)
+
+  // The auth context's user is a login-time snapshot; re-ask the server so
+  // the switch shows the truth after toggles in earlier visits.
+  useEffect(() => {
+    getMe()
+      .then((me) => setOn(me.village_presence))
+      .catch(() => {})
+  }, [])
   async function flip() {
     const next = !on
     setOn(next)
@@ -491,15 +495,19 @@ export function VillagesCard() {
                         aria-label={`Open ${p.display_name}'s profile`}
                         className="flex w-14 flex-col items-center gap-1 rounded-xl py-1 transition-opacity hover:opacity-80"
                       >
-                        <Avatar
-                          name={p.display_name}
-                          src={avatarUrl(p)}
-                          verseStreak={p.verse_streak}
-                          size="md"
-                        />
+                        <Avatar name={p.display_name} src={avatarUrl(p)} size="md" />
                         <span className="w-full truncate text-center text-[10px] text-fg/55">
                           {p.display_name.split(/\s+/)[0]}
                         </span>
+                        {(p.verse_streak ?? 0) > 0 && (
+                          <span
+                            className="-mt-0.5 flex h-4.5 items-center gap-px rounded-full border border-gold/40 bg-gold/10 px-1 text-[9px] font-bold text-gold"
+                            title={`${p.verse_streak}-day reading streak`}
+                          >
+                            <BookOpen className="h-3 w-3" strokeWidth={2.5} />
+                            x{p.verse_streak}
+                          </span>
+                        )}
                       </button>
                     ))}
                   </div>

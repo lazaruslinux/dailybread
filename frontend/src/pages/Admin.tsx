@@ -1,9 +1,10 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { Copy, Home, KeyRound, ListTree, Pencil, Plus, ShieldCheck, Trash2, X } from 'lucide-react'
+import { BookOpen, Copy, Home, KeyRound, ListTree, Pencil, Plus, ShieldCheck, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { Avatar } from '../components/Avatar'
+import { MOODS } from '../lib/moods'
 import { Sheet } from '../components/Recipes'
 import { Button, Field, FormError } from '../components/ui'
 
@@ -17,6 +18,7 @@ const ROLE_LABEL: Record<api.Role, string> = { parent: 'Parent', child: 'Child' 
 
 function MemberRow({
   member,
+  strip,
   isSelf,
   onEdit,
   onDelete,
@@ -24,12 +26,16 @@ function MemberRow({
   index,
 }: {
   member: api.User
+  // The family-strip view of the same person (mood + streak chips).
+  strip: api.FamilyMember | null
   isSelf: boolean
   onEdit: () => void
   onDelete: () => void
   onOpen?: () => void
   index: number
 }) {
+  const moodMeta = strip?.mood ? MOODS[strip.mood.level] : null
+  const streak = strip?.verse_streak ?? 0
   return (
     <motion.div
       layout
@@ -55,6 +61,24 @@ function MemberRow({
             {isSelf && <span className="text-[10px] font-semibold text-fg/40">you</span>}
           </span>
           <span className="block truncate text-sm text-fg/55">@{member.username}</span>
+          {(moodMeta || streak > 0) && (
+            <span className="mt-1 flex items-center gap-1">
+              {moodMeta && (
+                <span className={`flex h-4.5 items-center rounded-full px-1 ${moodMeta.chip}`} title={moodMeta.label}>
+                  <moodMeta.Icon className={`h-3 w-3 ${moodMeta.tint}`} strokeWidth={2.5} />
+                </span>
+              )}
+              {streak > 0 && (
+                <span
+                  className="flex h-4.5 items-center gap-px rounded-full border border-gold/40 bg-gold/10 px-1 text-[9px] font-bold text-gold"
+                  title={`${streak}-day reading streak`}
+                >
+                  <BookOpen className="h-3 w-3" strokeWidth={2.5} />
+                  x{streak}
+                </span>
+              )}
+            </span>
+          )}
         </span>
       </button>
 
@@ -861,6 +885,7 @@ function RenameFamilySheet({
 export function Admin({ onOpenProfile }: { onOpenProfile?: (id: number) => void }) {
   const { user } = useAuth()
   const [members, setMembers] = useState<api.User[] | null>(null)
+  const [strip, setStrip] = useState<Map<number, api.FamilyMember>>(new Map())
   const [family, setFamily] = useState<api.Family | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [sheet, setSheet] = useState<{ open: boolean; member: api.User | null }>({
@@ -875,6 +900,12 @@ export function Admin({ onOpenProfile }: { onOpenProfile?: (id: number) => void 
     try {
       setMembers(await api.listUsers())
       setFamily(await api.getMyFamily())
+      // The strip payload carries each member's mood + streak chips; a miss
+      // just means chip-less rows.
+      api
+        .getFamily()
+        .then((fam) => setStrip(new Map(fam.map((m) => [m.id, m]))))
+        .catch(() => {})
       setLoadError(null)
     } catch (err) {
       setLoadError(err instanceof api.ApiError ? err.message : 'Could not load family members.')
@@ -913,6 +944,7 @@ export function Admin({ onOpenProfile }: { onOpenProfile?: (id: number) => void 
             <MemberRow
               key={m.id}
               member={m}
+              strip={strip.get(m.id) ?? null}
               index={i}
               isSelf={m.id === user?.id}
               onEdit={() => setSheet({ open: true, member: m })}

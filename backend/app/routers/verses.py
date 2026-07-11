@@ -67,7 +67,13 @@ def streaks_for(db: Session, user_ids: list[int], today: dt.date) -> dict[int, i
     complete: dict[int, set[dt.date]] = {}
     for user_id, day in rows:
         complete.setdefault(user_id, set()).add(day)
-    return {uid: _streak_from(days, today) for uid, days in complete.items()}
+    # Anchor each walk at the member's newest complete day when it's ahead of
+    # the server's clock: a phone past midnight legitimately checks off
+    # "tomorrow" (the write guard allows one day of drift), and that reading
+    # must count NOW, not after the server's own midnight.
+    return {
+        uid: _streak_from(days, max(today, max(days))) for uid, days in complete.items()
+    }
 
 
 def _verses_out(db: Session, user: User, date_for: dt.date) -> VersesOut:
