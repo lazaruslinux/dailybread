@@ -3,7 +3,18 @@ endpoint. UTC times land on the FAMILY's clock; the Apple path is untouched."""
 
 import datetime as dt
 
+import pytest
+
+from app.routers import fitness
+
 TODAY = dt.date.today()
+
+
+@pytest.fixture(autouse=True)
+def _hc_enabled(monkeypatch):
+    """The Android dialect is parked in prod until field-tested; these tests
+    exercise it as if the switch were on."""
+    monkeypatch.setattr(fitness, "HC_INGEST_ENABLED", True)
 
 
 def _mint(client) -> str:

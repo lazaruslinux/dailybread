@@ -52,6 +52,11 @@ from app.schemas import (
 router = APIRouter(tags=["fitness"])
 log = logging.getLogger("dailybread.ingest")
 
+# The Android dialect (HC Webhook) is built and unit-tested but hasn't met a
+# real device yet, so it stays parked until it has (2026-07-10, his call).
+# Flip to True to accept those payloads; the tests flip it themselves.
+HC_INGEST_ENABLED = False
+
 # Exporter metric name -> (our metric, how multiple same-day points combine).
 # The exporter can send one point per day or many intra-day ones depending on
 # its aggregation setting; summing cumulative metrics and averaging rates
@@ -438,7 +443,7 @@ def ingest_health(
     authorization: str | None = Header(default=None),
 ):
     user = _ingest_user(db, authorization)
-    if hc_webhook.looks_like(payload):
+    if HC_INGEST_ENABLED and hc_webhook.looks_like(payload):
         # The Android dialect (HC Webhook / Health Connect); same token, same
         # idempotent writes, times converted onto the family's clock.
         days, workouts, workout_days = hc_webhook.import_payload(

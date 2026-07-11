@@ -177,7 +177,9 @@ const PLATFORM_COPY: Record<Platform, { title: string; intro: string; after: str
 }
 
 function ConnectSheet({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
-  const [platform, setPlatform] = useState<Platform | null>(null)
+  // The Android path is parked until it's been field-tested on a real Pixel;
+  // initialize to null to bring the device chooser back.
+  const [platform, setPlatform] = useState<Platform | null>('apple')
   const [minted, setMinted] = useState<api.IngestToken | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
