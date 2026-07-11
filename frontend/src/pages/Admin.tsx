@@ -1,10 +1,10 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { BookOpen, Copy, Home, KeyRound, ListTree, Pencil, Plus, ShieldCheck, Trash2, X } from 'lucide-react'
+import { Copy, Home, KeyRound, ListTree, Pencil, Plus, ShieldCheck, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { Avatar } from '../components/Avatar'
-import { MOODS } from '../lib/moods'
+import { LevelBadge } from '../components/LevelBadge'
 import { Sheet } from '../components/Recipes'
 import { Button, Field, FormError } from '../components/ui'
 
@@ -26,7 +26,7 @@ function MemberRow({
   index,
 }: {
   member: api.User
-  // The family-strip view of the same person (mood + streak chips).
+  // The family-strip view of the same person (mood dot + level).
   strip: api.FamilyMember | null
   isSelf: boolean
   onEdit: () => void
@@ -34,8 +34,6 @@ function MemberRow({
   onOpen?: () => void
   index: number
 }) {
-  const moodMeta = strip?.mood ? MOODS[strip.mood.level] : null
-  const streak = strip?.verse_streak ?? 0
   return (
     <motion.div
       layout
@@ -54,31 +52,18 @@ function MemberRow({
         className="flex min-w-0 flex-1 items-center gap-4 text-left"
         aria-label={onOpen ? `Open ${member.display_name}'s profile` : undefined}
       >
-        <Avatar name={member.display_name} src={api.avatarUrl(member)} />
+        <Avatar
+          name={member.display_name}
+          src={api.avatarUrl(member)}
+          mood={strip?.mood?.level ?? null}
+        />
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-2 truncate font-semibold text-fg">
+          <span className="flex items-center gap-1.5 truncate font-semibold text-fg">
+            {strip && <LevelBadge level={strip.level} />}
             {member.display_name}
             {isSelf && <span className="text-[10px] font-semibold text-fg/40">you</span>}
           </span>
           <span className="block truncate text-sm text-fg/55">@{member.username}</span>
-          {(moodMeta || streak > 0) && (
-            <span className="mt-1 flex items-center gap-1">
-              {moodMeta && (
-                <span className={`flex h-4.5 items-center rounded-full px-1 ${moodMeta.chip}`} title={moodMeta.label}>
-                  <moodMeta.Icon className={`h-3 w-3 ${moodMeta.tint}`} strokeWidth={2.5} />
-                </span>
-              )}
-              {streak > 0 && (
-                <span
-                  className="flex h-4.5 items-center gap-px rounded-full border border-gold/40 bg-gold/10 px-1 text-[9px] font-bold text-gold"
-                  title={`${streak}-day reading streak`}
-                >
-                  <BookOpen className="h-3 w-3" strokeWidth={2.5} />
-                  x{streak}
-                </span>
-              )}
-            </span>
-          )}
         </span>
       </button>
 

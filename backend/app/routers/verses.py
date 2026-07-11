@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app import crumbs
 from app.db import get_db
 from app.deps import require_family
 from app.models import User, VerseCheck
@@ -86,7 +87,6 @@ def _verses_out(db: Session, user: User, date_for: dt.date) -> VersesOut:
     )
     return VersesOut(
         enabled=user.verses_enabled,
-        share=user.share_verse_streak,
         checks=[i in checked for i in range(VERSES_PER_DAY)],
         streak=streaks_for(db, [user.id], dt.date.today()).get(user.id, 0),
     )
@@ -118,33 +118,34 @@ def check_verse(
             VerseCheck.verse_idx == data.verse_idx,
         )
     )
+    awarded = 0
     if exists is None:
         db.add(
             VerseCheck(user_id=user.id, date_for=data.date_for, verse_idx=data.verse_idx)
         )
         db.commit()
-    return _verses_out(db, user, data.date_for)
-
-
-@router.delete("/me/verses/check", response_model=VersesOut)
-def uncheck_verse(
-    date_for: dt.date = Query(alias="date"),
-    verse_idx: int = Query(alias="idx", ge=0, le=VERSES_PER_DAY - 1),
-    db: Session = Depends(get_db),
-    user: User = Depends(require_family),
-):
-    _check_date(date_for)
-    row = db.scalar(
-        select(VerseCheck).where(
-            VerseCheck.user_id == user.id,
-            VerseCheck.date_for == date_for,
-            VerseCheck.verse_idx == verse_idx,
+        # Checks are one-way (unchecking a read verse was pointless — the fold
+        # arrow is how the card gets out of the way), so the day's third check
+        # is THE moment: +3, plus any streak milestone just reached.
+        done_today = db.scalar(
+            select(func.count()).where(
+                VerseCheck.user_id == user.id, VerseCheck.date_for == data.date_for
+            )
         )
-    )
-    if row is not None:
-        db.delete(row)
-        db.commit()
-    return _verses_out(db, user, date_for)
+        if done_today >= VERSES_PER_DAY:
+            awarded = crumbs.award(
+                db,
+                user,
+                "verses",
+                crumbs.VERSES_CRUMBS,
+                f"verses:{data.date_for.isoformat()}",
+                data.date_for,
+            )
+            streak = streaks_for(db, [user.id], dt.date.today()).get(user.id, 0)
+            awarded += crumbs.award_streak_milestones(db, user, streak, data.date_for)
+    out = _verses_out(db, user, data.date_for)
+    out.crumbs_awarded = awarded
+    return out
 
 
 @router.put("/me/verses/settings", response_model=VersesOut)
@@ -153,14 +154,12 @@ def verse_settings(
     db: Session = Depends(get_db),
     user: User = Depends(require_family),
 ):
-    """Turn the check-offs (and the village streak sharing) on or off. Fields
-    not sent stay as they are; turning check-offs off keeps the history, so
-    coming back later resumes rather than restarts (the gap still breaks the
-    streak, honestly)."""
+    """Turn the check-offs on or off (village sharing now lives with the
+    level toggle under Villages). Turning check-offs off keeps the history,
+    so coming back later resumes rather than restarts (the gap still breaks
+    the streak, honestly)."""
     sent = data.model_dump(exclude_unset=True)
     if "enabled" in sent and sent["enabled"] is not None:
         user.verses_enabled = sent["enabled"]
-    if "share" in sent and sent["share"] is not None:
-        user.share_verse_streak = sent["share"]
     db.commit()
     return _verses_out(db, user, dt.date.today())

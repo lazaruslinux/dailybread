@@ -9,14 +9,15 @@ export interface MoodMeta {
   Icon: LucideIcon
   tint: string // icon color
   chip: string // background for badges/buttons
+  dot: string // the solid avatar-corner dot (the at-a-glance mood signal)
 }
 
 export const MOODS: Record<MoodLevel, MoodMeta> = {
-  sunny: { label: 'Great', Icon: Sun, tint: 'text-gold', chip: 'bg-gold/20' },
-  partly: { label: 'Good', Icon: CloudSun, tint: 'text-gold', chip: 'bg-gold/15' },
-  cloudy: { label: 'Okay', Icon: Cloud, tint: 'text-slate-300', chip: 'bg-slate-400/20' },
-  rainy: { label: 'Low', Icon: CloudRain, tint: 'text-sky-300', chip: 'bg-sky-400/20' },
-  stormy: { label: 'Rough', Icon: CloudLightning, tint: 'text-violet-300', chip: 'bg-violet-400/20' },
+  sunny: { label: 'Great', Icon: Sun, tint: 'text-gold', chip: 'bg-gold/20', dot: 'bg-gold' },
+  partly: { label: 'Good', Icon: CloudSun, tint: 'text-gold', chip: 'bg-gold/15', dot: 'bg-gold/80' },
+  cloudy: { label: 'Okay', Icon: Cloud, tint: 'text-slate-300', chip: 'bg-slate-400/20', dot: 'bg-slate-400' },
+  rainy: { label: 'Low', Icon: CloudRain, tint: 'text-sky-300', chip: 'bg-sky-400/20', dot: 'bg-sky-400' },
+  stormy: { label: 'Rough', Icon: CloudLightning, tint: 'text-violet-300', chip: 'bg-violet-400/20', dot: 'bg-violet-400' },
 }
 
 export const MOOD_ORDER: MoodLevel[] = ['sunny', 'partly', 'cloudy', 'rainy', 'stormy']

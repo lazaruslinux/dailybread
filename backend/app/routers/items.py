@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app import push, recurrence
+from app import crumbs, push, recurrence
 from app.db import get_db
 from app.deps import require_family, require_parent
 from app.models import Completion, Item, ItemKind, RepeatType, Role, User, Visibility
@@ -930,6 +930,7 @@ def complete_item(
             status.HTTP_400_BAD_REQUEST, "It's been called off — put it back on first"
         )
 
+    awarded = 0
     if exists is None:
         # A minor's own tap starts pending until a parent makes it official; a
         # parent's tap (their own card or ?for=<kid>) is official on the spot.
@@ -940,6 +941,10 @@ def complete_item(
         db.commit()
         if row.pending:
             _notify_parents_of_pending(db, item, user, date_for)
+        else:
+            # The crumb belongs to whoever DID the thing (the target), and
+            # only once it's official — a pending kid tap earns on approval.
+            awarded = crumbs.award_completion(db, target, item.id, date_for)
     elif exists.pending and user.role == Role.parent:
         # Approval: promote the kid's pending row in place (never a second row,
         # so the (item, member, day) uniqueness keeps holding) and remember who
@@ -947,10 +952,15 @@ def complete_item(
         exists.pending = False
         exists.approved_by_id = user.id
         db.commit()
+        doer = db.get(User, exists.user_id)
+        if doer is not None:
+            awarded = crumbs.award_completion(db, doer, item.id, exists.date_for)
 
-    return _build_feed_item(
+    out = _build_feed_item(
         db, item, user, date_for, _completions_by_item(db, [item])[item.id]
     )
+    out.crumbs_awarded = awarded
+    return out
 
 
 @router.delete("/{item_id}/complete", response_model=FeedItemOut)

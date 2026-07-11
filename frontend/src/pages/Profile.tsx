@@ -4,6 +4,7 @@ import { type ChangeEvent, useCallback, useEffect, useState } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { Avatar } from '../components/Avatar'
+import { LevelBadge, TIER_META, tierOf } from '../components/LevelBadge'
 import { AvatarCrop } from '../components/AvatarCrop'
 import { Button, FormError } from '../components/ui'
 import { formatTime, MOODS, MOOD_ORDER } from '../lib/moods'
@@ -142,14 +143,14 @@ export function Profile({ userId }: { userId: number }) {
         <div className="relative">
           <Avatar
             name={profile.display_name}
-            verseStreak={profile.verse_streak}
+            mood={profile.mood?.level ?? null}
             size="lg"
             src={api.avatarUrl(profile)}
             className={avatarBusy ? 'opacity-50' : ''}
           />
           {canEditAvatar && (
-            // A camera pip in the top corner (the streak badge owns the
-            // bottom one). The label wraps a hidden picker; accept="image/*"
+            // A camera pip in the top corner (the mood dot owns the bottom
+            // one). The label wraps a hidden picker; accept="image/*"
             // lets a phone offer camera or library.
             <label
               aria-label="Change photo"
@@ -184,6 +185,26 @@ export function Profile({ userId }: { userId: number }) {
               Remove photo
             </button>
           )}
+        </div>
+        {/* The economy panel: the level circle, the tier's name, and how far
+            to the next one. Warm numbers, no meters screaming for attention. */}
+        <div className="flex w-full max-w-64 flex-col items-center gap-2" data-economy>
+          <div className="flex items-center gap-2.5">
+            <LevelBadge level={profile.level} size="md" />
+            <span className={`text-sm font-bold ${TIER_META[tierOf(profile.level)].text}`}>
+              {TIER_META[tierOf(profile.level)].label}
+            </span>
+            <span className="text-sm text-fg/50">· {profile.crumbs} breadcrumbs</span>
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-fg/10">
+            <div
+              className="h-full rounded-full bg-gold/70 transition-all"
+              style={{ width: `${Math.min((profile.level_progress / profile.next_level_cost) * 100, 100)}%` }}
+            />
+          </div>
+          <p className="text-[11px] text-fg/40">
+            {profile.next_level_cost - profile.level_progress} to level {profile.level + 1}
+          </p>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="rounded-full bg-fg/10 px-2.5 py-1 text-[11px] font-semibold text-fg/70">

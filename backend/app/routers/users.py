@@ -2,14 +2,15 @@ import datetime as dt
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app import avatars
+from app import avatars, crumbs
 from app.db import get_db
 from app.deps import require_family, require_parent
-from app.models import JournalEntry, Mood, Role, User
+from app.models import CrumbLedger, JournalEntry, Mood, Role, User
 from app.schemas import (
+    CrumbsOut,
     FamilyMemberOut,
     JournalIn,
     JournalOut,
@@ -42,8 +43,9 @@ def _profile_out(
     mood: Mood | None,
     viewer: User,
     today: dt.date,
-    verse_streak: int | None = None,
+    total: int = 0,
 ) -> ProfileOut:
+    level, into, next_cost = crumbs.level_of(total)
     return ProfileOut(
         id=user.id,
         username=user.username,
@@ -58,7 +60,11 @@ def _profile_out(
         bio=_daily_status(user, today) if _shepherded(user, viewer) else "",
         created_at=user.created_at,
         mood=_visible_mood(mood, viewer, user),
-        verse_streak=verse_streak,
+        level=level,
+        crumbs=total,
+        tier=crumbs.tier_of(level),
+        level_progress=into,
+        next_level_cost=next_cost,
     )
 
 
@@ -83,7 +89,7 @@ def _visible_mood(mood: Mood | None, viewer: User, owner: User) -> MoodOut | Non
 
 
 def _member_out(
-    user: User, mood: Mood | None, viewer: User, verse_streak: int | None = None
+    user: User, mood: Mood | None, viewer: User, level: int = 1
 ) -> FamilyMemberOut:
     return FamilyMemberOut(
         id=user.id,
@@ -97,7 +103,7 @@ def _member_out(
         birthdate=user.birthdate,
         is_minor=user.is_minor,
         mood=_visible_mood(mood, viewer, user),
-        verse_streak=verse_streak,
+        level=level,
     )
 
 
@@ -120,15 +126,11 @@ def family(
             select(Mood).where(Mood.date_for == date_for, Mood.user_id.in_(member_ids))
         )
     }
-    # Reading streaks ride along for opted-in members: the family always sees
-    # the number (it sits beside the name), never the reading history.
-    from app.routers.verses import streaks_for
-
-    streaks = streaks_for(
-        db, [u.id for u in members if u.verses_enabled], dt.date.today()
-    )
+    # Levels ride along for everyone: the family always sees the number in
+    # the little circle beside the name — never the ledger behind it.
+    levels = crumbs.levels_for(db, member_ids)
     return [
-        _member_out(u, moods.get(u.id), viewer, verse_streak=streaks.get(u.id) or None)
+        _member_out(u, moods.get(u.id), viewer, level=levels.get(u.id, 1))
         for u in members
     ]
 
@@ -148,14 +150,7 @@ def profile(
     mood = db.scalar(
         select(Mood).where(Mood.user_id == user.id, Mood.date_for == date_for)
     )
-    from app.routers.verses import streaks_for
-
-    streak = (
-        streaks_for(db, [user.id], dt.date.today()).get(user.id)
-        if user.verses_enabled
-        else None
-    )
-    return _profile_out(user, mood, viewer, date_for, verse_streak=streak or None)
+    return _profile_out(user, mood, viewer, date_for, total=crumbs.total_for(db, user.id))
 
 
 @router.patch("/me/profile", response_model=ProfileOut)
@@ -173,6 +168,8 @@ def update_my_profile(
         me.theme = data.theme
     if data.village_presence is not None:
         me.village_presence = data.village_presence
+    if data.share_level is not None:
+        me.share_level = data.share_level
     if data.bio is not None:
         # Setting the status stamps today, so it's shown as today's and clears
         # overnight; clearing it (empty text) still just reads as no status.
@@ -181,7 +178,43 @@ def update_my_profile(
     db.commit()
     db.refresh(me)
     mood = db.scalar(select(Mood).where(Mood.user_id == me.id, Mood.date_for == today))
-    return _profile_out(me, mood, me, today)
+    return _profile_out(me, mood, me, today, total=crumbs.total_for(db, me.id))
+
+
+@router.get("/me/crumbs", response_model=CrumbsOut)
+def my_crumbs(
+    db: Session = Depends(get_db),
+    me: User = Depends(require_family),
+):
+    """The signed-in member's own economy state: the profile modal's numbers
+    and the welcome banner's cue. Dates here are the server's local day —
+    the same clock the awards were stamped with for this install."""
+    today = dt.date.today()
+    total = crumbs.total_for(db, me.id)
+    level, into, next_cost = crumbs.level_of(total)
+    earned_today = db.scalar(
+        select(func.coalesce(func.sum(CrumbLedger.amount), 0)).where(
+            CrumbLedger.user_id == me.id, CrumbLedger.date_for == today
+        )
+    )
+    login_today = db.scalar(
+        select(CrumbLedger.id)
+        .where(
+            CrumbLedger.user_id == me.id,
+            CrumbLedger.kind == "login",
+            CrumbLedger.date_for >= today - dt.timedelta(days=1),
+        )
+        .limit(1)
+    )
+    return CrumbsOut(
+        total=total,
+        level=level,
+        tier=crumbs.tier_of(level),
+        level_progress=into,
+        next_level_cost=next_cost,
+        today=earned_today,
+        login_award_today=login_today is not None,
+    )
 
 
 @router.put("/me/mood", response_model=MoodOut)
@@ -397,7 +430,7 @@ async def upload_avatar(
     db.refresh(user)
     today = dt.date.today()
     mood = db.scalar(select(Mood).where(Mood.user_id == user.id, Mood.date_for == today))
-    return _profile_out(user, mood, viewer, today)
+    return _profile_out(user, mood, viewer, today, total=crumbs.total_for(db, user.id))
 
 
 @router.delete("/users/{user_id}/avatar", status_code=status.HTTP_204_NO_CONTENT)

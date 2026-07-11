@@ -2,7 +2,9 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { CalendarDays, ChevronLeft } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from './auth/AuthContext'
+import * as api from './lib/api'
 import { applyTheme, getTheme } from './lib/theme'
+import { LevelBadge } from './components/LevelBadge'
 import { timeGreeting } from './lib/moods'
 import { DailyGreeting } from './components/Greeting'
 import { HealthBadge } from './components/HealthBadge'
@@ -46,6 +48,16 @@ function AppShell() {
   const [tab, setTab] = useState<Tab>('home')
   const [overlay, setOverlay] = useState<Overlay>(null)
   const firstName = user?.display_name.split(/\s+/)[0] ?? ''
+  // The greeting wears your level. Refreshed on the same event every earn
+  // dispatches, so the number ticks up the moment a crumb lands.
+  const [myLevel, setMyLevel] = useState<number | null>(null)
+  useEffect(() => {
+    if (!user || user.is_minor === undefined) return
+    const load = () => api.getMyCrumbs().then((c) => setMyLevel(c.level)).catch(() => {})
+    load()
+    window.addEventListener('db:profile-changed', load)
+    return () => window.removeEventListener('db:profile-changed', load)
+  }, [user])
 
   // Kid mode: minors get Home / Kitchen / You — no nutrition or fitness area.
   // The server 403s those APIs regardless; this keeps the door out of sight too.
@@ -104,8 +116,11 @@ function AppShell() {
         </div>
 
         {tab === 'home' && !overlay && (
-          <h1 className="font-display text-[2.05rem] font-semibold leading-[1.1] tracking-[-0.02em]">
-            {timeGreeting()}, {firstName}
+          <h1 className="flex items-center gap-2.5 font-display text-[2.05rem] font-semibold leading-[1.1] tracking-[-0.02em]">
+            {myLevel != null && <LevelBadge level={myLevel} size="md" className="translate-y-0.5" />}
+            <span>
+              {timeGreeting()}, {firstName}
+            </span>
           </h1>
         )}
       </header>

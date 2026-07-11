@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app import hc_webhook, throttle
+from app import crumbs, hc_webhook, throttle
 from app.db import get_db
 from app.deps import require_adult
 from app.invitecodes import hash_code
@@ -455,7 +455,29 @@ def ingest_health(
         workouts, workout_days = _import_workouts(db, user, data.get("workouts"))
     routines = _auto_complete_routines(db, user, workout_days)
     db.commit()
+    _award_workout_crumbs(db, user, workout_days)
     return IngestResultOut(days=days, workouts=workouts, routines_completed=routines)
+
+
+def _award_workout_crumbs(db: Session, user: User, workout_days: set[dt.date]) -> None:
+    """One +3 per day that has a real (15+ minute) imported workout. Catch-up
+    syncs pay for the historical days they carry — the runs happened — and
+    the ledger key keeps every re-send from paying twice."""
+    for day in workout_days:
+        qualifying = db.scalar(
+            select(Workout.id)
+            .where(
+                Workout.user_id == user.id,
+                Workout.started_at >= dt.datetime.combine(day, dt.time.min),
+                Workout.started_at <= dt.datetime.combine(day, dt.time.max),
+                Workout.duration_s >= crumbs.WORKOUT_MIN_SECONDS,
+            )
+            .limit(1)
+        )
+        if qualifying is not None:
+            crumbs.award(
+                db, user, "workout", crumbs.WORKOUT_CRUMBS, f"workout:{day.isoformat()}", day
+            )
 
 
 # ---- the Fitness tab -------------------------------------------------------------

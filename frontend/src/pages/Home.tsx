@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { CalendarClock, Check, ChevronLeft, ChevronRight, Hourglass, Plus, Rows3, Undo2 } from 'lucide-react'
+import { CalendarClock, Check, ChevronLeft, ChevronRight, Hourglass, Plus, Rows3, Undo2, Wheat, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../lib/api'
 import { avatarUrl } from '../lib/api'
@@ -144,6 +144,47 @@ function todaySlot(item: api.FeedItem, nowHm: string): Slot {
   if (item.kind !== 'routine' && end < nowHm) return 'pastdue'
   if (item.time_of_day! <= nowHm) return 'now'
   return 'coming'
+}
+
+
+// The day's first hello: a slim strip when today's show-up crumb landed,
+// dismissed with one tap and quiet for the rest of the day (per device;
+// the award itself is server-side and never repeats).
+function WelcomeCrumb() {
+  const todayKey = `crumb-banner-${new Date().toISOString().slice(0, 10)}`
+  const [show, setShow] = useState(false)
+  useEffect(() => {
+    if (localStorage.getItem(todayKey)) return
+    api
+      .getMyCrumbs()
+      .then((c) => setShow(c.login_award_today))
+      .catch(() => {})
+  }, [todayKey])
+  if (!show) return null
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -6 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mb-3 flex items-center gap-2 rounded-xl border border-gold/30 bg-gold/10 px-3 py-2"
+      data-welcome-crumb
+    >
+      <Wheat className="h-4 w-4 shrink-0 text-gold" strokeWidth={2.5} />
+      <span className="min-w-0 flex-1 text-sm font-medium text-fg/80">
+        +1 breadcrumb · welcome back
+      </span>
+      <button
+        type="button"
+        aria-label="Dismiss"
+        onClick={() => {
+          localStorage.setItem(todayKey, '1')
+          setShow(false)
+        }}
+        className="-m-1.5 shrink-0 rounded-lg p-1.5 text-fg/40 hover:bg-fg/10 hover:text-fg/70"
+      >
+        <X className="h-4 w-4" strokeWidth={2.5} />
+      </button>
+    </motion.div>
+  )
 }
 
 export function Home({
@@ -325,6 +366,17 @@ export function Home({
     toastTimer.current = window.setTimeout(() => setToast(null), 5000)
   }
 
+  // A completion that paid breadcrumbs celebrates in place: the card floats
+  // the +n (via the db:crumbs event) and the header's level refreshes.
+  function celebrate(itemId: number, res: api.FeedItem) {
+    if ((res.crumbs_awarded ?? 0) > 0) {
+      window.dispatchEvent(
+        new CustomEvent('db:crumbs', { detail: { itemId, amount: res.crumbs_awarded } }),
+      )
+      window.dispatchEvent(new Event('db:profile-changed'))
+    }
+  }
+
   async function toggle(item: api.FeedItem) {
     // Kid mode first: a minor's tap becomes a waiting mark, and tapping the
     // waiting mark again withdraws it. Done stays a parent's call.
@@ -354,7 +406,7 @@ export function Home({
     const next = !item.completed
     setItemCompleted(item.id, next)
     try {
-      if (next) await api.completeItem(item.id)
+      if (next) celebrate(item.id, await api.completeItem(item.id))
       else await api.uncompleteItem(item.id)
       if (next) showUndoToast(item)
       refresh()
@@ -392,7 +444,7 @@ export function Home({
       setItemPending(item.id, false)
       setItemCompleted(item.id, done)
       try {
-        if (done) await api.completeItem(item.id, userId)
+        if (done) celebrate(item.id, await api.completeItem(item.id, userId))
         else await api.uncompleteItem(item.id, userId)
         refresh()
       } catch (err) {
@@ -403,7 +455,7 @@ export function Home({
     }
     setAssigneeCompleted(item.id, userId, done)
     try {
-      if (done) await api.completeItem(item.id, userId)
+      if (done) celebrate(item.id, await api.completeItem(item.id, userId))
       else await api.uncompleteItem(item.id, userId)
       refresh()
     } catch (err) {
@@ -546,6 +598,7 @@ export function Home({
 
   return (
     <div>
+      <WelcomeCrumb />
       <FamilyStrip members={family} onOpen={onOpenProfile} />
 
       {isParent && (

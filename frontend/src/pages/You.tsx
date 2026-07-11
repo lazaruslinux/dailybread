@@ -112,7 +112,7 @@ function VersePrefsCard() {
       </span>
       <p className="mb-3 text-sm text-fg/55">
         {verses.enabled
-          ? "Three short verses wait at the bottom of your board each day. Check them off as you read and the little book by your avatar keeps your streak."
+          ? "Three short verses wait at the bottom of your board each day. Check them off as you read — a fully read day earns breadcrumbs, and your streak pays bonuses along the way."
           : "Three short verses, chosen for the day, waiting quietly at the bottom of your board, with a streak for every day you read all three. A small habit that's easy to keep."}
       </p>
       <PrefSwitch

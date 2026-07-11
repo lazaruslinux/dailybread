@@ -1,5 +1,5 @@
 import { AnimatePresence } from 'framer-motion'
-import { BookOpen, Copy, Plus } from 'lucide-react'
+import { Copy, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { MOODS } from '../lib/moods'
@@ -10,18 +10,16 @@ import {
   createVillage,
   deleteVillage,
   getMe,
-  getVerses,
   joinVillage,
   leaveVillage,
   listVillages,
   regenerateInvite,
-  setVerseSettings,
   updateMyProfile,
-  type Verses,
   type Village,
   type VillageParent,
 } from '../lib/api'
 import { Avatar } from './Avatar'
+import { LevelBadge, TIER_META, tierOf } from './LevelBadge'
 import { CollapsibleCard } from './CollapsibleCard'
 import { Sheet } from './Recipes'
 import { Button, Field, FormError } from './ui'
@@ -252,25 +250,27 @@ function JoinSheet({ onClose, onJoined }: { onClose: () => void; onJoined: () =>
   )
 }
 
-// The streak share rides the verses settings, not the profile; plural label
-// on purpose — more streaks may join it someday.
-function StreakShareToggle({ onChanged }: { onChanged: () => void }) {
-  const [state, setState] = useState<Verses | null>(null)
+// The level share is its own choice, separate from mood presence: some
+// people are happy to show the number and not the day, or the other way
+// around. Reads fresh truth from the server, same as the presence switch.
+function LevelShareToggle({ onChanged }: { onChanged: () => void }) {
+  const [on, setOn] = useState(false)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    getVerses().then(setState).catch(() => {})
+    getMe()
+      .then((me) => setOn(me.share_level))
+      .catch(() => {})
   }, [])
-
-  if (!state?.enabled) return null // nothing to share without the verses opt-in
   async function flip() {
-    if (!state) return
+    const next = !on
+    setOn(next)
     setBusy(true)
     try {
-      setState(await setVerseSettings({ share: !state.share }))
+      await updateMyProfile({ share_level: next })
       onChanged()
     } catch {
-      // switch stays; next tap retries
+      setOn(!next) // roll the switch back; the server didn't take it
     }
     setBusy(false)
   }
@@ -278,19 +278,19 @@ function StreakShareToggle({ onChanged }: { onChanged: () => void }) {
     <button
       type="button"
       role="switch"
-      aria-checked={state.share}
+      aria-checked={on}
       disabled={busy}
       onClick={flip}
       className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left"
     >
       <span className="min-w-0 pr-2 text-sm font-semibold text-fg/85">
-        Share login/activity streaks with Villages
+        Share my Level &amp; breadcrumbs with Villages
       </span>
       <span
-        className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${state.share ? 'bg-accent' : 'bg-fg/15'}`}
+        className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${on ? 'bg-accent' : 'bg-fg/15'}`}
       >
         <span
-          className={`absolute top-0.5 h-5 w-5 rounded-full bg-fg transition-all ${state.share ? 'left-[1.125rem]' : 'left-0.5'}`}
+          className={`absolute top-0.5 h-5 w-5 rounded-full bg-fg transition-all ${on ? 'left-[1.125rem]' : 'left-0.5'}`}
         />
       </span>
     </button>
@@ -350,17 +350,24 @@ function PresenceToggle({ initial, onChanged }: { initial: boolean; onChanged: (
 
 // A village-mate at arm's length: the mini profile. Only what that parent
 // chose to share crosses the wall — status and mood ride the presence
-// toggle, the streak its own — and when nothing is shared the card says so
-// plainly instead of pretending to be empty.
+// toggle, level and crumbs their own — and when nothing is shared the card
+// says so plainly instead of pretending to be empty.
 function MiniProfileSheet({ parent, onClose }: { parent: VillageParent; onClose: () => void }) {
   const moodMeta = parent.mood ? MOODS[parent.mood.level] : null
-  const streak = parent.verse_streak ?? 0
-  const isPrivate = !parent.presence && streak === 0
+  const isPrivate = !parent.presence && parent.level == null
   return (
     <Sheet onClose={onClose}>
       <div className="flex flex-col items-center gap-3 py-2 text-center" data-mini-profile>
-        <Avatar name={parent.display_name} src={avatarUrl(parent)} verseStreak={parent.verse_streak} size="lg" />
-        <h3 className="text-xl font-bold tracking-tight">{parent.display_name}</h3>
+        <Avatar
+          name={parent.display_name}
+          src={avatarUrl(parent)}
+          mood={parent.mood?.level ?? null}
+          size="lg"
+        />
+        <h3 className="flex items-center gap-2 text-xl font-bold tracking-tight">
+          {parent.level != null && <LevelBadge level={parent.level} size="md" />}
+          {parent.display_name}
+        </h3>
         {isPrivate ? (
           <p className="text-sm text-fg/45">This profile is private</p>
         ) : (
@@ -376,13 +383,13 @@ function MiniProfileSheet({ parent, onClose }: { parent: VillageParent; onClose:
                 <span className="text-sm font-semibold text-fg/80">Mood · {moodMeta.label}</span>
               </div>
             )}
-            {streak > 0 && (
-              <div className="mx-auto flex items-center gap-2 rounded-full border border-gold/40 bg-gold/10 px-3.5 py-1.5">
-                <BookOpen className="h-4 w-4 text-gold" strokeWidth={2.5} />
-                <span className="text-sm font-semibold text-gold">
-                  {streak}-day reading streak
+            {parent.level != null && (
+              <p className="text-sm text-fg/60">
+                <span className={`font-semibold ${TIER_META[tierOf(parent.level)].text}`}>
+                  {TIER_META[tierOf(parent.level)].label}
                 </span>
-              </div>
+                {' · '}Level {parent.level} · {parent.crumbs ?? 0} breadcrumbs
+              </p>
             )}
           </div>
         )}
@@ -470,7 +477,7 @@ export function VillagesCard() {
         {villages.length > 0 && user && !user.is_minor && (
           <>
             <PresenceToggle initial={user.village_presence} onChanged={refresh} />
-            <StreakShareToggle onChanged={refresh} />
+            <LevelShareToggle onChanged={refresh} />
           </>
         )}
 
@@ -495,19 +502,18 @@ export function VillagesCard() {
                         aria-label={`Open ${p.display_name}'s profile`}
                         className="flex w-14 flex-col items-center gap-1 rounded-xl py-1 transition-opacity hover:opacity-80"
                       >
-                        <Avatar name={p.display_name} src={avatarUrl(p)} size="md" />
-                        <span className="w-full truncate text-center text-[10px] text-fg/55">
-                          {p.display_name.split(/\s+/)[0]}
-                        </span>
-                        {(p.verse_streak ?? 0) > 0 && (
-                          <span
-                            className="-mt-0.5 flex h-4.5 items-center gap-px rounded-full border border-gold/40 bg-gold/10 px-1 text-[9px] font-bold text-gold"
-                            title={`${p.verse_streak}-day reading streak`}
-                          >
-                            <BookOpen className="h-3 w-3" strokeWidth={2.5} />
-                            x{p.verse_streak}
+                        <Avatar
+                          name={p.display_name}
+                          src={avatarUrl(p)}
+                          mood={p.mood?.level ?? null}
+                          size="md"
+                        />
+                        <span className="flex w-full items-center justify-center gap-1">
+                          {p.level != null && <LevelBadge level={p.level} />}
+                          <span className="min-w-0 truncate text-[10px] text-fg/55">
+                            {p.display_name.split(/\s+/)[0]}
                           </span>
-                        )}
+                        </span>
                       </button>
                     ))}
                   </div>

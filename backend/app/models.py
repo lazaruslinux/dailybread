@@ -214,12 +214,13 @@ class User(Base):
     # Opt-in: the member receives the daily verses at all — the Home card,
     # the check-offs, and the reading streak come as one package. Off by
     # default for new accounts; the welcome tour (and You) offers it.
-    # share_verse_streak additionally shows the streak NUMBER to village
-    # members (family always sees it).
     verses_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
-    share_verse_streak: Mapped[bool] = mapped_column(
+    # Opt-in: the member's LEVEL (and crumb total, in the mini profile) shows
+    # to village members. Replaced share_verse_streak when streak numbers
+    # folded into the breadcrumb economy; family always sees the level.
+    share_level: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
     # Opt-in: the watch's WORKOUT calories raise the day's food budget — only
@@ -1072,6 +1073,32 @@ class Workout(Base):
     # full-resolution track. Present only when the exporter sends route data.
     route: Mapped[list | None] = mapped_column(JSON, nullable=True)
     source: Mapped[str] = mapped_column(String(20), default="apple", server_default="apple")
+
+
+class CrumbLedger(Base):
+    """One breadcrumb award. The ledger is the whole economy: totals, levels,
+    and tiers all derive from SUM(amount), and every award carries a
+    source_key unique per member ("login:2026-07-11", "item:42:2026-07-11",
+    "vstreak:7") so nothing can ever pay twice — re-syncs, re-checks, and
+    restarts all bounce off the constraint, the DigestLog claim pattern.
+    Amounts are signed so a future "spend crumbs" feature is a row, not a
+    rework."""
+
+    __tablename__ = "crumb_ledger"
+    __table_args__ = (
+        UniqueConstraint("user_id", "source_key", name="uq_crumb_source"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    date_for: Mapped[dt.date] = mapped_column(Date, index=True)
+    kind: Mapped[str] = mapped_column(String(12))  # login/verses/workout/complete/bonus
+    amount: Mapped[int] = mapped_column(Integer)
+    source_key: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class VerseCheck(Base):

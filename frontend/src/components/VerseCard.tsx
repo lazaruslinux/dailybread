@@ -3,6 +3,7 @@ import { BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight, ExternalLink }
 import { useEffect, useRef, useState } from 'react'
 import * as api from '../lib/api'
 import { verseLink, versesForDate } from '../lib/verses'
+import { CrumbFloat } from './CrumbFloat'
 
 // The day's scripture, kept at the very bottom of the board. There are three
 // verses for the day (deterministic from the date, so the whole family sees the
@@ -11,16 +12,18 @@ import { verseLink, versesForDate } from '../lib/verses'
 // installed. All text is bundled with the app (see lib/verses.ts for licensing),
 // so the card renders offline and phones home to no one.
 //
-// Members who opted in (You -> Daily verses) can check each verse off; a
-// checked verse settles quiet, and once all three are read the card folds to a
-// slim "Read today" line for the rest of the day — tappable to reopen. The
-// streak counts consecutive fully-read days and wears the little book badge
-// by their avatar.
+// Members who opted in (You -> Daily verses) can check each verse off.
+// Checks are one-way — reading happened; the fold arrow is how the card gets
+// out of the way — and once all three are read the +3 breadcrumbs drift up
+// and the card folds to a slim "Read today" line, tappable to reopen. The
+// streak counts consecutive fully-read days and feeds the milestones.
 export function VerseCard() {
   const verses = versesForDate(new Date())
   const [idx, setIdx] = useState(0)
   const [state, setState] = useState<api.Verses | null>(null)
   const [collapsed, setCollapsed] = useState(false)
+  // A fresh key per award so the float re-mounts (and re-animates) each time.
+  const [float, setFloat] = useState<{ amount: number; key: number } | null>(null)
   const foldTimer = useRef<number | undefined>(undefined)
   const verse = verses[idx]
   const n = verses.length
@@ -45,17 +48,20 @@ export function VerseCard() {
   const checked = state.checks[idx] ?? false
   const allRead = state.checks.every(Boolean)
 
-  async function toggle() {
-    if (!state) return
+  async function markRead() {
+    if (!state || checked) return // one-way: a read verse stays read
     try {
-      const next = checked ? await api.uncheckVerse(idx) : await api.checkVerse(idx)
+      const next = await api.checkVerse(idx)
       setState(next)
-      // The strip's book badge should update the moment the streak does;
+      // The strip should update the moment anything about the person does;
       // Home already refreshes on this event.
       window.dispatchEvent(new Event('db:profile-changed'))
+      if (next.crumbs_awarded > 0) {
+        setFloat({ amount: next.crumbs_awarded, key: Date.now() })
+      }
       if (next.checks.every(Boolean)) {
-        // Let the last check land visually, then fold for the day.
-        foldTimer.current = window.setTimeout(() => setCollapsed(true), 700)
+        // Let the last check (and its +3) land visually, then fold for the day.
+        foldTimer.current = window.setTimeout(() => setCollapsed(true), 1500)
       }
     } catch {
       // The tap simply doesn't stick; the next one tries again.
@@ -159,20 +165,24 @@ export function VerseCard() {
               <ExternalLink className="h-3 w-3" strokeWidth={2} />
             </a>
             {enabled && (
-              <button
-                type="button"
-                onClick={toggle}
-                aria-pressed={checked}
-                aria-label={checked ? `Mark ${verse.ref} unread` : `Mark ${verse.ref} read`}
-                className={`flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                  checked
-                    ? 'border-gold/50 bg-gold/15 text-gold'
-                    : 'border-fg/15 bg-fg/5 text-fg/55 hover:bg-fg/10'
-                }`}
-              >
-                <Check className="h-3.5 w-3.5" strokeWidth={3} />
-                {checked ? 'Read' : 'Mark read'}
-              </button>
+              <span className="relative shrink-0">
+                {float && <CrumbFloat key={float.key} amount={float.amount} />}
+                <button
+                  type="button"
+                  onClick={markRead}
+                  disabled={checked}
+                  aria-pressed={checked}
+                  aria-label={checked ? `${verse.ref} read` : `Mark ${verse.ref} read`}
+                  className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                    checked
+                      ? 'border-gold/50 bg-gold/15 text-gold'
+                      : 'border-fg/15 bg-fg/5 text-fg/55 hover:bg-fg/10'
+                  }`}
+                >
+                  <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                  {checked ? 'Read' : 'Mark read'}
+                </button>
+              </span>
             )}
           </div>
           {allRead && !collapsed && (

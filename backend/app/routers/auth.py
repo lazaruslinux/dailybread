@@ -5,7 +5,8 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.clock import valid_timezone
+from app import crumbs
+from app.clock import family_now, valid_timezone
 from app.config import settings
 from app.db import get_db
 from app.deps import get_current_user, require_admin
@@ -102,6 +103,7 @@ def login(data: LoginIn, response: Response, db: Session = Depends(get_db)):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
     throttle.clear(key)
     set_session_cookie(response, str(user.id), user.token_version)
+    _award_daily_login(db, user)
     return user
 
 
@@ -110,9 +112,31 @@ def logout(response: Response):
     response.delete_cookie(settings.cookie_name, path="/")
 
 
+def _award_daily_login(db: Session, user: User) -> None:
+    """The day's +1 for showing up, on the family's own calendar date. Hooked
+    into login and /auth/me (every app open restores the session through one
+    of them), with a cheap existence probe so the hot path stays one indexed
+    SELECT after the first visit of the day."""
+    if user.family_id is None:
+        return
+    family = db.get(Family, user.family_id)
+    today = family_now(dt.datetime.now(), family.timezone if family else None).date()
+    key = f"login:{today.isoformat()}"
+    from app.models import CrumbLedger
+
+    already = db.scalar(
+        select(CrumbLedger.id)
+        .where(CrumbLedger.user_id == user.id, CrumbLedger.source_key == key)
+        .limit(1)
+    )
+    if already is None:
+        crumbs.award(db, user, "login", crumbs.LOGIN_CRUMBS, key, today)
+
+
 @router.get("/me", response_model=UserOut)
-def me(user: User = Depends(get_current_user)):
+def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Who am I? Used by the frontend to restore the session on page load."""
+    _award_daily_login(db, user)
     return user
 
 

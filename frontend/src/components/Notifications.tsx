@@ -1,4 +1,4 @@
-import { Bell, BellOff } from 'lucide-react'
+import { Bell, BellOff, ChevronDown, ChevronUp } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import * as api from '../lib/api'
@@ -157,6 +157,8 @@ export function NotificationsCard() {
   const [error, setError] = useState<string | null>(null)
   const [prefs, setPrefs] = useState<api.PushPrefs | null>(null)
   const [versesOn, setVersesOn] = useState(false)
+  // The ten switches live behind one expander so the card stays a card.
+  const [showPrefs, setShowPrefs] = useState(false)
 
   useEffect(() => {
     const reason = unsupportedReason()
@@ -331,7 +333,21 @@ export function NotificationsCard() {
             )}
           </div>
 
-          {on && prefs && (
+          {on && prefs && !showPrefs && (
+            <button
+              type="button"
+              onClick={() => setShowPrefs(true)}
+              className="mt-3 flex w-full items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left"
+              data-open-prefs
+            >
+              <span className="text-sm font-semibold text-fg/85">
+                Configure all notification preferences
+              </span>
+              <ChevronDown className="h-4 w-4 shrink-0 text-fg/40" strokeWidth={2.5} />
+            </button>
+          )}
+
+          {on && prefs && showPrefs && (
             <div className="mt-4 flex flex-col gap-3" data-push-prefs>
               {PREF_GROUPS.map((group) => {
                 const rows = group.rows.filter((row) => !row.verses || versesOn)
@@ -353,6 +369,13 @@ export function NotificationsCard() {
                   </div>
                 )
               })}
+              <button
+                type="button"
+                onClick={() => setShowPrefs(false)}
+                className="flex items-center justify-center gap-1 rounded-xl py-1.5 text-xs font-semibold text-fg/45 hover:text-fg/70"
+              >
+                <ChevronUp className="h-3.5 w-3.5" strokeWidth={2.5} /> Done
+              </button>
             </div>
           )}
         </>

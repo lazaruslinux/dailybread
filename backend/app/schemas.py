@@ -57,6 +57,8 @@ class UserOut(BaseModel):
     theme: Literal["light", "dark"] | None = None
     # Whether this member shares mood/status onto the village card.
     village_presence: bool = False
+    # Whether this member shares their level/crumbs with villages.
+    share_level: bool = False
 
     # Let Pydantic read attributes off a SQLAlchemy User object directly.
     model_config = {"from_attributes": True}
@@ -245,6 +247,9 @@ class FeedItemOut(BaseModel):
     visibility: Visibility
     assignees: list[UserOut]
     shared_to_feed: bool
+    # Set only on the response to a completion that paid out, so the check
+    # circle can float the "+n" without the UI guessing the economy's rules.
+    crumbs_awarded: int = 0
     time_of_day: dt.time | None  # start / "From"
     end_time: dt.time | None  # end / "To"
     all_day: bool
@@ -890,16 +895,18 @@ class FamilyMemberOut(UserOut):
     """
 
     mood: MoodOut | None = None
-    # The member's verse-reading streak, when they've opted in and it's > 0.
-    # Only the number crosses — never which verses or which days.
-    verse_streak: int | None = None
+    # The member's breadcrumb level — always visible inside the family (it
+    # sits in the little circle beside the name).
+    level: int = 1
 
 
 class VersesOut(BaseModel):
     enabled: bool
-    share: bool
     checks: list[bool]  # today's three, in verse order
     streak: int
+    # What the check that produced this response earned (the day's +3 and any
+    # milestone bonus), so the UI can float the number without guessing.
+    crumbs_awarded: int = 0
 
 
 class VerseCheckIn(BaseModel):
@@ -911,12 +918,16 @@ class VerseSettingsIn(BaseModel):
     """Only the fields sent change."""
 
     enabled: bool | None = None
-    share: bool | None = None
 
 
 class ProfileOut(FamilyMemberOut):
     bio: str
     created_at: dt.datetime
+    # The tap-profile modal's economy panel.
+    crumbs: int = 0
+    tier: str = "slice"
+    level_progress: int = 0  # crumbs into the current level
+    next_level_cost: int = 10
 
 
 class ProfileUpdateIn(BaseModel):
@@ -928,6 +939,20 @@ class ProfileUpdateIn(BaseModel):
     # Opt in to showing today's mood and status on the village card. Off by
     # default; minors are excluded server-side regardless.
     village_presence: bool | None = None
+    # Opt in to showing level + crumb total to village members.
+    share_level: bool | None = None
+
+
+class CrumbsOut(BaseModel):
+    """The signed-in member's own economy state (the profile modal + banner)."""
+
+    total: int
+    level: int
+    tier: str
+    level_progress: int
+    next_level_cost: int
+    today: int  # crumbs earned today
+    login_award_today: bool  # the daily +1 landed on this family-local day
 
 
 # ---- the dinner plan -----------------------------------------------------------
@@ -1125,9 +1150,10 @@ class VillageParentOut(BaseModel):
     # Today's status line, empty unless presence is on (statuses clear
     # themselves overnight like moods).
     status: str = ""
-    # Reading streak, present ONLY when that parent opted in to sharing it
-    # (share_verse_streak) and it's > 0. The number, nothing else.
-    verse_streak: int | None = None
+    # Breadcrumb level (and total, for the mini profile), present ONLY when
+    # that parent opted in to sharing it (share_level). Numbers, nothing else.
+    level: int | None = None
+    crumbs: int | None = None
 
 
 class VillageFamilyOut(BaseModel):

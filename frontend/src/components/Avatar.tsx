@@ -1,31 +1,32 @@
-import { BookOpen } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { initialsOf } from '../lib/moods'
+import type { MoodLevel } from '../lib/api'
+import { initialsOf, MOODS } from '../lib/moods'
 
 // Initials circle used everywhere a person appears. When the member has an
 // uploaded photo (src), it fills the circle; otherwise the coloured initials
-// show. A load error silently falls back to the initials. The one badge an
-// avatar wears is the verse streak (gold book + count, bottom right); moods
-// live on profiles and the village mini profile, so the photo stays a photo.
+// show. A load error silently falls back to the initials. The one mark an
+// avatar wears is the mood dot (bottom right): the day's weather at a
+// glance, in the mood's own color — details live behind a tap, so the photo
+// stays a photo.
 
 const SIZES = {
-  sm: { circle: 'h-7 w-7 text-[10px]', streak: '-right-1 -bottom-0.5 h-3.5 px-1 text-[7px]' },
-  md: { circle: 'h-11 w-11 text-sm', streak: '-right-1.5 -bottom-0.5 h-5 px-1.5 text-[9px]' },
-  lg: { circle: 'h-20 w-20 text-2xl', streak: 'right-0 bottom-0 h-7 px-2 text-xs' },
+  sm: { circle: 'h-7 w-7 text-[10px]', dot: 'h-2 w-2 right-0 bottom-0' },
+  md: { circle: 'h-11 w-11 text-sm', dot: 'h-3 w-3 right-0 bottom-0' },
+  lg: { circle: 'h-20 w-20 text-2xl', dot: 'h-4.5 w-4.5 right-1 bottom-1' },
 } as const
 
 export function Avatar({
   name,
   src = null,
-  verseStreak = null,
+  mood = null,
   size = 'md',
   className = '',
 }: {
   name: string
   // Photo URL, or null/undefined to draw generated initials.
   src?: string | null
-  // Verse-reading streak: > 0 renders the little book badge with the count.
-  verseStreak?: number | null
+  // Today's mood: renders the little colored dot on the corner.
+  mood?: MoodLevel | null
   size?: keyof typeof SIZES
   // Extra classes on the circle, e.g. a ring when avatars overlap.
   className?: string
@@ -53,14 +54,11 @@ export function Avatar({
           {initialsOf(name)}
         </div>
       )}
-      {verseStreak != null && verseStreak > 0 && (
+      {mood && (
         <span
-          className={`absolute flex items-center gap-0.5 rounded-full border border-gold/40 bg-[#151b2e] font-bold text-gold ${s.streak}`}
-          title={`${verseStreak}-day reading streak`}
-        >
-          <BookOpen className="h-[1em] w-[1em]" strokeWidth={2.5} />
-          x{verseStreak}
-        </span>
+          className={`absolute rounded-full ring-2 ring-[var(--bg-base)] ${s.dot} ${MOODS[mood].dot}`}
+          title={`Mood · ${MOODS[mood].label}`}
+        />
       )}
     </div>
   )

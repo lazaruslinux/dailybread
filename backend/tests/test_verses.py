@@ -1,5 +1,6 @@
-"""Verse check-offs and reading streaks: strictly opt-in, only the streak
-number ever leaves the member — family always, villages by a second opt-in."""
+"""Verse check-offs and reading streaks: strictly opt-in. The streak lives
+inside the verse card (and feeds crumbs + the at-risk push); what rides the
+strip and the village wall now is the LEVEL, by its own opt-in."""
 
 import datetime as dt
 
@@ -18,8 +19,8 @@ def _clean_throttle():
     throttle.clear()
 
 
-def _enable(client, share=False):
-    res = client.put("/me/verses/settings", json={"enabled": True, "share": share})
+def _enable(client):
+    res = client.put("/me/verses/settings", json={"enabled": True})
     assert res.status_code == 200, res.text
     return res.json()
 
@@ -34,7 +35,12 @@ def _me(client, date=TODAY):
 
 def test_checks_require_the_opt_in(owner):
     assert _check(owner, 0).status_code == 400
-    assert _me(owner) == {"enabled": False, "share": False, "checks": [False, False, False], "streak": 0}
+    assert _me(owner) == {
+        "enabled": False,
+        "checks": [False, False, False],
+        "streak": 0,
+        "crumbs_awarded": 0,
+    }
 
 
 def test_checking_all_three_completes_the_day(owner):
@@ -47,15 +53,14 @@ def test_checking_all_three_completes_the_day(owner):
     assert body["streak"] == 1
 
 
-def test_unchecking_reopens_the_day(owner):
+def test_checks_are_one_way(owner):
+    # Unchecking a read verse was pointless (his words); the endpoint is gone
+    # and the fold arrow is how the card gets out of the way.
     _enable(owner)
     for i in range(3):
         _check(owner, i)
-    res = owner.delete(f"/me/verses/check?date={TODAY}&idx=1")
-    assert res.status_code == 200
-    body = _me(owner)
-    assert body["checks"] == [True, False, True]
-    assert body["streak"] == 0
+    assert owner.delete(f"/me/verses/check?date={TODAY}&idx=1").status_code == 405
+    assert _me(owner)["checks"] == [True, True, True]
 
 
 def test_double_checking_is_idempotent(owner):
@@ -75,15 +80,17 @@ def test_an_unfinished_today_keeps_yesterdays_streak(owner):
     assert _me(owner)["streak"] == 2
 
 
-def test_the_streak_number_rides_the_family_strip(owner, parent):
+def test_the_level_rides_the_family_strip(owner, parent):
+    # The streak number stays inside the verse card; the strip carries the
+    # LEVEL for everyone (a fresh account reads level 1, honestly).
     _enable(owner)
     for i in range(3):
         _check(owner, i)
     members = parent.get(f"/users?date={TODAY}").json()
     by_name = {m["username"]: m for m in members}
-    assert by_name["owner"]["verse_streak"] == 1
-    # A member who never opted in shows nothing at all.
-    assert by_name["parent2"]["verse_streak"] is None
+    assert by_name["owner"]["level"] == 1
+    assert by_name["parent2"]["level"] == 1
+    assert "verse_streak" not in by_name["owner"]
 
 
 def test_two_checks_are_not_a_complete_day(owner):
@@ -93,23 +100,25 @@ def test_two_checks_are_not_a_complete_day(owner):
     assert _me(owner)["streak"] == 0
 
 
-def test_village_streak_needs_its_own_opt_in(owner, other):
+def test_village_level_needs_its_own_opt_in(owner, other):
     created = owner.post("/villages", json={"name": "Bread Circle"}).json()
     assert other.post("/villages/join", json={"code": created["invite_code"]}).status_code == 200
     vid = created["id"]
 
-    _enable(owner, share=False)
+    _enable(owner)
     for i in range(3):
-        _check(owner, i)
+        _check(owner, i)  # +3 crumbs, still level 1
 
     def my_row():
         v = next(x for x in other.get("/villages").json() if x["id"] == vid)
         parents = [p for fam in v["families"] for p in fam["parents"]]
         return next(p for p in parents if p["display_name"] == "Owner Parent")
 
-    assert my_row()["verse_streak"] is None
-    owner.put("/me/verses/settings", json={"share": True})
-    assert my_row()["verse_streak"] == 1
+    assert my_row()["level"] is None  # not shared: invisible, not "1"
+    assert my_row()["crumbs"] is None
+    assert owner.patch("/me/profile", json={"share_level": True}).status_code == 200
+    assert my_row()["level"] == 1
+    assert my_row()["crumbs"] == 3
 
 
 def test_a_phone_past_midnight_still_counts_today(owner):
@@ -121,6 +130,3 @@ def test_a_phone_past_midnight_still_counts_today(owner):
     for i in range(3):
         assert _check(owner, i, date=tomorrow).status_code == 200
     assert _me(owner, date=tomorrow)["streak"] == 1
-    members = owner.get(f"/users?date={TODAY}").json()
-    me = next(m for m in members if m["username"] == "owner")
-    assert me["verse_streak"] == 1

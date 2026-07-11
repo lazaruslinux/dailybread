@@ -1,8 +1,10 @@
 import { motion } from 'framer-motion'
 import { Activity, CalendarClock, Check, Circle, Flame, Hourglass, Pencil, Repeat, type LucideIcon , X } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { avatarUrl, type FamilyMember, type FeedItem, type ItemKind } from '../lib/api'
 import { formatTimeRange } from '../lib/moods'
 import { Avatar } from './Avatar'
+import { CrumbFloat } from './CrumbFloat'
 
 export const KIND_STYLE: Record<ItemKind, { Icon: LucideIcon; tint: string; label: string }> = {
   routine: { Icon: Repeat, tint: 'text-sky-300', label: 'Routine' },
@@ -93,6 +95,22 @@ export function ItemCard({
   const dateLine = showDate && item.date_for ? shortDate(item.date_for) : null
   const showCheckbox = canCheck && onToggle
 
+  // The +n breadcrumb float: Home dispatches db:crumbs when a completion
+  // response paid out; the card whose item it was drifts the number up from
+  // its check circle. Event-driven so the award needs no prop plumbing
+  // through both board views.
+  const [float, setFloat] = useState<{ amount: number; key: number } | null>(null)
+  useEffect(() => {
+    function onCrumbs(e: Event) {
+      const detail = (e as CustomEvent).detail as { itemId?: number; amount?: number } | null
+      if (detail?.itemId === item.id && (detail.amount ?? 0) > 0) {
+        setFloat({ amount: detail.amount!, key: Date.now() })
+      }
+    }
+    window.addEventListener('db:crumbs', onCrumbs)
+    return () => window.removeEventListener('db:crumbs', onCrumbs)
+  }, [item.id])
+
   // Kid mode. The viewer's own tap awaiting a parent draws as an amber
   // hourglass (tapping it again withdraws); for a parent, anyone's waiting
   // mark flags the card as needing approval.
@@ -148,9 +166,10 @@ export function ItemCard({
             e.stopPropagation()
             onToggle()
           }}
-          className="-m-2 shrink-0 p-2"
+          className="relative -m-2 shrink-0 p-2"
           data-check
         >
+          {float && <CrumbFloat key={float.key} amount={float.amount} />}
           <span
             className={`flex h-7 w-7 items-center justify-center rounded-full border-2 transition-colors ${
               item.completed

@@ -119,18 +119,15 @@ def _village_out(db: Session, village: Village, viewer_family_id: int) -> Villag
                 select(Mood).where(Mood.date_for == today, Mood.user_id.in_(sharer_ids))
             )
         } if sharer_ids else {}
-        # Reading streaks cross the wall only by their own opt-in, separate
-        # from mood presence; the number is all that travels.
-        from app.routers.verses import streaks_for
+        # Levels cross the wall only by their own opt-in, separate from mood
+        # presence; the numbers are all that travel — never the ledger.
+        from app import crumbs
 
-        streaks = streaks_for(
-            db,
-            [u.id for u in parents if u.share_verse_streak and u.verses_enabled],
-            today,
-        )
+        totals = crumbs.totals_for(db, [u.id for u in parents if u.share_level])
         for user in parents:
             mood = moods.get(user.id)
             sharing = user.village_presence
+            total = totals.get(user.id, 0) if user.share_level else None
             parents_by_family.setdefault(user.family_id, []).append(
                 VillageParentOut(
                     id=user.id,
@@ -143,7 +140,8 @@ def _village_out(db: Session, village: Village, viewer_family_id: int) -> Villag
                         else None
                     ),
                     status=(user.bio if sharing and user.status_date == today else ""),
-                    verse_streak=streaks.get(user.id) or None,
+                    level=crumbs.level_of(total)[0] if total is not None else None,
+                    crumbs=total,
                 )
             )
     active = _invite_active(village, _utcnow())

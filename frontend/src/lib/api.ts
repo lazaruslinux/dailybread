@@ -83,6 +83,8 @@ export interface User {
   theme: 'light' | 'dark' | null
   // Sharing mood/status onto the village card?
   village_presence: boolean
+  // Sharing level/crumbs with villages?
+  share_level: boolean
 }
 
 export interface SetupState {
@@ -497,6 +499,9 @@ export interface AssigneeCompletion {
 }
 
 export interface FeedItem {
+  // Set only on a completion response that paid breadcrumbs; drives the
+  // little float by the check circle.
+  crumbs_awarded?: number
   id: number
   owner_id: number | null
   kind: ItemKind
@@ -917,14 +922,36 @@ export interface Mood {
 
 export interface FamilyMember extends User {
   mood: Mood | null
-  // Verse-reading streak: present when the member opted in and it's > 0.
-  verse_streak: number | null
+  // Breadcrumb level: always visible inside the family (the little circle
+  // beside the name).
+  level: number
 }
 
 export interface Profile extends FamilyMember {
   bio: string
   created_at: string
+  // The tap-profile's economy panel.
+  crumbs: number
+  tier: Tier
+  level_progress: number
+  next_level_cost: number
 }
+
+// ---- breadcrumbs ------------------------------------------------------------------
+
+export type Tier = 'slice' | 'roll' | 'loaf' | 'baker' | 'breadmaster'
+
+export interface Crumbs {
+  total: number
+  level: number
+  tier: Tier
+  level_progress: number
+  next_level_cost: number
+  today: number
+  login_award_today: boolean
+}
+
+export const getMyCrumbs = () => request<Crumbs>('/me/crumbs')
 
 export const getFamily = () => request<FamilyMember[]>(`/users?date=${localDate()}`)
 
@@ -932,9 +959,11 @@ export const getFamily = () => request<FamilyMember[]>(`/users?date=${localDate(
 
 export interface Verses {
   enabled: boolean
-  share: boolean
   checks: boolean[] // today's three, in verse order
   streak: number
+  // What the check that produced this response earned (the day's +3 plus any
+  // milestone bonus) — drives the little float, nothing else.
+  crumbs_awarded: number
 }
 
 export const getVerses = () => request<Verses>(`/me/verses?date=${localDate()}`)
@@ -943,15 +972,13 @@ export const checkVerse = (idx: number) =>
     method: 'POST',
     body: JSON.stringify({ date_for: localDate(), verse_idx: idx }),
   })
-export const uncheckVerse = (idx: number) =>
-  request<Verses>(`/me/verses/check?date=${localDate()}&idx=${idx}`, { method: 'DELETE' })
-export const setVerseSettings = (s: { enabled?: boolean; share?: boolean }) =>
+export const setVerseSettings = (s: { enabled?: boolean }) =>
   request<Verses>('/me/verses/settings', { method: 'PUT', body: JSON.stringify(s) })
 
 export const getProfile = (id: number) =>
   request<Profile>(`/users/${id}/profile?date=${localDate()}`)
 
-export const updateMyProfile = (payload: { display_name?: string; bio?: string; theme?: 'light' | 'dark'; village_presence?: boolean }) =>
+export const updateMyProfile = (payload: { display_name?: string; bio?: string; theme?: 'light' | 'dark'; village_presence?: boolean; share_level?: boolean }) =>
   request<Profile>('/me/profile', { method: 'PATCH', body: JSON.stringify(payload) })
 
 // The image URL for a member's avatar, or null when they have no photo. The
@@ -1292,8 +1319,9 @@ export interface VillageParent {
   mood: Mood | null
   // Today's status line, empty unless presence is on.
   status: string
-  // Reading streak, by its own opt-in (share_verse_streak). The number only.
-  verse_streak: number | null
+  // Level and crumb total, by their own opt-in (share_level). Numbers only.
+  level: number | null
+  crumbs: number | null
 }
 
 export interface VillageFamily {
