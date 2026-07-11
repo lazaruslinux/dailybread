@@ -388,7 +388,8 @@ function MiniProfileSheet({ parent, onClose }: { parent: VillageParent; onClose:
                 <span className={`font-semibold ${TIER_META[tierOf(parent.level)].text}`}>
                   {TIER_META[tierOf(parent.level)].label}
                 </span>
-                {' · '}Level {parent.level} · {parent.crumbs ?? 0} breadcrumbs
+                {' · '}Level {parent.level} · {parent.crumbs ?? 0} breadcrumb
+                {(parent.crumbs ?? 0) === 1 ? '' : 's'} earned
               </p>
             )}
           </div>

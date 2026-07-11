@@ -189,12 +189,12 @@ export function Profile({ userId }: { userId: number }) {
         {/* The economy panel: the level circle, the tier's name, and how far
             to the next one. Warm numbers, no meters screaming for attention. */}
         <div className="flex w-full max-w-64 flex-col items-center gap-2" data-economy>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-fg/55">Level</span>
             <LevelBadge level={profile.level} size="md" />
             <span className={`text-sm font-bold ${TIER_META[tierOf(profile.level)].text}`}>
               {TIER_META[tierOf(profile.level)].label}
             </span>
-            <span className="text-sm text-fg/50">· {profile.crumbs} breadcrumbs</span>
           </div>
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-fg/10">
             <div
@@ -203,6 +203,7 @@ export function Profile({ userId }: { userId: number }) {
             />
           </div>
           <p className="text-[11px] text-fg/40">
+            {profile.crumbs} breadcrumb{profile.crumbs === 1 ? '' : 's'} earned ·{' '}
             {profile.next_level_cost - profile.level_progress} to level {profile.level + 1}
           </p>
         </div>

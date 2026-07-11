@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { CalendarClock, Check, ChevronLeft, ChevronRight, Hourglass, Plus, Rows3, Undo2, Wheat, X } from 'lucide-react'
+import { CalendarClock, Check, ChevronLeft, ChevronRight, Hourglass, Plus, Rows3, Undo2, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../lib/api'
 import { avatarUrl } from '../lib/api'
@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthContext'
 import { canCheckItem } from '../lib/items'
 import { Avatar } from '../components/Avatar'
 import { DayTimeline } from '../components/DayTimeline'
+import { BreadIcon } from '../components/BreadIcon'
 import { FamilyStrip } from '../components/FamilyStrip'
 import { ItemCard, SectionDivider } from '../components/ItemCard'
 import { ItemDetail } from '../components/ItemDetail'
@@ -168,9 +169,9 @@ function WelcomeCrumb() {
       className="mb-3 flex items-center gap-2 rounded-xl border border-gold/30 bg-gold/10 px-3 py-2"
       data-welcome-crumb
     >
-      <Wheat className="h-4 w-4 shrink-0 text-gold" strokeWidth={2.5} />
+      <BreadIcon className="h-4 w-4 shrink-0 text-gold" strokeWidth={2.5} />
       <span className="min-w-0 flex-1 text-sm font-medium text-fg/80">
-        +1 breadcrumb · welcome back
+        +1 breadcrumb earned · welcome back
       </span>
       <button
         type="button"

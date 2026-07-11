@@ -169,15 +169,15 @@ def test_completing_a_card_pays_one_and_only_once(owner):
     assert crumbs_total(owner) == before + 1
 
 
-def test_completions_cap_at_ten_a_day(owner):
-    items = [_make(owner, title=f"Chore {i}") for i in range(12)]
+def test_completions_cap_at_three_a_day(owner):
+    items = [_make(owner, title=f"Chore {i}") for i in range(5)]
     awarded = sum(
         owner.post(f"/items/{item['id']}/complete?date={TODAY.isoformat()}").json()[
             "crumbs_awarded"
         ]
         for item in items
     )
-    assert awarded == 10  # junk-card farming hits the wall
+    assert awarded == 3  # junk-card farming hits the wall fast
 
 
 def test_a_kids_crumb_lands_on_approval(owner, child):

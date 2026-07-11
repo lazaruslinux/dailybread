@@ -24,7 +24,9 @@ LOGIN_CRUMBS = 1
 VERSES_CRUMBS = 3
 WORKOUT_CRUMBS = 3
 COMPLETE_CRUMBS = 1
-COMPLETE_DAILY_CAP = 10  # max crumbs/day from card completions
+# Max crumbs/day from card completions, any kind. Three, deliberately tight:
+# "create a task, check it, repeat" must never be the best way to level.
+COMPLETE_DAILY_CAP = 3
 WORKOUT_MIN_SECONDS = 15 * 60
 
 # Verse-streak milestones: hitting N days pays once, ever ("vstreak:<n>").

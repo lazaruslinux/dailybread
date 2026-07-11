@@ -27,7 +27,7 @@ export function FamilyStrip({
           className="flex min-w-0 flex-col items-center gap-1 rounded-xl px-1 py-1 transition-opacity hover:opacity-80"
         >
           <Avatar name={m.display_name} src={avatarUrl(m)} mood={m.mood?.level ?? null} />
-          <span className="flex max-w-16 items-center gap-1">
+          <span className="flex max-w-24 items-center gap-1">
             <LevelBadge level={m.level} />
             <span className="min-w-0 truncate text-[11px] font-medium text-fg/60">
               {m.display_name.split(/\s+/)[0]}

@@ -91,7 +91,7 @@ def backfill_user(db, user: User, start: dt.date) -> int:
             db, user, "workout", crumbs.WORKOUT_CRUMBS, f"workout:{day.isoformat()}", day
         )
 
-    # Completions, oldest first, deterministic, 10 a day like the live cap.
+    # Completions, oldest first, deterministic, capped like the live rule.
     by_day: dict[dt.date, list[int]] = defaultdict(list)
     for item_id, day in db.execute(
         select(Completion.item_id, Completion.date_for)

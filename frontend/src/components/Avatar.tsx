@@ -5,14 +5,14 @@ import { initialsOf, MOODS } from '../lib/moods'
 // Initials circle used everywhere a person appears. When the member has an
 // uploaded photo (src), it fills the circle; otherwise the coloured initials
 // show. A load error silently falls back to the initials. The one mark an
-// avatar wears is the mood dot (bottom right): the day's weather at a
-// glance, in the mood's own color — details live behind a tap, so the photo
-// stays a photo.
+// avatar wears is the little weather icon (bottom right): the day's mood at
+// a glance as WEATHER, never a presence dot — details live behind a tap, so
+// the photo stays a photo.
 
 const SIZES = {
-  sm: { circle: 'h-7 w-7 text-[10px]', dot: 'h-2 w-2 right-0 bottom-0' },
-  md: { circle: 'h-11 w-11 text-sm', dot: 'h-3 w-3 right-0 bottom-0' },
-  lg: { circle: 'h-20 w-20 text-2xl', dot: 'h-4.5 w-4.5 right-1 bottom-1' },
+  sm: { circle: 'h-7 w-7 text-[10px]', pip: 'h-3.5 w-3.5 -right-0.5 -bottom-0.5', icon: 'h-2.5 w-2.5' },
+  md: { circle: 'h-11 w-11 text-sm', pip: 'h-[18px] w-[18px] -right-0.5 -bottom-0.5', icon: 'h-3 w-3' },
+  lg: { circle: 'h-20 w-20 text-2xl', pip: 'h-7 w-7 right-0 bottom-0', icon: 'h-4.5 w-4.5' },
 } as const
 
 export function Avatar({
@@ -54,12 +54,18 @@ export function Avatar({
           {initialsOf(name)}
         </div>
       )}
-      {mood && (
-        <span
-          className={`absolute rounded-full ring-2 ring-[var(--bg-base)] ${s.dot} ${MOODS[mood].dot}`}
-          title={`Mood · ${MOODS[mood].label}`}
-        />
-      )}
+      {mood &&
+        (() => {
+          const meta = MOODS[mood]
+          return (
+            <span
+              className={`absolute flex items-center justify-center rounded-full bg-[var(--bg-base)] ${s.pip}`}
+              title={`Mood · ${meta.label}`}
+            >
+              <meta.Icon className={`${s.icon} ${meta.tint}`} strokeWidth={2.5} />
+            </span>
+          )
+        })()}
     </div>
   )
 }

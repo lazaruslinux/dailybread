@@ -80,11 +80,6 @@ export function VerseCard() {
       >
         <BookOpen className="h-4 w-4 shrink-0 text-gold/80" strokeWidth={2} />
         <span className="min-w-0 flex-1 truncate text-sm text-fg/60">Read today</span>
-        {(state?.streak ?? 0) > 0 && (
-          <span className="shrink-0 rounded-full border border-gold/40 bg-gold/10 px-2 py-0.5 text-[11px] font-bold text-gold">
-            x{state?.streak}
-          </span>
-        )}
         <ChevronDown className="h-4 w-4 shrink-0 text-fg/35" />
       </motion.button>
     )
@@ -185,9 +180,9 @@ export function VerseCard() {
               </span>
             )}
           </div>
-          {allRead && !collapsed && (
+          {allRead && !collapsed && (state?.streak ?? 0) > 0 && (
             <p className="mt-2 text-center text-[11px] font-semibold text-gold/70">
-              All three read today{(state?.streak ?? 0) > 1 ? ` · ${state?.streak} days running` : ''}
+              {state?.streak} day streak
             </p>
           )}
         </motion.div>

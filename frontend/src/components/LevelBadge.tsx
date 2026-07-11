@@ -10,13 +10,13 @@ export const TIER_META: Record<
   Tier,
   { label: string; ring: string; text: string; gradient?: string }
 > = {
-  slice: { label: 'Slice', ring: 'border-fg/25 bg-fg/5', text: 'text-fg/65' },
+  slice: { label: 'Slice', ring: 'border-fg/35 bg-fg/5', text: 'text-fg/75' },
   roll: {
     label: 'Roll',
-    ring: 'border-amber-500/50 bg-amber-500/10',
-    text: 'text-amber-700 dark:text-amber-300',
+    ring: 'border-amber-600/70 bg-amber-500/15',
+    text: 'text-amber-800 dark:text-amber-300',
   },
-  loaf: { label: 'Loaf', ring: 'border-gold/60 bg-gold/10 shadow-[0_0_6px_-2px]', text: 'text-gold' },
+  loaf: { label: 'Loaf', ring: 'border-gold/80 bg-gold/15 shadow-[0_0_6px_-2px]', text: 'text-gold' },
   baker: {
     label: 'Baker',
     ring: 'border-gold bg-gold/15 shadow-[0_0_8px_-2px] ring-1 ring-gold/30',
@@ -32,7 +32,7 @@ export const TIER_META: Record<
 }
 
 const SIZES = {
-  sm: { outer: 'h-[18px] min-w-[18px] px-0.5 text-[9px]', pad: 'p-[1.5px]' },
+  sm: { outer: 'h-5 min-w-5 px-1 text-[10px]', pad: 'p-[1.5px]' },
   md: { outer: 'h-6 min-w-6 px-1 text-[11px]', pad: 'p-[2px]' },
   lg: { outer: 'h-16 min-w-16 px-2 text-2xl', pad: 'p-[3px]' },
 } as const
