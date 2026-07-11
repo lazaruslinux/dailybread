@@ -1198,6 +1198,19 @@ class PushTestOut(BaseModel):
     sent: int
 
 
+class PushPrefsIn(BaseModel):
+    """A partial update: only the kinds being flipped, e.g. {"midday": false}.
+    Kind names are validated against app.push.PREF_KINDS in the router."""
+
+    prefs: dict[str, bool]
+
+
+class PushPrefsOut(BaseModel):
+    """The full map, every kind present, for the settings toggles."""
+
+    prefs: dict[str, bool]
+
+
 # ---- fitness (Apple Health import) -----------------------------------------------
 
 

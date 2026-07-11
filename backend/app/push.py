@@ -26,8 +26,11 @@ from app.db import SessionLocal
 from app.models import (
     DigestLog,
     Family,
+    IngestToken,
     Item,
     ItemKind,
+    Meal,
+    MealSlot,
     PushSubscription,
     ReminderLog,
     User,
@@ -37,6 +40,32 @@ from app.models import (
 log = logging.getLogger("dailybread.push")
 
 TICK_SECONDS = 60
+
+# Every notification kind a member can turn off individually. The board-change
+# trio and dinner picks share one switch ("family"): they're all "someone
+# changed something you can see", and ten-plus toggles is where people stop
+# reading. "verse" is additionally gated on verses_enabled — no verses, no
+# streak to protect.
+PREF_KINDS = frozenset(
+    {
+        "timed",  # the lead-time ping before a timed card
+        "overdue",  # the afternoon past-due sweep
+        "morning",  # the morning digest
+        "midday",  # the lunchtime food check
+        "evening",  # the evening check-in (with tomorrow's preview)
+        "family",  # board changes + dinner picks
+        "dinner",  # the dinner-time reminder
+        "approvals",  # a kid's check-off awaiting a parent
+        "sync",  # health sync went quiet
+        "verse",  # verse streak about to end
+    }
+)
+
+
+def wants(user: User, kind: str) -> bool:
+    """Whether this member takes this kind of push. Only OFF is ever stored,
+    so a missing key (or a NULL column) reads as on — see User.push_prefs."""
+    return bool((user.push_prefs or {}).get(kind, True))
 
 
 def enabled() -> bool:
@@ -182,7 +211,7 @@ def reminder_tick(now: dt.datetime) -> int:
                 people = _recipients(db, item)
             # Kid mode: no notifications for minors at all — their day is the
             # parents' to run, and the phone in question is a parent's anyway.
-            people = [p for p in people if not p.is_minor]
+            people = [p for p in people if not p.is_minor and wants(p, "timed")]
             if not people:
                 continue
             if _already_reminded(db, item, today):
@@ -263,10 +292,10 @@ def _due_users(
     return due
 
 
-def _todays_board(db: Session, user: User, now: dt.datetime) -> tuple[int, Item | None]:
+def _open_today(db: Session, user: User, now: dt.datetime) -> list[Item]:
     """One member's OPEN items today: routines landing today, cards dated
     today, and undated anytime tasks — completed ones excluded, exactly like
-    the board. Returns (count, the next undone timed card still ahead)."""
+    the board."""
     from app.routers.items import _completions_by_item, _occurs
 
     today = now.date()
@@ -314,7 +343,13 @@ def _todays_board(db: Session, user: User, now: dt.datetime) -> tuple[int, Item 
             acted = any(not pend for _uid, _day, pend, _canc in rows)
         if not acted:
             open_items.append(item)
+    return open_items
 
+
+def _todays_board(db: Session, user: User, now: dt.datetime) -> tuple[int, Item | None]:
+    """The morning digest's numbers: how many open items today, and the next
+    undone timed card still ahead."""
+    open_items = _open_today(db, user, now)
     upcoming = [
         item
         for item in open_items
@@ -322,6 +357,71 @@ def _todays_board(db: Session, user: User, now: dt.datetime) -> tuple[int, Item 
     ]
     next_item = min(upcoming, key=lambda i: i.time_of_day) if upcoming else None
     return len(open_items), next_item
+
+
+def _overdue_today(db: Session, user: User, now: dt.datetime) -> list[Item]:
+    """Today's still-open cards whose moment has already passed, oldest first.
+    Routines are left out on purpose: they come around again tomorrow, and a
+    4 PM poke about a skipped morning run is nagging, not helping — the sweep
+    is for one-off commitments that will otherwise silently slip."""
+    past = [
+        item
+        for item in _open_today(db, user, now)
+        if item.kind != ItemKind.routine
+        and item.time_of_day is not None
+        and not item.all_day
+        and item.time_of_day <= now.time()
+    ]
+    return sorted(past, key=lambda i: i.time_of_day)
+
+
+def _tomorrow_preview(db: Session, user: User, local: dt.datetime) -> str:
+    """The evening check-in's look-ahead: tomorrow's earliest unresolved timed
+    card (never routines — they're every day by definition), or ""."""
+    from app.routers.items import _completions_by_item, _occurs
+
+    tomorrow = local.date() + dt.timedelta(days=1)
+    items = (
+        db.scalars(
+            select(Item)
+            .options(selectinload(Item.assignees))
+            .where(
+                Item.family_id == user.family_id,
+                Item.kind != ItemKind.routine,
+                Item.time_of_day.is_not(None),
+                or_(Item.date_for == tomorrow, Item.repeat_type.is_not(None)),
+            )
+        )
+        .unique()
+        .all()
+    )
+    mine = [
+        item
+        for item in items
+        if not item.all_day
+        and _is_recipient(item, user)
+        and (item.repeat_type is None or _occurs(item, tomorrow))
+    ]
+    if not mine:
+        return ""
+    comps = _completions_by_item(db, mine)
+    open_items: list[Item] = []
+    for item in mine:
+        rows = comps[item.id]
+        if item.date_for is not None:
+            # A dated card checked (or called off) early is settled.
+            if any(not pend or canc for _uid, _day, pend, canc in rows):
+                continue
+        elif any(day == tomorrow and (not pend or canc) for _uid, day, pend, canc in rows):
+            continue
+        open_items.append(item)
+    if not open_items:
+        return ""
+    first = min(open_items, key=lambda i: i.time_of_day)
+    line = f" Tomorrow: {first.title} at {_fmt(first.time_of_day)}"
+    if len(open_items) > 1:
+        line += f" (+{len(open_items) - 1} more)"
+    return line + "."
 
 
 def _food_trackers(db: Session, users: list[User], today: dt.date) -> list[User]:
@@ -371,13 +471,22 @@ def digest_tick(now: dt.datetime) -> int:
     catches up while the message makes sense — and never later.
 
     morning (digest_hour → noon): a personal summary of the day's board.
+    Alongside it, "sync went quiet" for members whose health import stalled.
     midday (midday_hour → 17:00): lunch nudge with calories left; only for
     members actually using the food diary.
+    overdue (overdue_hour → 19:00): today's timed cards that slipped past
+    unchecked, one sweep, never a per-item drumbeat.
     evening (evening_hour → 22:00): "How was your day?" for every adult —
-    the day's sign-off, pointing at mood, status, and journal.
+    the day's sign-off, pointing at mood, status, and journal — now with
+    tomorrow's first appointment. Alongside it, the verse-streak-at-risk
+    nudge for opted-in readers.
+    dinner: not an hour window but a lead window before tonight's planned
+    dinner time, when the family set one.
 
     Empty boards and non-trackers stay quiet, but still claim their row, so
-    a card added at 9:01 doesn't ring a belated good-morning.
+    a card added at 9:01 doesn't ring a belated good-morning. A turned-off
+    preference is checked after the claim for the same reason: flipping a
+    kind back on mid-window must not fire a stale push.
 
     Every window and date is the FAMILY's, not the server's: a household
     three timezones over gets its good-morning at its own 7am."""
@@ -388,6 +497,8 @@ def digest_tick(now: dt.datetime) -> int:
             if settings.digest_hour <= local.hour < 12:
                 today = local.date()
                 if not _claim_digest(db, user.id, today, "morning"):
+                    continue
+                if not wants(user, "morning"):
                     continue
                 count, next_item = _todays_board(db, user, local)
                 if count == 0:
@@ -417,6 +528,8 @@ def digest_tick(now: dt.datetime) -> int:
             today = local.date()
             if not _claim_digest(db, user.id, today, "midday"):
                 continue
+            if not wants(user, "midday"):
+                continue
             if user.id not in trackers:
                 continue  # claimed quietly: logging lunch later won't ping
             left = _calories_left(db, user, today)
@@ -441,16 +554,206 @@ def digest_tick(now: dt.datetime) -> int:
                 today = local.date()
                 if not _claim_digest(db, user.id, today, "evening"):
                     continue
+                if not wants(user, "evening"):
+                    continue
                 sent += send_to_user(
                     db,
                     user.id,
                     {
                         "title": "Evening check-in",
-                        "body": "How was your day?",
+                        "body": "How was your day?" + _tomorrow_preview(db, user, local),
                         "tag": f"evening-{today.isoformat()}",
                         "url": "/",
                     },
                 )
+
+        sent += _overdue_pass(db, clocks, now)
+        sent += _dinner_pass(db, clocks, now)
+        sent += _sync_quiet_pass(db, clocks, now)
+        sent += _verse_pass(db, clocks, now)
+    return sent
+
+
+def _overdue_pass(db: Session, clocks: dict[int, dt.datetime], now: dt.datetime) -> int:
+    """One afternoon sweep of today's timed cards that slipped past unchecked:
+    "Still open from today: …". Nothing overdue claims quietly, so a card
+    that goes overdue at 17:30 doesn't ring a belated sweep."""
+    sent = 0
+    for user, local in _due_users(db, "overdue", clocks, now):
+        if settings.overdue_hour <= local.hour < 19:
+            today = local.date()
+            if not _claim_digest(db, user.id, today, "overdue"):
+                continue
+            if not wants(user, "overdue"):
+                continue
+            missed = _overdue_today(db, user, local)
+            if not missed:
+                continue
+            titles = [item.title for item in missed[:3]]
+            body = "Still open from today: " + ", ".join(titles)
+            if len(missed) > 3:
+                body += f" and {len(missed) - 3} more"
+            body += "."
+            sent += send_to_user(
+                db,
+                user.id,
+                {
+                    "title": "A few things slipped past",
+                    "body": body,
+                    "tag": f"overdue-{today.isoformat()}",
+                    "url": "/",
+                },
+            )
+    return sent
+
+
+def _dinner_pass(db: Session, clocks: dict[int, dt.datetime], now: dt.datetime) -> int:
+    """When tonight's dinner plan carries a set time, the household's adults
+    hear about it dinner_lead_minutes before. The claim is per member per day,
+    so nudging the time later the same evening doesn't ring twice."""
+    sent = 0
+    candidate_days = {local.date() for local in clocks.values()} or {now.date()}
+    meals = (
+        db.scalars(
+            select(Meal)
+            .options(selectinload(Meal.recipe))
+            .where(
+                Meal.slot == MealSlot.dinner,
+                Meal.time_of_day.is_not(None),
+                Meal.date_for.in_(candidate_days),
+            )
+        )
+        .unique()
+        .all()
+    )
+    for meal in meals:
+        local = clocks.get(meal.family_id, now)
+        if meal.date_for != local.date():
+            continue
+        window_start = (
+            dt.datetime.combine(meal.date_for, meal.time_of_day)
+            - dt.timedelta(minutes=settings.dinner_lead_minutes)
+        ).time()
+        if window_start > meal.time_of_day:
+            window_start = dt.time(0, 0)  # a dinner just past midnight; clamp
+        if not (window_start <= local.time() < meal.time_of_day):
+            continue
+        what = meal.recipe.name if meal.recipe is not None else (meal.custom_title or "")
+        payload = {
+            "title": f"Dinner at {_fmt(meal.time_of_day)}",
+            "body": what,
+            "tag": f"dinner-{meal.date_for.isoformat()}",
+            "url": "/",
+        }
+        adults = (
+            db.scalars(
+                select(User)
+                .join(PushSubscription, PushSubscription.user_id == User.id)
+                .where(User.family_id == meal.family_id)
+                .distinct()
+            )
+            .unique()
+            .all()
+        )
+        for member in adults:
+            if member.is_minor or not wants(member, "dinner"):
+                continue
+            if not _claim_digest(db, member.id, meal.date_for, "dinner"):
+                continue
+            sent += send_to_user(db, member.id, payload)
+    return sent
+
+
+def _sync_quiet_pass(db: Session, clocks: dict[int, dt.datetime], now: dt.datetime) -> int:
+    """Tell a member their phone's health sync stalled — the rings just look
+    wrong until someone notices otherwise. Morning window, and at most one
+    nudge a week: the claim row is written only when a nudge actually goes
+    out, and any 'sync' row in the last seven days keeps things quiet."""
+    sent = 0
+    now_utc = dt.datetime.now(dt.timezone.utc)
+    cutoff = now_utc - dt.timedelta(hours=settings.sync_stale_hours)
+    for user, local in _due_users(db, "sync", clocks, now):
+        if settings.digest_hour <= local.hour < 12:
+            today = local.date()
+            if not wants(user, "sync"):
+                continue
+            token = db.get(IngestToken, user.id)
+            if token is None:
+                continue
+            last = token.last_used_at or token.created_at
+            if last.tzinfo is None:  # SQLite hands tz-aware columns back naive
+                last = last.replace(tzinfo=dt.timezone.utc)
+            if last > cutoff:
+                continue
+            recently_told = db.scalar(
+                select(DigestLog.id)
+                .where(
+                    DigestLog.user_id == user.id,
+                    DigestLog.kind == "sync",
+                    DigestLog.date_for > today - dt.timedelta(days=7),
+                )
+                .limit(1)
+            )
+            if recently_told is not None:
+                continue
+            if not _claim_digest(db, user.id, today, "sync"):
+                continue
+            days = max((now_utc - last).days, 2)
+            sent += send_to_user(
+                db,
+                user.id,
+                {
+                    "title": "Health sync has gone quiet",
+                    "body": (
+                        f"No health data from your phone in {days} days."
+                        " Open your sync app and check its automation."
+                    ),
+                    "tag": f"sync-{today.isoformat()}",
+                    "url": "/",
+                },
+            )
+    return sent
+
+
+def _verse_pass(db: Session, clocks: dict[int, dt.datetime], now: dt.datetime) -> int:
+    """An evening word to opted-in readers with a real streak (2+ days) who
+    haven't finished today's verses. An invitation, not a guilt trip — and a
+    phone already past midnight that checked off "tomorrow" counts as read,
+    exactly like the streak itself (see verses.streaks_for)."""
+    from sqlalchemy import func
+
+    from app.models import VerseCheck
+    from app.routers.verses import VERSES_PER_DAY, streaks_for
+
+    sent = 0
+    for user, local in _due_users(db, "verse", clocks, now):
+        if settings.evening_hour <= local.hour < 22:
+            today = local.date()
+            if not _claim_digest(db, user.id, today, "verse"):
+                continue
+            if not user.verses_enabled or not wants(user, "verse"):
+                continue
+            read_already = db.execute(
+                select(VerseCheck.date_for)
+                .where(VerseCheck.user_id == user.id, VerseCheck.date_for >= today)
+                .group_by(VerseCheck.date_for)
+                .having(func.count() >= VERSES_PER_DAY)
+            ).first()
+            if read_already is not None:
+                continue
+            streak = streaks_for(db, [user.id], today).get(user.id, 0)
+            if streak < 2:
+                continue
+            sent += send_to_user(
+                db,
+                user.id,
+                {
+                    "title": "Tonight's reading",
+                    "body": f"Your {streak}-day verse streak ends at midnight.",
+                    "tag": f"verse-{today.isoformat()}",
+                    "url": "/",
+                },
+            )
     return sent
 
 

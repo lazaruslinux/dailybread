@@ -1262,6 +1262,18 @@ export const unsubscribePush = (endpoint: string) =>
 
 export const sendTestPush = () => request<{ sent: number }>('/push/test', { method: 'POST' })
 
+// Per-kind switches. The server stores only turned-off kinds (missing = on),
+// but always answers with the full map; PUT takes just the kinds to flip.
+export type PushPrefs = Record<string, boolean>
+
+export const getPushPrefs = () => request<{ prefs: PushPrefs }>('/push/prefs')
+
+export const setPushPrefs = (prefs: Partial<PushPrefs>) =>
+  request<{ prefs: PushPrefs }>('/push/prefs', {
+    method: 'PUT',
+    body: JSON.stringify({ prefs }),
+  })
+
 // ---- villages ---------------------------------------------------------------
 // Private circles of linked families. Nothing is discoverable; the invite code
 // is shown exactly once when minted and can only be regenerated, never re-read.

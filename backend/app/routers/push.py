@@ -7,7 +7,14 @@ from app.config import settings
 from app.db import get_db
 from app.deps import require_family
 from app.models import PushSubscription, User
-from app.schemas import PushKeyOut, PushSubscriptionIn, PushTestOut, PushUnsubscribeIn
+from app.schemas import (
+    PushKeyOut,
+    PushPrefsIn,
+    PushPrefsOut,
+    PushSubscriptionIn,
+    PushTestOut,
+    PushUnsubscribeIn,
+)
 
 router = APIRouter(prefix="/push", tags=["push"])
 
@@ -67,6 +74,37 @@ def unsubscribe(
     if sub is not None:
         db.delete(sub)
         db.commit()
+
+
+def _prefs_out(user: User) -> PushPrefsOut:
+    return PushPrefsOut(prefs={kind: push.wants(user, kind) for kind in push.PREF_KINDS})
+
+
+@router.get("/prefs", response_model=PushPrefsOut)
+def get_prefs(user: User = Depends(require_family)):
+    """The member's per-kind switches, every kind present (missing = on)."""
+    return _prefs_out(user)
+
+
+@router.put("/prefs", response_model=PushPrefsOut)
+def set_prefs(
+    data: PushPrefsIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_family),
+):
+    """Flip one or more kinds; kinds not mentioned keep their setting. Only
+    turned-off kinds are stored, so the column stays NULL for the common
+    everything-on member and new kinds default on for everyone."""
+    unknown = set(data.prefs) - push.PREF_KINDS
+    if unknown:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Unknown notification kinds: {', '.join(sorted(unknown))}",
+        )
+    merged = {**(user.push_prefs or {}), **data.prefs}
+    user.push_prefs = {kind: False for kind, on in merged.items() if not on} or None
+    db.commit()
+    return _prefs_out(user)
 
 
 @router.post("/test", response_model=PushTestOut)

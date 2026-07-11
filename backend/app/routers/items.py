@@ -832,12 +832,14 @@ def _schedule_text(item: Item) -> str:
 
 def _board_change_recipients(db: Session, item: Item, actor: User) -> list[int]:
     """Adults who can see the card, minus whoever made the change."""
-    from app.push import _recipients, enabled
+    from app.push import _recipients, enabled, wants
 
     if not enabled():
         return []
     return [
-        p.id for p in _recipients(db, item) if not p.is_minor and p.id != actor.id
+        p.id
+        for p in _recipients(db, item)
+        if not p.is_minor and p.id != actor.id and wants(p, "family")
     ]
 
 
@@ -880,7 +882,8 @@ def _notify_parents_of_pending(db: Session, item: Item, kid: User, date_for: dt.
             select(User).where(User.family_id == kid.family_id, User.role == Role.parent)
         ).all()
         for parent in parents:
-            push.send_to_user(db, parent.id, payload)
+            if push.wants(parent, "approvals"):
+                push.send_to_user(db, parent.id, payload)
     except Exception:
         log.exception("approval push failed (check-off already saved)")
 

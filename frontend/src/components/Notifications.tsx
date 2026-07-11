@@ -39,12 +39,124 @@ type State =
   | { kind: 'off' }
   | { kind: 'on'; endpoint: string }
 
+// The per-kind switches, grouped the way a person thinks about their day.
+// Kind names must match the server's PREF_KINDS. The verse row appears only
+// for members who receive daily verses at all.
+const PREF_GROUPS: {
+  name: string
+  rows: { kind: string; label: string; hint: string; verses?: boolean }[]
+}[] = [
+  {
+    name: 'Reminders',
+    rows: [
+      {
+        kind: 'timed',
+        label: 'Before timed cards',
+        hint: 'A ping shortly before anything timed on your board',
+      },
+      {
+        kind: 'overdue',
+        label: 'Past-due sweep',
+        hint: 'One afternoon note listing what slipped past today',
+      },
+      {
+        kind: 'dinner',
+        label: 'Dinner time',
+        hint: "When tonight's plan has a set time, shortly before",
+      },
+    ],
+  },
+  {
+    name: 'Daily check-ins',
+    rows: [
+      { kind: 'morning', label: 'Morning summary', hint: "Your day's board, first thing" },
+      {
+        kind: 'midday',
+        label: 'Mid-day food check',
+        hint: 'Calories left for the day, if you use the diary',
+      },
+      {
+        kind: 'evening',
+        label: 'Evening check-in',
+        hint: "How was your day, plus tomorrow's first appointment",
+      },
+    ],
+  },
+  {
+    name: 'Family activity',
+    rows: [
+      {
+        kind: 'family',
+        label: 'Board changes & dinner picks',
+        hint: 'When someone adds, moves, or removes a card, or picks dinner',
+      },
+      {
+        kind: 'approvals',
+        label: 'Kid check-offs',
+        hint: 'When a kid finishes something that waits on your OK',
+      },
+    ],
+  },
+  {
+    name: 'Health & habits',
+    rows: [
+      {
+        kind: 'sync',
+        label: 'Sync gone quiet',
+        hint: 'If your phone stops sending health data for a couple of days',
+      },
+      {
+        kind: 'verse',
+        label: 'Verse streak at risk',
+        hint: 'An evening word before a reading streak ends',
+        verses: true,
+      },
+    ],
+  },
+]
+
+function PrefRow({
+  label,
+  hint,
+  checked,
+  onToggle,
+}: {
+  label: string
+  hint: string
+  checked: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onToggle}
+      className="flex w-full items-center justify-between gap-3 rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left"
+    >
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-fg/85">{label}</span>
+        <span className="block text-[11px] leading-snug text-fg/45">{hint}</span>
+      </span>
+      <span
+        className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${checked ? 'bg-accent' : 'bg-fg/15'}`}
+      >
+        <span
+          className={`absolute top-0.5 h-5 w-5 rounded-full bg-fg transition-all ${checked ? 'left-[1.125rem]' : 'left-0.5'}`}
+        />
+      </span>
+    </button>
+  )
+}
+
 export function NotificationsCard() {
   const { user } = useAuth()
   const [state, setState] = useState<State>({ kind: 'checking' })
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [prefs, setPrefs] = useState<api.PushPrefs | null>(null)
+  const [versesOn, setVersesOn] = useState(false)
 
   useEffect(() => {
     const reason = unsupportedReason()
@@ -61,6 +173,25 @@ export function NotificationsCard() {
       setState(sub ? { kind: 'on', endpoint: sub.endpoint } : { kind: 'off' })
     })
   }, [])
+
+  // The switches matter only once this device can ring at all.
+  useEffect(() => {
+    if (state.kind !== 'on') return
+    api.getPushPrefs().then((r) => setPrefs(r.prefs)).catch(() => {})
+    api.getVerses().then((v) => setVersesOn(v.enabled)).catch(() => {})
+  }, [state.kind])
+
+  async function flip(kind: string) {
+    if (!prefs) return
+    const before = prefs
+    setPrefs({ ...prefs, [kind]: !prefs[kind] })
+    try {
+      const r = await api.setPushPrefs({ [kind]: !before[kind] })
+      setPrefs(r.prefs)
+    } catch {
+      setPrefs(before) // the switch snaps back; the next tap tries again
+    }
+  }
 
   async function enable() {
     setBusy(true)
@@ -163,8 +294,8 @@ export function NotificationsCard() {
         <>
           <p className="mb-3 text-xs leading-relaxed text-fg/50">
             {on
-              ? 'On for this device: a ping shortly before anything timed on your board, plus a morning summary of your day.'
-              : 'Get a ping shortly before anything timed on your board, plus a morning summary of your day. Each person turns this on per device.'}
+              ? 'On for this device. Below, choose what rings — those choices follow your account onto every device.'
+              : 'Reminders before timed cards, daily check-ins, and family activity, straight to this device. Each person turns this on per device.'}
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -199,6 +330,31 @@ export function NotificationsCard() {
               </button>
             )}
           </div>
+
+          {on && prefs && (
+            <div className="mt-4 flex flex-col gap-3" data-push-prefs>
+              {PREF_GROUPS.map((group) => {
+                const rows = group.rows.filter((row) => !row.verses || versesOn)
+                if (rows.length === 0) return null
+                return (
+                  <div key={group.name} className="flex flex-col gap-1.5">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-fg/40">
+                      {group.name}
+                    </span>
+                    {rows.map((row) => (
+                      <PrefRow
+                        key={row.kind}
+                        label={row.label}
+                        hint={row.hint}
+                        checked={prefs[row.kind] !== false}
+                        onToggle={() => void flip(row.kind)}
+                      />
+                    ))}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </>
       )}
 

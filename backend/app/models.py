@@ -231,6 +231,11 @@ class User(Base):
     count_watch_kcal: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    # Per-kind push preferences, e.g. {"midday": false}. Only turned-OFF kinds
+    # are stored; a missing key (or NULL column) means ON, so new notification
+    # kinds arrive enabled for everyone without a backfill. The valid kinds
+    # live in app.push.PREF_KINDS; app.push.wants() reads this.
+    push_prefs: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     @property

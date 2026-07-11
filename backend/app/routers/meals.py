@@ -316,7 +316,7 @@ def cast_dinner_vote(
                         User.family_id == parent.family_id, User.id != parent.id
                     )
                 ):
-                    if not member.is_minor:
+                    if not member.is_minor and push.wants(member, "family"):
                         push.send_to_user(db, member.id, payload)
         except Exception:
             pass  # the vote is saved; a failed nudge is not worth a 500
