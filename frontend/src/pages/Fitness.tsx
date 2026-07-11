@@ -159,6 +159,22 @@ function CopyRow({ label, value }: { label: string; value: string }) {
 
 type Platform = 'apple' | 'android'
 
+// The device someone opens this sheet on is almost always the phone the
+// health data lives on, so lead with its own path. A desktop browser says
+// nothing about the phone in their pocket — those get asked. The instruction
+// screen always offers the other path, so a wrong guess costs one tap.
+function detectPlatform(): Platform | null {
+  const ua = navigator.userAgent
+  if (/Android/i.test(ua)) return 'android'
+  if (/iPhone|iPad|iPod/.test(ua)) return 'apple'
+  return null
+}
+
+const PLATFORM_LABEL: Record<Platform, string> = {
+  apple: 'iPhone + Apple Watch',
+  android: 'Android + Pixel Watch',
+}
+
 const PLATFORM_COPY: Record<Platform, { title: string; intro: string; after: string }> = {
   apple: {
     title: 'Connect Apple Health',
@@ -177,9 +193,7 @@ const PLATFORM_COPY: Record<Platform, { title: string; intro: string; after: str
 }
 
 function ConnectSheet({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
-  // The Android path is parked until it's been field-tested on a real Pixel;
-  // initialize to null to bring the device chooser back.
-  const [platform, setPlatform] = useState<Platform | null>('apple')
+  const [platform, setPlatform] = useState<Platform | null>(detectPlatform)
   const [minted, setMinted] = useState<api.IngestToken | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -206,10 +220,10 @@ function ConnectSheet({ onClose, onDone }: { onClose: () => void; onDone: () => 
         </p>
         <div className="flex flex-col gap-2">
           <Button type="button" onClick={() => setPlatform('apple')} className="w-full">
-            iPhone + Apple Watch
+            {PLATFORM_LABEL.apple}
           </Button>
           <Button type="button" variant="ghost" onClick={() => setPlatform('android')} className="w-full">
-            Android + Pixel Watch
+            {PLATFORM_LABEL.android}
           </Button>
         </div>
       </Sheet>
@@ -217,6 +231,18 @@ function ConnectSheet({ onClose, onDone }: { onClose: () => void; onDone: () => 
   }
 
   const copy = PLATFORM_COPY[platform]
+  const other: Platform = platform === 'apple' ? 'android' : 'apple'
+  // The key itself is platform-agnostic, so switching after minting just
+  // swaps the instructions — never re-mints.
+  const switchLink = (
+    <button
+      type="button"
+      onClick={() => setPlatform(other)}
+      className="self-start py-1 text-xs font-semibold text-accent-bright"
+    >
+      {PLATFORM_LABEL[other]} instead?
+    </button>
+  )
   return (
     <Sheet onClose={minted ? onDone : onClose}>
       <h3 className="mb-1 text-lg font-bold">{copy.title}</h3>
@@ -224,9 +250,12 @@ function ConnectSheet({ onClose, onDone }: { onClose: () => void; onDone: () => 
         <>
           <p className="mb-4 text-sm text-fg/60">{copy.intro}</p>
           <FormError message={error} />
-          <Button onClick={mint} disabled={busy}>
-            {busy ? 'Making a key…' : 'Make my sync key'}
-          </Button>
+          <div className="flex flex-col gap-2">
+            <Button onClick={mint} disabled={busy}>
+              {busy ? 'Making a key…' : 'Make my sync key'}
+            </Button>
+            {switchLink}
+          </div>
         </>
       ) : (
         <div className="flex flex-col gap-4">
@@ -240,6 +269,7 @@ function ConnectSheet({ onClose, onDone }: { onClose: () => void; onDone: () => 
             away. Only you can see it.
           </p>
           <Button onClick={onDone}>Done</Button>
+          {switchLink}
         </div>
       )}
     </Sheet>

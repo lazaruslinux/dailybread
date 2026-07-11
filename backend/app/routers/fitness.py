@@ -52,10 +52,10 @@ from app.schemas import (
 router = APIRouter(tags=["fitness"])
 log = logging.getLogger("dailybread.ingest")
 
-# The Android dialect (HC Webhook) is built and unit-tested but hasn't met a
-# real device yet, so it stays parked until it has (2026-07-10, his call).
-# Flip to True to accept those payloads; the tests flip it themselves.
-HC_INGEST_ENABLED = False
+# The Android dialect (HC Webhook). Un-parked 2026-07-11 so the connect flow
+# can offer Android for real: unit-tested and exercised via captured payloads,
+# still awaiting its first real device. Flip to False to park it again.
+HC_INGEST_ENABLED = True
 
 # Exporter metric name -> (our metric, how multiple same-day points combine).
 # The exporter can send one point per day or many intra-day ones depending on

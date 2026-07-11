@@ -12,8 +12,8 @@ TODAY = dt.date.today()
 
 @pytest.fixture(autouse=True)
 def _hc_enabled(monkeypatch):
-    """The Android dialect is parked in prod until field-tested; these tests
-    exercise it as if the switch were on."""
+    """Pin the switch on: these tests must keep exercising the dialect even
+    if it's ever parked again (it shipped parked 2026-07-10 to -11)."""
     monkeypatch.setattr(fitness, "HC_INGEST_ENABLED", True)
 
 
