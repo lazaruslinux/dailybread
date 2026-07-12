@@ -197,12 +197,17 @@ export function You({ onOpenAdmin }: { onOpenAdmin: () => void }) {
   if (!user) return null
 
   if (touring) {
+    // Fixed overlay: the replay button sits low on the page, so an inline
+    // render would open the tour below the fold. This centers it in the
+    // viewport wherever you were scrolled.
     return (
-      <WelcomeTour
-        firstName={user.display_name.split(/\s+/)[0]}
-        context="replay"
-        onDone={() => setTouring(false)}
-      />
+      <div className="fixed inset-0 z-40 overflow-y-auto bg-[var(--bg-base)]">
+        <WelcomeTour
+          firstName={user.display_name.split(/\s+/)[0]}
+          context="replay"
+          onDone={() => setTouring(false)}
+        />
+      </div>
     )
   }
 
