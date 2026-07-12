@@ -2,13 +2,22 @@ import datetime as dt
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app import crumbs, push, recurrence
 from app.db import get_db
 from app.deps import require_family, require_parent
-from app.models import Completion, Item, ItemKind, RepeatType, Role, User, Visibility
+from app.models import (
+    Completion,
+    Item,
+    ItemKind,
+    ReminderLog,
+    RepeatType,
+    Role,
+    User,
+    Visibility,
+)
 from app.schemas import (
     AssigneeCompletion,
     CalendarDayOut,
@@ -699,9 +708,16 @@ def update_item(
         item.shared_to_feed = data.shared_to_feed
 
     _validate_item(item)
+    rescheduled = tuple(getattr(item, f) for f in _SCHEDULE_FIELDS) != before_schedule
+    if rescheduled:
+        # A rescheduled card reminds afresh on its new schedule. Its old
+        # ReminderLog claims must go: yesterday's heads-up row, or a past-due
+        # nudge holding (item, day+1), would silently swallow the new day's
+        # reminder — an overdue card moved to tomorrow is exactly that case.
+        db.execute(delete(ReminderLog).where(ReminderLog.item_id == item.id))
     db.commit()
     db.refresh(item)
-    if tuple(getattr(item, f) for f in _SCHEDULE_FIELDS) != before_schedule:
+    if rescheduled:
         _push_board_change(
             db,
             _board_change_recipients(db, item, parent),

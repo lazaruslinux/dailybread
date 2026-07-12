@@ -96,3 +96,14 @@ def test_delete_reverts_to_initials(owner):
     assert owner.delete(f"/users/{uid}/avatar").status_code == 204
     assert owner.get(f"/users/{uid}/avatar").status_code == 404
     assert owner.get("/auth/me").json()["avatar_updated_at"] is None
+
+
+def test_a_decode_bomb_is_refused_by_its_header(owner, monkeypatch):
+    """Oversized dimensions are rejected from the header alone, before any
+    pixel buffer is allocated (the cap is shrunk so a tiny file trips it)."""
+    from app import avatars
+
+    monkeypatch.setattr(avatars, "MAX_PIXELS", 100)
+    res = upload(owner, user_id(owner), data=png_bytes(size=(20, 20)))
+    assert res.status_code == 400
+    assert "too large" in res.json()["detail"]

@@ -406,12 +406,19 @@ def list_users(db: Session = Depends(get_db), admin: User = Depends(require_admi
 
 
 def _managed_user(db: Session, user_id: int, admin: User) -> User:
-    """An account this admin may manage: their own family's members, plus
-    family-less new-household accounts (someone must be able to reset a
-    forgotten password before the wizard runs). Cross-family lookups 404 so
-    other households' ids don't leak."""
+    """An account this admin may manage: their own family's members, plus —
+    for the SERVER admin alone — family-less new-household accounts (someone
+    must be able to reset a forgotten password before the wizard runs, and
+    the server admin minted every such account). Any other family's admin
+    gets the same 404 as for cross-family ids, so nothing leaks and nobody
+    can hijack a pending household before its owner first signs in."""
     user = db.get(User, user_id)
-    if user is None or (user.family_id is not None and user.family_id != admin.family_id):
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such user")
+    if user.family_id is None:
+        if not admin.is_owner:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "No such user")
+    elif user.family_id != admin.family_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such user")
     return user
 

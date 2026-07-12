@@ -309,3 +309,28 @@ def test_verse_word_respects_the_pref(owner, configured, push_outbox, engine_db)
 
     assert push_engine.digest_tick(at(19)) == 1
     assert push_outbox[0][1]["title"] == "Evening check-in"
+
+
+def test_a_rescheduled_overdue_card_reminds_again(owner, configured, push_outbox, engine_db):
+    """Moving an overdue card to a new day clears its ReminderLog claims: the
+    past-due nudge held (item, today), which would otherwise swallow the fresh
+    heads-up when the card is rescheduled onto today."""
+    owner.put("/push/subscription", json=SUB)
+    card = make(
+        owner,
+        title="Call the plumber",
+        date_for=YESTERDAY.isoformat(),
+        time_of_day="09:00:00",
+    )
+    push_outbox.clear()
+    assert push_engine.digest_tick(at(10)) == 1  # the past-due nudge claims (item, TODAY)
+
+    res = owner.patch(
+        f"/items/{card['id']}",
+        json={"date_for": TODAY.isoformat(), "time_of_day": "18:00:00"},
+    )
+    assert res.status_code == 200, res.text
+    push_outbox.clear()  # the reschedule board-change push isn't under test
+
+    assert push_engine.reminder_tick(dt.datetime.combine(TODAY, dt.time(17, 50))) == 1
+    assert push_outbox[0][1]["title"] == "Call the plumber"

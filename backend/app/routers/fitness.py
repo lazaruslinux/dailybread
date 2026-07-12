@@ -345,8 +345,6 @@ def _import_workouts(db: Session, user: User, workouts) -> tuple[int, set[dt.dat
     the routine auto-complete pass."""
     touched = 0
     days: set[dt.date] = set()
-    saw_route = False
-    first_keys: list[str] | None = None
     for entry in workouts if isinstance(workouts, list) else []:
         if not isinstance(entry, dict):
             continue
@@ -357,10 +355,6 @@ def _import_workouts(db: Session, user: User, workouts) -> tuple[int, set[dt.dat
         external = entry.get("id") if isinstance(entry.get("id"), str) else None
         heart = entry.get("heartRate")
         route = _parse_route(entry.get("route"))
-        if route is not None:
-            saw_route = True
-        elif first_keys is None:
-            first_keys = sorted(entry.keys())
         _upsert_workout(
             db,
             user,
@@ -376,10 +370,6 @@ def _import_workouts(db: Session, user: User, workouts) -> tuple[int, set[dt.dat
         )
         touched += 1
         days.add(started.date())
-    if touched and not saw_route:
-        # Diagnostic for the exporter's settings/shape: field NAMES only,
-        # never values — no GPS coordinates ever reach the logs.
-        log.info("workouts imported with no route data; first entry fields: %s", first_keys)
     return touched, days
 
 

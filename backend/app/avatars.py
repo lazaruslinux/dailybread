@@ -17,6 +17,12 @@ from app.config import settings
 # few MB; 12 MB is generous headroom without inviting a decode-bomb.
 MAX_UPLOAD_BYTES = 12 * 1024 * 1024
 
+# Decode ceiling in pixels, checked from the header before any pixel buffer
+# is allocated: a small crafted PNG can claim absurd dimensions and cost
+# gigabytes to decode. 130 MP clears any phone camera's full-resolution
+# output with room to spare.
+MAX_PIXELS = 130_000_000
+
 # The one size we store. Retina phone displays render the largest avatar around
 # 80pt, so 256px covers 3x density with room to spare.
 SIZE = 256
@@ -42,7 +48,13 @@ def process_and_save(raw: bytes, user_id: int) -> None:
     Raises BadImage if the bytes can't be read as an image."""
     try:
         img = Image.open(io.BytesIO(raw))
+        if img.width * img.height > MAX_PIXELS:
+            raise BadImage("That image is too large.")
         img.load()
+    except Image.DecompressionBombError as err:
+        # Pillow's own backstop (it fires at open() for the truly absurd,
+        # before our dimension check can run).
+        raise BadImage("That image is too large.") from err
     except (UnidentifiedImageError, OSError) as err:
         raise BadImage("Could not read that image.") from err
 

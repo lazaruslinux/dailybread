@@ -125,3 +125,18 @@ def test_grocery_is_scoped_including_stores_and_clear(owner, other):
     other.post("/grocery/clear-checked")
     a_titles = {i["title"] for i in owner.get("/grocery").json()["items"]}
     assert "A eggs" in a_titles
+
+
+def test_only_the_owner_manages_a_pending_household(owner, other):
+    """A family-less new-household account is the SERVER admin's to rescue.
+    Another family's admin gets the cross-family 404 — otherwise they could
+    reset its password and hijack the household before its owner signs in."""
+    res = owner.post("/auth/users", json={**BKID, "role": "parent", "new_household": True})
+    assert res.status_code == 201, res.text
+    uid = res.json()["id"]
+
+    assert other.post(f"/auth/users/{uid}/reset-password").status_code == 404
+    assert other.patch(f"/auth/users/{uid}", json={"display_name": "Mine now"}).status_code == 404
+    assert other.delete(f"/auth/users/{uid}").status_code == 404
+
+    assert owner.post(f"/auth/users/{uid}/reset-password").status_code == 200
