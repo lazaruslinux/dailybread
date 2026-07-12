@@ -255,7 +255,7 @@ function TargetsSheet({
           </div>
           {!autoAvailable && (
             <p className="mt-1.5 text-xs text-fg/40">
-              Auto needs your health profile (and a weigh-in) filled in below on this tab.
+              Auto needs your health profile (and a weigh-in), set up under You.
             </p>
           )}
         </div>
@@ -1280,11 +1280,15 @@ function NutritionTab() {
         <>
           <TargetsCard day={day} onEdit={() => setEditingTargets(true)} />
           <LockCard day={day} onChanged={refresh} />
-          <HealthCard
-            health={health}
-            onEdit={() => setEditingHealth(true)}
-            onLogWeight={() => setLoggingWeight(true)}
-          />
+          {/* Only the configured calculator: the set-it-up invitation lives in
+              You now (Health profile settings row). */}
+          {health?.computed != null && (
+            <HealthCard
+              health={health}
+              onEdit={() => setEditingHealth(true)}
+              onLogWeight={() => setLoggingWeight(true)}
+            />
+          )}
           {SLOTS.map((s) => (
             <SlotCard
               key={s.id}

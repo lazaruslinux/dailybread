@@ -28,7 +28,7 @@ type Overlay = { name: 'profile'; id: number } | { name: 'admin' } | { name: 'ca
 const TAB_TITLE: Record<Tab, string> = {
   home: '', // Home shows the brand row instead of a title
   nutrition: 'Nutrition',
-  fitness: 'Fitness',
+  fitness: 'Health',
   kitchen: 'Kitchen',
   you: 'You',
 }

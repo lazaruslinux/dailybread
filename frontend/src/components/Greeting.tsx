@@ -6,12 +6,11 @@ import { Button, Field } from './ui'
 import { Sheet } from './Recipes'
 
 // The first open of the day says hello and offers to set today's mood and
-// status. Saving quiets it for the day (as does a mood already set on another
-// device); "Maybe later" quiets only this visit, so opening the app again
-// later the same day offers once more.
+// status. Once is once: saving, a mood already set on another device, or
+// "I'll set it later" all quiet it until tomorrow (his call 2026-07-12 -- it
+// used to re-offer on every visit and read as nagging).
 
 const dayKey = (id: number) => `db_greet_${id}`
-const visitKey = (id: number) => `db_greet_skip_${id}`
 
 export function DailyGreeting() {
   const { user } = useAuth()
@@ -24,7 +23,6 @@ export function DailyGreeting() {
     if (!user) return
     const today = api.localDate()
     if (localStorage.getItem(dayKey(user.id)) === today) return
-    if (sessionStorage.getItem(visitKey(user.id)) === today) return
     let cancelled = false
     api
       .getProfile(user.id)
@@ -49,7 +47,7 @@ export function DailyGreeting() {
   if (!user || !profile) return null
 
   const later = () => {
-    sessionStorage.setItem(visitKey(user.id), api.localDate())
+    localStorage.setItem(dayKey(user.id), api.localDate())
     setProfile(null)
   }
 
@@ -120,7 +118,7 @@ export function DailyGreeting() {
           onClick={later}
           className="rounded-xl px-3 py-2 text-sm font-semibold text-fg/50 transition-colors hover:bg-fg/10 hover:text-fg"
         >
-          Maybe later
+          I'll set it later
         </button>
       </div>
     </Sheet>

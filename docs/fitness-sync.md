@@ -1,10 +1,10 @@
 # Syncing health and fitness data
 
-The Fitness tab fills itself from your phone. Nothing polls a cloud API and
+The Health tab fills itself from your phone. Nothing polls a cloud API and
 no third-party service ever sees the numbers: an app **on the phone** reads
 the health store and POSTs the data straight to your own server on a
 schedule. Each family member mints their own sync key in the app
-(Fitness → Connect), and everything imported is visible only to them.
+(Health → Connect), and everything imported is visible only to them.
 
 Both platforms use the same endpoint and the same kind of key. The server
 tells the two payload shapes apart on its own.
@@ -18,7 +18,7 @@ tells the two payload shapes apart on its own.
 
 ## Getting your key
 
-1. In the app, open **Fitness** and tap **Connect** at the bottom.
+1. In the app, open **Health** and tap **Connect** at the bottom.
 2. The app detects what phone you're holding and shows the right path
    (there's a link to switch if it guessed wrong).
 3. Tap **Make my sync key**. You get two things, shown only once:
@@ -38,7 +38,7 @@ not a problem.
    heart rate, weight, body fat percentage) and set the schedule.
 4. Create a **second automation for workouts**, same URL and header, and
    turn on **route data** if you want the little route maps on run cards.
-5. Trigger a manual sync once; the Fitness tab should fill within moments.
+5. Trigger a manual sync once; the Health tab should fill within moments.
 
 Notes:
 - Times arrive as your phone's local wall clock and are stored that way.

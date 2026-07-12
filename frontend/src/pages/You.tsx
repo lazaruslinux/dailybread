@@ -4,8 +4,10 @@ import {
   BookOpen,
   ChevronLeft,
   ChevronRight,
+  HeartPulse,
   KeyRound,
   LogOut,
+  Map,
   Palette,
   Trees,
   Users,
@@ -20,6 +22,8 @@ import { NotificationsCard } from '../components/Notifications'
 import { VillagesCard } from '../components/Villages'
 import { getTheme, setTheme, THEMES, type Theme } from '../lib/theme'
 import { BreadIcon } from '../components/BreadIcon'
+import { HealthSettings } from '../components/Health'
+import { WelcomeTour } from '../components/WelcomeTour'
 import { ChangePasswordSheet } from './Password'
 import { BreadcrumbsPage } from './Breadcrumbs'
 import { Profile } from './Profile'
@@ -146,12 +150,13 @@ function VersePrefsCard() {
 // The settings that moved one level down: set-and-forget things open as
 // subpages, so the daily ritual (profile, mood, status, journal) stays one
 // scroll at the top level.
-type SubPage = 'crumbs' | 'notifications' | 'appearance' | 'verses' | 'villages'
+type SubPage = 'crumbs' | 'notifications' | 'appearance' | 'health' | 'verses' | 'villages'
 
 const SUB_META: Record<SubPage, { label: string; hint: string }> = {
   crumbs: { label: 'Breadcrumbs & Levels', hint: 'How the family earns and levels up' },
   notifications: { label: 'Notifications', hint: 'What rings this device' },
   appearance: { label: 'Appearance', hint: 'Light and dark' },
+  health: { label: 'Health profile', hint: 'Your body, calorie plan, and weigh-ins' },
   verses: { label: 'Daily Bread', hint: 'Manage daily scripture settings' },
   villages: { label: 'Villages', hint: 'Linked families and what they see' },
 }
@@ -160,17 +165,19 @@ function SettingsRow({
   Icon,
   page,
   onOpen,
+  iconClass = 'text-fg/55',
 }: {
   Icon: LucideIcon
   page: SubPage
   onOpen: (page: SubPage) => void
+  iconClass?: string
 }) {
   return (
     <button
       onClick={() => onOpen(page)}
       className="glass flex items-center gap-3 p-4 text-left transition-colors hover:bg-fg/5"
     >
-      <Icon className="h-4 w-4 shrink-0 text-fg/55" />
+      <Icon className={`h-4 w-4 shrink-0 ${iconClass}`} />
       <span className="min-w-0 flex-1">
         <span className="block font-semibold text-fg/80">{SUB_META[page].label}</span>
         <span className="block truncate text-xs text-fg/40">{SUB_META[page].hint}</span>
@@ -186,7 +193,18 @@ export function You({ onOpenAdmin }: { onOpenAdmin: () => void }) {
   const { user, logout } = useAuth()
   const [changingPassword, setChangingPassword] = useState(false)
   const [sub, setSub] = useState<SubPage | null>(null)
+  const [touring, setTouring] = useState(false)
   if (!user) return null
+
+  if (touring) {
+    return (
+      <WelcomeTour
+        firstName={user.display_name.split(/\s+/)[0]}
+        context="replay"
+        onDone={() => setTouring(false)}
+      />
+    )
+  }
 
   if (sub !== null) {
     return (
@@ -201,6 +219,7 @@ export function You({ onOpenAdmin }: { onOpenAdmin: () => void }) {
         {sub === 'crumbs' && <BreadcrumbsPage />}
         {sub === 'notifications' && <NotificationsCard />}
         {sub === 'appearance' && <ThemePicker userId={user.id} stored={user.theme} />}
+        {sub === 'health' && <HealthSettings />}
         {sub === 'verses' && <VersePrefsCard />}
         {sub === 'villages' && <VillagesCard />}
       </div>
@@ -217,6 +236,10 @@ export function You({ onOpenAdmin }: { onOpenAdmin: () => void }) {
         <SettingsRow Icon={BreadIcon as unknown as LucideIcon} page="crumbs" onOpen={setSub} />
         <SettingsRow Icon={Bell} page="notifications" onOpen={setSub} />
         <SettingsRow Icon={Palette} page="appearance" onOpen={setSub} />
+        {/* Minors have no health area at all; the API 403s them anyway. */}
+        {!user.is_minor && (
+          <SettingsRow Icon={HeartPulse} page="health" onOpen={setSub} iconClass="text-red-400" />
+        )}
         <SettingsRow Icon={BookOpen} page="verses" onOpen={setSub} />
         <SettingsRow Icon={Trees} page="villages" onOpen={setSub} />
       </div>
@@ -230,6 +253,12 @@ export function You({ onOpenAdmin }: { onOpenAdmin: () => void }) {
             <Users className="h-4 w-4 text-fg/55" /> Family members
           </button>
         )}
+        <button
+          onClick={() => setTouring(true)}
+          className="glass flex items-center gap-3 p-4 text-left font-semibold text-fg/80 transition-colors hover:text-fg"
+        >
+          <Map className="h-4 w-4 text-fg/55" /> Repeat welcome tutorial
+        </button>
         <button
           onClick={() => setChangingPassword(true)}
           className="glass flex items-center gap-3 p-4 text-left font-semibold text-fg/80 transition-colors hover:text-fg"

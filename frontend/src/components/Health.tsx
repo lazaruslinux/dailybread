@@ -1,5 +1,6 @@
+import { AnimatePresence } from 'framer-motion'
 import { HeartPulse, Scale, Target, X } from 'lucide-react'
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import * as api from '../lib/api'
 import { Button, Field, FormError } from './ui'
@@ -7,8 +8,10 @@ import { Sheet } from './Recipes'
 
 // The health layer: an OPTIONAL profile (birthdate, sex, height, activity),
 // a weight log, and a goal that turns into a computed daily calorie target.
-// Setup lives here on the Nutrition tab - deliberately not a sign-in gate;
-// the board half of the app never asks anyone their body fat percentage.
+// Setup lives in You (moved from Nutrition 2026-07-12) - deliberately not a
+// sign-in gate; the board half of the app never asks anyone their body fat
+// percentage. Nutrition still shows the configured calculator card beside
+// the diary it feeds.
 
 const LB_PER_KG = 2.20462
 
@@ -596,5 +599,52 @@ export function HealthCard({
         </button>
       </div>
     </section>
+  )
+}
+
+// The self-contained You-page surface: fetches its own profile and wires the
+// card to both sheets, so You can drop it in like any other settings subpage.
+export function HealthSettings() {
+  const [health, setHealth] = useState<api.Health | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [loggingWeight, setLoggingWeight] = useState(false)
+
+  const refresh = () => api.getHealthProfile().then(setHealth).catch(() => {})
+  useEffect(() => {
+    refresh()
+  }, [])
+
+  return (
+    <>
+      <HealthCard
+        health={health}
+        onEdit={() => setEditing(true)}
+        onLogWeight={() => setLoggingWeight(true)}
+      />
+      <AnimatePresence>
+        {editing && health && (
+          <HealthSheet
+            key="health"
+            health={health}
+            onClose={() => setEditing(false)}
+            onSaved={() => {
+              setEditing(false)
+              refresh()
+            }}
+          />
+        )}
+        {loggingWeight && health && (
+          <WeightSheet
+            key="weight"
+            health={health}
+            onClose={() => setLoggingWeight(false)}
+            onSaved={() => {
+              setLoggingWeight(false)
+              refresh()
+            }}
+          />
+        )}
+      </AnimatePresence>
+    </>
   )
 }

@@ -792,9 +792,18 @@ function ServerOverview() {
 
 // ---- rename the family ---------------------------------------------------------
 
-// Every zone the browser knows, for the family-clock picker.
-const TIMEZONES: string[] =
-  typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : []
+// US zones only for the family-clock picker (his call 2026-07-12): the
+// 400-entry every-zone list was noise. The create-family wizard still sends
+// the browser's own zone, whatever it is.
+const TIMEZONES: { id: string; label: string }[] = [
+  { id: 'America/New_York', label: 'Eastern (New York)' },
+  { id: 'America/Chicago', label: 'Central (Chicago)' },
+  { id: 'America/Denver', label: 'Mountain (Denver)' },
+  { id: 'America/Phoenix', label: 'Arizona (Phoenix)' },
+  { id: 'America/Los_Angeles', label: 'Pacific (Los Angeles)' },
+  { id: 'America/Anchorage', label: 'Alaska (Anchorage)' },
+  { id: 'Pacific/Honolulu', label: 'Hawaii (Honolulu)' },
+]
 
 function RenameFamilySheet({
   current,
@@ -848,9 +857,14 @@ function RenameFamilySheet({
             onChange={(e) => setTimezone(e.target.value)}
           >
             <option value="">Server default</option>
-            {TIMEZONES.map((zone) => (
-              <option key={zone} value={zone}>
-                {zone.replaceAll('_', ' ')}
+            {/* A non-US zone (set by the wizard from someone's browser) still
+                has to show as itself rather than silently misreading. */}
+            {timezone !== '' && !TIMEZONES.some((t) => t.id === timezone) && (
+              <option value={timezone}>{timezone.replaceAll('_', ' ')}</option>
+            )}
+            {TIMEZONES.map(({ id, label }) => (
+              <option key={id} value={id}>
+                {label}
               </option>
             ))}
           </select>
