@@ -58,29 +58,32 @@ function MemberRow({
           mood={strip?.mood?.level ?? null}
         />
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-1.5 truncate font-semibold text-fg">
+          <span className="flex min-w-0 items-center gap-1.5 font-semibold text-fg">
             {strip && <LevelBadge level={strip.level} />}
-            {member.display_name}
-            {isSelf && <span className="text-[10px] font-semibold text-fg/40">you</span>}
+            <span className="truncate">{member.display_name}</span>
+            {isSelf && <span className="shrink-0 text-[10px] font-semibold text-fg/40">you</span>}
           </span>
-          <span className="block truncate text-sm text-fg/55">@{member.username}</span>
+          {/* One chip, the strongest that applies (admins are parents by
+              definition), on the username line: two chips beside the name
+              squeezed it into "Saman..." on phones. */}
+          <span className="mt-0.5 flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-sm text-fg/55">@{member.username}</span>
+            {member.is_owner ? (
+              <span className="flex shrink-0 items-center gap-1 rounded-full bg-gold/20 px-2 py-0.5 text-[10px] font-semibold text-gold">
+                <ShieldCheck className="h-3 w-3" /> Server admin
+              </span>
+            ) : member.is_admin ? (
+              <span className="flex shrink-0 items-center gap-1 rounded-full bg-accent-bright/20 px-2 py-0.5 text-[10px] font-semibold text-accent-bright">
+                <ShieldCheck className="h-3 w-3" /> Admin
+              </span>
+            ) : (
+              <span className="shrink-0 rounded-full bg-fg/10 px-2 py-0.5 text-[10px] font-semibold text-fg/70">
+                {ROLE_LABEL[member.role]}
+              </span>
+            )}
+          </span>
         </span>
       </button>
-
-      <div className="flex shrink-0 items-center gap-1.5">
-        <span className="rounded-full bg-fg/10 px-2.5 py-1 text-[11px] font-semibold text-fg/70">
-          {ROLE_LABEL[member.role]}
-        </span>
-        {member.is_owner ? (
-          <span className="flex items-center gap-1 rounded-full bg-gold/20 px-2.5 py-1 text-[11px] font-semibold text-gold">
-            <ShieldCheck className="h-3 w-3" /> Server admin
-          </span>
-        ) : member.is_admin ? (
-          <span className="flex items-center gap-1 rounded-full bg-accent-bright/20 px-2.5 py-1 text-[11px] font-semibold text-accent-bright">
-            <ShieldCheck className="h-3 w-3" /> Admin
-          </span>
-        ) : null}
-      </div>
 
       <div className="flex shrink-0 items-center gap-1">
         <button

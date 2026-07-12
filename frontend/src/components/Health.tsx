@@ -197,8 +197,7 @@ export function HealthSheet({
           calculate a daily calorie target for you, with default macro-nutrient goals.
         </p>
         <p className="-mt-2 text-xs leading-relaxed text-fg/50">
-          All optional, and stored privately: no one else can see your weight, health, or food
-          log, not even an admin. Child accounts don't have a Nutrition area at all.
+          All data is stored privately; not even other parents or administrators can see it.
         </p>
 
         <div className="w-44">
@@ -249,7 +248,7 @@ export function HealthSheet({
           </span>
           <p className="mb-1.5 text-xs leading-relaxed text-fg/40">
             Pick what describes your everyday life, not including your exercise. Log your
-            exercise in addition to food and it will be added to the day's target calories!
+            exercise in addition to food and it will be added to the day's target calories.
           </p>
           <div className="flex flex-col gap-1.5">
             {ACTIVITY.map((a) => (
@@ -523,8 +522,8 @@ export function HealthCard({
         <span className="min-w-0">
           <span className="block text-sm font-semibold text-fg/85">Set up your health profile</span>
           <span className="block text-xs text-fg/50">
-            Optional. Get a daily calorie target computed for you, and a plan that adjusts as you
-            weigh in. Private: only you can see it.
+            Get a detailed calorie target calculated just for you based on your body, with a
+            plan that adjusts itself as you weigh in.
           </span>
         </span>
       </button>

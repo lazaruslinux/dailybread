@@ -121,18 +121,24 @@ function VersePrefsCard() {
   return (
     <div className="glass p-4">
       <span className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
-        <BookOpen className="h-3.5 w-3.5 text-gold/80" /> Daily verses
+        <BookOpen className="h-3.5 w-3.5 text-gold/80" /> Daily Bread
       </span>
       <p className="mb-3 text-sm text-fg/55">
-        {verses.enabled
-          ? "Three short verses wait at the bottom of your board each day. Check them off as you read. A fully read day earns breadcrumbs, and your streak pays bonuses along the way."
-          : "Three short verses, chosen for the day, waiting quietly at the bottom of your board, with a streak for every day you read all three. A small habit that's easy to keep."}
+        Three comforting verses from scripture waiting quietly at the bottom of your schedule
+        to read each day. Every family gets a different 3 each day, and reading streaks earn
+        breadcrumbs.
       </p>
       <PrefSwitch
         label="Opt-in to daily Bible verses"
         checked={verses.enabled}
         onToggle={() => void save(!verses.enabled)}
       />
+      {/* Thomas Nelson's gratis quotation policy requires this notice in any
+          work that quotes the NKJV (the daily verse card). */}
+      <p className="mt-4 text-center text-[10px] leading-relaxed text-fg/30">
+        Scripture taken from the New King James Version&reg;. Copyright &copy; 1982 by Thomas
+        Nelson. Used by permission. All rights reserved.
+      </p>
     </div>
   )
 }
@@ -146,7 +152,7 @@ const SUB_META: Record<SubPage, { label: string; hint: string }> = {
   crumbs: { label: 'Breadcrumbs & Levels', hint: 'How the family earns and levels up' },
   notifications: { label: 'Notifications', hint: 'What rings this device' },
   appearance: { label: 'Appearance', hint: 'Light and dark' },
-  verses: { label: 'Daily Verses', hint: 'The daily reading opt-in' },
+  verses: { label: 'Daily Bread', hint: 'Manage daily scripture settings' },
   villages: { label: 'Villages', hint: 'Linked families and what they see' },
 }
 
@@ -241,13 +247,6 @@ export function You({ onOpenAdmin }: { onOpenAdmin: () => void }) {
       <AnimatePresence>
         {changingPassword && <ChangePasswordSheet onClose={() => setChangingPassword(false)} />}
       </AnimatePresence>
-
-      {/* Thomas Nelson's gratis quotation policy requires this notice in any
-          work that quotes the NKJV (the daily verse card). */}
-      <p className="px-3 pt-1 text-center text-[10px] leading-relaxed text-fg/30">
-        Scripture taken from the New King James Version&reg;. Copyright &copy; 1982 by Thomas
-        Nelson. Used by permission. All rights reserved.
-      </p>
     </div>
   )
 }

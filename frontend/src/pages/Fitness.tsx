@@ -1223,8 +1223,8 @@ export function Fitness() {
     <div className="flex flex-col gap-4">
       {!data.connected && !hasAnything && (
         <div className="glass flex flex-col items-center gap-3 p-8 text-center">
-          <HeartPulse className="h-8 w-8 text-accent-bright" />
-          <p className="font-semibold text-fg/90">Your day, in numbers</p>
+          <HeartPulse className="h-8 w-8 text-red-400" />
+          <p className="font-semibold text-fg/90">Your activity on one page</p>
           <p className="text-sm text-fg/55">
             Steps, workouts, and weigh-ins from your watch land here, straight from
             your phone to your own server. Only you can see them.
