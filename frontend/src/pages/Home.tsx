@@ -620,7 +620,7 @@ export function Home({
       {familyName && (
         <div className="mb-3 mt-4 flex items-center gap-3">
           <span className="h-px flex-1 bg-gradient-to-r from-transparent to-gold/40" />
-          <span className="font-display text-base font-semibold italic text-gold">
+          <span className="font-team text-2xl font-bold leading-none text-gold">
             {familyName}
           </span>
           <span className="h-px flex-1 bg-gradient-to-l from-transparent to-gold/40" />

@@ -5,6 +5,8 @@ import { createRoot } from 'react-dom/client'
 import '@fontsource-variable/fraunces'
 import '@fontsource-variable/hanken-grotesk'
 import '@fontsource-variable/newsreader'
+// Caveat (handwriting) marks the one line that's purely the family's: the team name.
+import '@fontsource-variable/caveat'
 import './index.css'
 import App from './App.tsx'
 import { AuthProvider } from './auth/AuthContext.tsx'
