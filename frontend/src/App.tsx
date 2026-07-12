@@ -2,10 +2,8 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronLeft } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from './auth/AuthContext'
-import * as api from './lib/api'
 import { applyTheme, getTheme } from './lib/theme'
-import { LevelBadge } from './components/LevelBadge'
-import { timeGreeting } from './lib/moods'
+import { BreadIcon } from './components/BreadIcon'
 import { DailyGreeting } from './components/Greeting'
 import { HealthBadge } from './components/HealthBadge'
 import { TabBar, type Tab } from './components/TabBar'
@@ -22,21 +20,13 @@ import { Profile } from './pages/Profile'
 import { Setup } from './pages/Setup'
 import { You } from './pages/You'
 
-function todayLabel(): string {
-  return new Date().toLocaleDateString(undefined, {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  })
-}
-
 // An overlay sits on top of the current tab (a member's profile opened from
 // the family strip, or the admin dashboard opened from You). Back returns to
 // the tab underneath; switching tabs dismisses it.
 type Overlay = { name: 'profile'; id: number } | { name: 'admin' } | { name: 'calendar' } | null
 
 const TAB_TITLE: Record<Tab, string> = {
-  home: '', // Home shows the date + greeting instead of a title
+  home: '', // Home shows the brand row instead of a title
   nutrition: 'Nutrition',
   fitness: 'Fitness',
   kitchen: 'Kitchen',
@@ -47,18 +37,6 @@ function AppShell() {
   const { user } = useAuth()
   const [tab, setTab] = useState<Tab>('home')
   const [overlay, setOverlay] = useState<Overlay>(null)
-  const firstName = user?.display_name.split(/\s+/)[0] ?? ''
-  // The greeting wears your level. Refreshed on the same event every earn
-  // dispatches, so the number ticks up the moment a crumb lands.
-  const [myLevel, setMyLevel] = useState<number | null>(null)
-  useEffect(() => {
-    if (!user || user.is_minor === undefined) return
-    const load = () => api.getMyCrumbs().then((c) => setMyLevel(c.level)).catch(() => {})
-    load()
-    window.addEventListener('db:profile-changed', load)
-    return () => window.removeEventListener('db:profile-changed', load)
-  }, [user])
-
   // Kid mode: minors get Home / Kitchen / You — no nutrition or fitness area.
   // The server 403s those APIs regardless; this keeps the door out of sight too.
   const isMinor = user?.is_minor ?? false
@@ -88,29 +66,37 @@ function AppShell() {
   return (
     <div className="mx-auto min-h-svh w-full max-w-md px-5 pb-28 pt-8">
       <header className="mb-6">
-        <div className="mb-1 flex items-center justify-between gap-3">
-          {overlay ? (
-            <button
-              onClick={() => setOverlay(null)}
-              className="-ml-1 flex items-center gap-1 rounded-lg py-1 pr-2 text-sm font-semibold text-fg/60 transition-colors hover:text-fg"
-            >
-              <ChevronLeft className="h-4 w-4" /> Back
-            </button>
-          ) : tab === 'home' ? (
-            <p className="text-sm text-fg/50">{todayLabel()}</p>
-          ) : (
-            <p className="text-sm font-semibold text-fg/70">{TAB_TITLE[tab]}</p>
-          )}
-          <HealthBadge />
-        </div>
-
-        {tab === 'home' && !overlay && (
-          <h1 className="flex items-center gap-2.5 font-display text-[2.05rem] font-semibold leading-[1.1] tracking-[-0.02em]">
-            {myLevel != null && <LevelBadge level={myLevel} size="md" className="translate-y-0.5" />}
-            <span>
-              {timeGreeting()}, {firstName}
+        {tab === 'home' && !overlay ? (
+          // Home wears the brand: loaf + lettering centered, the health badge
+          // kept reachable at the row's edge. The greeting lives in Home now.
+          <div className="relative flex items-center justify-center py-0.5">
+            <span className="flex items-center gap-2 font-display text-xl font-semibold tracking-[-0.02em]">
+              <BreadIcon className="h-6 w-6 text-gold" strokeWidth={2.2} />
+              <span>
+                daily
+                <span className="bg-gradient-to-r from-accent-bright to-accent-strong bg-clip-text text-transparent">
+                  bread
+                </span>
+              </span>
             </span>
-          </h1>
+            <div className="absolute right-0">
+              <HealthBadge />
+            </div>
+          </div>
+        ) : (
+          <div className="mb-1 flex items-center justify-between gap-3">
+            {overlay ? (
+              <button
+                onClick={() => setOverlay(null)}
+                className="-ml-1 flex items-center gap-1 rounded-lg py-1 pr-2 text-sm font-semibold text-fg/60 transition-colors hover:text-fg"
+              >
+                <ChevronLeft className="h-4 w-4" /> Back
+              </button>
+            ) : (
+              <p className="text-sm font-semibold text-fg/70">{TAB_TITLE[tab]}</p>
+            )}
+            <HealthBadge />
+          </div>
         )}
       </header>
 

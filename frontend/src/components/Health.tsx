@@ -184,7 +184,7 @@ export function HealthSheet({
     <Sheet onClose={onClose}>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="flex items-center gap-2 text-lg font-bold">
-          <HeartPulse className="h-5 w-5 text-accent-bright" /> Health profile
+          <HeartPulse className="h-5 w-5 text-red-400" /> Health profile
         </h2>
         <button onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-fg/50 hover:bg-fg/10 hover:text-fg">
           <X className="h-5 w-5" />
@@ -519,7 +519,7 @@ export function HealthCard({
         className="glass flex w-full items-center gap-3 p-4 text-left transition-colors hover:bg-fg/5"
         data-health-setup
       >
-        <HeartPulse className="h-5 w-5 shrink-0 text-accent-bright" />
+        <HeartPulse className="h-5 w-5 shrink-0 text-red-400" />
         <span className="min-w-0">
           <span className="block text-sm font-semibold text-fg/85">Set up your health profile</span>
           <span className="block text-xs text-fg/50">

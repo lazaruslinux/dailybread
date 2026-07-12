@@ -5,6 +5,7 @@ import * as api from '../lib/api'
 import { avatarUrl } from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { canCheckItem } from '../lib/items'
+import { timeGreeting } from '../lib/moods'
 import { Avatar } from '../components/Avatar'
 import { DayTimeline } from '../components/DayTimeline'
 import { BreadIcon } from '../components/BreadIcon'
@@ -203,6 +204,7 @@ export function Home({
 
   const [feed, setFeed] = useState<api.Feed | null>(null)
   const [family, setFamily] = useState<api.FamilyMember[]>([])
+  const [familyName, setFamilyName] = useState<string | null>(null)
   // Kid mode: the family's check-offs waiting on a parent. Parents only.
   const [approvals, setApprovals] = useState<api.PendingApproval[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -216,19 +218,15 @@ export function Home({
   // Parent-only board lens: which members' cards to show. Empty means everyone's.
   const [filter, setFilter] = useState<number[]>([])
   // How today's timed cards are drawn: stacked list, or laid on a day timeline.
-  // Remembered per member, like the theme.
+  // Always opens on List; Timeline lasts only until the page is left (his call
+  // 2026-07-12 — the board should greet everyone the same way every time).
   const [view, setView] = useState<'list' | 'timeline'>('list')
   // The day the timeline shows. null = today (the live board); any other day
   // is a read-only peek fetched from the calendar endpoint.
   const [timelineDate, setTimelineDate] = useState<string | null>(null)
   const [peekItems, setPeekItems] = useState<api.FeedItem[] | null>(null)
-  useEffect(() => {
-    if (!user) return
-    setView(localStorage.getItem(`db_board_view_${user.id}`) === 'timeline' ? 'timeline' : 'list')
-  }, [user])
   const pickView = (v: 'list' | 'timeline') => {
     setView(v)
-    if (user) localStorage.setItem(`db_board_view_${user.id}`, v)
     if (v === 'list') setTimelineDate(null) // the list is always today
   }
 
@@ -262,6 +260,8 @@ export function Home({
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Could not load the board.')
     }
+    // The header's team name; separate so a hiccup never blanks the board.
+    api.getMyFamily().then((fam) => setFamilyName(fam.name)).catch(() => {})
     if (isParent) {
       // Separate so a hiccup here never blanks the board.
       api.getPendingApprovals().then(setApprovals).catch(() => {})
@@ -602,6 +602,30 @@ export function Home({
   return (
     <div>
       <WelcomeCrumb />
+
+      {/* The home masthead, in reading order: who you are to us (greeting),
+          what day it is, whose house this is (team name), then the family. */}
+      <h1 className="font-display text-[2.05rem] font-semibold leading-[1.1] tracking-[-0.02em]">
+        {timeGreeting()}, {user?.display_name.split(/\s+/)[0] ?? ''}
+      </h1>
+      <p className="mt-1 text-sm text-fg/50">
+        It's{' '}
+        {clock.toLocaleDateString(undefined, {
+          weekday: 'long',
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric',
+        })}
+      </p>
+      {familyName && (
+        <div className="mb-3 mt-4 flex items-center gap-3">
+          <span className="h-px flex-1 bg-gradient-to-r from-transparent to-gold/40" />
+          <span className="font-display text-base font-semibold italic text-gold">
+            {familyName}
+          </span>
+          <span className="h-px flex-1 bg-gradient-to-l from-transparent to-gold/40" />
+        </div>
+      )}
       <FamilyStrip members={family} onOpen={onOpenProfile} />
 
       {isParent && (
