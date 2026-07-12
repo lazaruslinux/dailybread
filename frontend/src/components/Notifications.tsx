@@ -1,4 +1,4 @@
-import { Bell, BellOff, ChevronDown, ChevronUp } from 'lucide-react'
+import { Bell, BellOff } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import * as api from '../lib/api'
@@ -40,7 +40,7 @@ type State =
   | { kind: 'on'; endpoint: string }
 
 // The per-kind switches, grouped the way a person thinks about their day.
-// Kind names must match the server's PREF_KINDS. The verse row appears only
+// Kind names must match the server's PREF_KINDS. The streak row appears only
 // for members who receive daily verses at all.
 const PREF_GROUPS: {
   name: string
@@ -51,35 +51,21 @@ const PREF_GROUPS: {
     rows: [
       {
         kind: 'timed',
-        label: 'Before timed cards',
-        hint: 'A ping shortly before anything timed on your board',
+        label: 'Before Events',
+        hint: 'A ping before anything timed on your board. 15 minutes, or 1 hour for appointments',
       },
       {
         kind: 'overdue',
-        label: 'Past-due sweep',
-        hint: 'One afternoon note listing what slipped past today',
-      },
-      {
-        kind: 'dinner',
-        label: 'Dinner time',
-        hint: "When tonight's plan has a set time, shortly before",
+        label: 'Past-Due Alerts',
+        hint: 'A nudge 24 hours after something on the board goes past due',
       },
     ],
   },
   {
     name: 'Daily check-ins',
     rows: [
-      { kind: 'morning', label: 'Morning summary', hint: "Your day's board, first thing" },
-      {
-        kind: 'midday',
-        label: 'Mid-day food check',
-        hint: 'Calories left for the day, if you use the diary',
-      },
-      {
-        kind: 'evening',
-        label: 'Evening check-in',
-        hint: "How was your day, plus tomorrow's first appointment",
-      },
+      { kind: 'morning', label: 'Morning Summary', hint: "What's on your agenda for the day" },
+      { kind: 'evening', label: 'Evening Check-In', hint: 'Review your day' },
     ],
   },
   {
@@ -87,13 +73,18 @@ const PREF_GROUPS: {
     rows: [
       {
         kind: 'family',
-        label: 'Board changes & dinner picks',
-        hint: 'When someone adds, moves, or removes a card, or picks dinner',
+        label: 'Board Updates & Meal Picks',
+        hint: 'Anytime a family member makes changes',
+      },
+      {
+        kind: 'workouts',
+        label: 'Workouts',
+        hint: 'When a family member finishes a workout',
       },
       {
         kind: 'approvals',
-        label: 'Kid check-offs',
-        hint: 'When a kid finishes something that waits on your OK',
+        label: 'Kid Tasks',
+        hint: 'Tasks that need parent approval',
       },
     ],
   },
@@ -102,13 +93,13 @@ const PREF_GROUPS: {
     rows: [
       {
         kind: 'sync',
-        label: 'Sync gone quiet',
-        hint: 'If your phone stops sending health data for a couple of days',
+        label: 'Health Sync Timeout',
+        hint: "If your health data hasn't synced with dailybread in 48 hours",
       },
       {
         kind: 'verse',
-        label: 'Verse streak at risk',
-        hint: 'An evening word before a reading streak ends',
+        label: 'Streak Reminders',
+        hint: 'Receive a notification if you are close to losing your reading streak',
         verses: true,
       },
     ],
@@ -157,8 +148,6 @@ export function NotificationsCard() {
   const [error, setError] = useState<string | null>(null)
   const [prefs, setPrefs] = useState<api.PushPrefs | null>(null)
   const [versesOn, setVersesOn] = useState(false)
-  // The ten switches live behind one expander so the card stays a card.
-  const [showPrefs, setShowPrefs] = useState(false)
 
   useEffect(() => {
     const reason = unsupportedReason()
@@ -296,7 +285,7 @@ export function NotificationsCard() {
         <>
           <p className="mb-3 text-xs leading-relaxed text-fg/50">
             {on
-              ? 'On for this device. Below, choose what rings — those choices follow your account onto every device.'
+              ? 'Turned on for this device.'
               : 'Reminders before timed cards, daily check-ins, and family activity, straight to this device. Each person turns this on per device.'}
           </p>
           <div className="flex flex-wrap items-center gap-2">
@@ -333,21 +322,7 @@ export function NotificationsCard() {
             )}
           </div>
 
-          {on && prefs && !showPrefs && (
-            <button
-              type="button"
-              onClick={() => setShowPrefs(true)}
-              className="mt-3 flex w-full items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left"
-              data-open-prefs
-            >
-              <span className="text-sm font-semibold text-fg/85">
-                Configure all notification preferences
-              </span>
-              <ChevronDown className="h-4 w-4 shrink-0 text-fg/40" strokeWidth={2.5} />
-            </button>
-          )}
-
-          {on && prefs && showPrefs && (
+          {on && prefs && (
             <div className="mt-4 flex flex-col gap-3" data-push-prefs>
               {PREF_GROUPS.map((group) => {
                 const rows = group.rows.filter((row) => !row.verses || versesOn)
@@ -369,13 +344,6 @@ export function NotificationsCard() {
                   </div>
                 )
               })}
-              <button
-                type="button"
-                onClick={() => setShowPrefs(false)}
-                className="flex items-center justify-center gap-1 rounded-xl py-1.5 text-xs font-semibold text-fg/45 hover:text-fg/70"
-              >
-                <ChevronUp className="h-3.5 w-3.5" strokeWidth={2.5} /> Done
-              </button>
             </div>
           )}
         </>

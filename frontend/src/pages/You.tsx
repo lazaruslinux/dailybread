@@ -1,5 +1,16 @@
 import { AnimatePresence } from 'framer-motion'
-import { BookOpen, KeyRound, LogOut, Users } from 'lucide-react'
+import {
+  Bell,
+  BookOpen,
+  ChevronLeft,
+  ChevronRight,
+  KeyRound,
+  LogOut,
+  Palette,
+  Trees,
+  Users,
+  type LucideIcon,
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
 import * as api from '../lib/api'
 import { updateMyProfile } from '../lib/api'
@@ -8,7 +19,9 @@ import { JournalCard } from '../components/JournalCard'
 import { NotificationsCard } from '../components/Notifications'
 import { VillagesCard } from '../components/Villages'
 import { getTheme, setTheme, THEMES, type Theme } from '../lib/theme'
+import { BreadIcon } from '../components/BreadIcon'
 import { ChangePasswordSheet } from './Password'
+import { BreadcrumbsPage } from './Breadcrumbs'
 import { Profile } from './Profile'
 
 // Little preview swatch per theme so the choice reads at a glance.
@@ -112,7 +125,7 @@ function VersePrefsCard() {
       </span>
       <p className="mb-3 text-sm text-fg/55">
         {verses.enabled
-          ? "Three short verses wait at the bottom of your board each day. Check them off as you read — a fully read day earns breadcrumbs, and your streak pays bonuses along the way."
+          ? "Three short verses wait at the bottom of your board each day. Check them off as you read. A fully read day earns breadcrumbs, and your streak pays bonuses along the way."
           : "Three short verses, chosen for the day, waiting quietly at the bottom of your board, with a streak for every day you read all three. A small habit that's easy to keep."}
       </p>
       <PrefSwitch
@@ -124,34 +137,85 @@ function VersePrefsCard() {
   )
 }
 
-// The You tab: your own profile (bio + mood) plus account-level actions that
-// used to crowd the header. Admin entry lives here now.
+// The settings that moved one level down: set-and-forget things open as
+// subpages, so the daily ritual (profile, mood, status, journal) stays one
+// scroll at the top level.
+type SubPage = 'crumbs' | 'notifications' | 'appearance' | 'verses' | 'villages'
+
+const SUB_META: Record<SubPage, { label: string; hint: string }> = {
+  crumbs: { label: 'Breadcrumbs & Levels', hint: 'How the family earns and levels up' },
+  notifications: { label: 'Notifications', hint: 'What rings this device' },
+  appearance: { label: 'Appearance', hint: 'Light and dark' },
+  verses: { label: 'Daily Verses', hint: 'The daily reading opt-in' },
+  villages: { label: 'Villages', hint: 'Linked families and what they see' },
+}
+
+function SettingsRow({
+  Icon,
+  page,
+  onOpen,
+}: {
+  Icon: LucideIcon
+  page: SubPage
+  onOpen: (page: SubPage) => void
+}) {
+  return (
+    <button
+      onClick={() => onOpen(page)}
+      className="glass flex items-center gap-3 p-4 text-left transition-colors hover:bg-fg/5"
+    >
+      <Icon className="h-4 w-4 shrink-0 text-fg/55" />
+      <span className="min-w-0 flex-1">
+        <span className="block font-semibold text-fg/80">{SUB_META[page].label}</span>
+        <span className="block truncate text-xs text-fg/40">{SUB_META[page].hint}</span>
+      </span>
+      <ChevronRight className="h-4 w-4 shrink-0 text-fg/30" />
+    </button>
+  )
+}
+
+// The You tab: your own profile (bio + mood) and daily journal up top, then
+// the settings list. Admin entry lives here too.
 export function You({ onOpenAdmin }: { onOpenAdmin: () => void }) {
   const { user, logout } = useAuth()
   const [changingPassword, setChangingPassword] = useState(false)
+  const [sub, setSub] = useState<SubPage | null>(null)
   if (!user) return null
+
+  if (sub !== null) {
+    return (
+      <div className="flex flex-col gap-4">
+        <button
+          onClick={() => setSub(null)}
+          className="flex items-center gap-1 self-start rounded-lg py-1 pr-2 text-sm font-semibold text-fg/60 transition-colors hover:text-fg"
+        >
+          <ChevronLeft className="h-4 w-4" /> You
+        </button>
+        <h2 className="-mt-2 text-xl font-bold tracking-tight">{SUB_META[sub].label}</h2>
+        {sub === 'crumbs' && <BreadcrumbsPage />}
+        {sub === 'notifications' && <NotificationsCard />}
+        {sub === 'appearance' && <ThemePicker userId={user.id} stored={user.theme} />}
+        {sub === 'verses' && <VersePrefsCard />}
+        {sub === 'villages' && <VillagesCard />}
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-4">
-      <Profile userId={user.id} />
+      <Profile userId={user.id} onOpenCrumbs={() => setSub('crumbs')} />
 
       <JournalCard />
 
-      <ThemePicker userId={user.id} stored={user.theme} />
-
-      <VersePrefsCard />
-
-      <NotificationsCard />
-
-      <VillagesCard />
+      <div className="flex flex-col gap-2">
+        <SettingsRow Icon={BreadIcon as unknown as LucideIcon} page="crumbs" onOpen={setSub} />
+        <SettingsRow Icon={Bell} page="notifications" onOpen={setSub} />
+        <SettingsRow Icon={Palette} page="appearance" onOpen={setSub} />
+        <SettingsRow Icon={BookOpen} page="verses" onOpen={setSub} />
+        <SettingsRow Icon={Trees} page="villages" onOpen={setSub} />
+      </div>
 
       <div className="flex flex-col gap-2">
-        <button
-          onClick={() => setChangingPassword(true)}
-          className="glass flex items-center gap-3 p-4 text-left font-semibold text-fg/80 transition-colors hover:text-fg"
-        >
-          <KeyRound className="h-4 w-4 text-fg/55" /> Change password
-        </button>
         {user.is_admin && (
           <button
             onClick={onOpenAdmin}
@@ -160,6 +224,12 @@ export function You({ onOpenAdmin }: { onOpenAdmin: () => void }) {
             <Users className="h-4 w-4 text-fg/55" /> Family members
           </button>
         )}
+        <button
+          onClick={() => setChangingPassword(true)}
+          className="glass flex items-center gap-3 p-4 text-left font-semibold text-fg/80 transition-colors hover:text-fg"
+        >
+          <KeyRound className="h-4 w-4 text-fg/55" /> Change password
+        </button>
         <button
           onClick={logout}
           className="glass flex items-center gap-3 p-4 text-left font-semibold text-fg/80 transition-colors hover:text-fg"

@@ -502,12 +502,10 @@ export function WeightSheet({
 
 export function HealthCard({
   health,
-  targetsMode,
   onEdit,
   onLogWeight,
 }: {
   health: api.Health | null
-  targetsMode: api.TargetMode
   onEdit: () => void
   onLogWeight: () => void
 }) {
@@ -535,13 +533,6 @@ export function HealthCard({
 
   const p = health.profile!
   const w = health.latest_weight!
-  const goalText = health.computed.at_goal
-    ? 'At goal - maintaining'
-    : p.goal === 'lose'
-      ? `Losing ${p.rate_lbs_per_week ?? 1} lb/week`
-      : p.goal === 'gain'
-        ? `Gaining ${p.rate_lbs_per_week ?? 1} lb/week`
-        : 'Maintaining'
 
   // The little carrot: at the current rate, when does the goal weight land?
   // Pure arithmetic on what's already on screen (lbs to go / lbs per week),
@@ -567,47 +558,42 @@ export function HealthCard({
 
   return (
     <section className="glass p-4" data-health-card>
-      <div className="mb-2 flex items-center justify-between">
+      <div className="mb-2.5 flex items-center justify-between">
         <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
-          <HeartPulse className="h-3.5 w-3.5 text-accent-bright" /> Health
+          <HeartPulse className="h-3.5 w-3.5 text-red-400" /> Health Calculator
         </span>
+      </div>
+      {/* Exactly two lines: where you are, where you're headed. The pace and
+          burn math live inside Manage Targets, where they're set. */}
+      <div className="mb-3 flex flex-col gap-0.5">
+        <p className="text-sm text-fg/85">
+          <span className="text-fg/50">Current Weight:</span>{' '}
+          <span className="font-semibold">{fmtLb(w.weight_kg)}</span>
+        </p>
+        {health.computed.at_goal || p.goal_weight_kg == null ? (
+          <p className="text-sm text-fg/50">
+            {health.computed.at_goal ? 'At goal, maintaining' : 'Maintaining'}
+          </p>
+        ) : (
+          <p className="text-sm text-fg/85">
+            <span className="text-fg/50">Target Weight:</span>{' '}
+            <span className="font-semibold">{fmtLb(p.goal_weight_kg)}</span>
+            {forecast && <span className="text-fg/50"> by {forecast}</span>}
+          </p>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
         <button
           onClick={onEdit}
-          className="flex shrink-0 items-center gap-1.5 rounded-xl border border-accent-bright/40 bg-accent-bright/15 px-3 py-2 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
+          className="flex items-center justify-center gap-1.5 rounded-xl bg-accent px-3 py-2.5 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
         >
-          <Target className="h-3.5 w-3.5" /> Manage goals
+          <Target className="h-3.5 w-3.5" /> Manage Targets
         </button>
-      </div>
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-fg/85">
-            {fmtLb(w.weight_kg)}
-            {!health.computed.at_goal &&
-              (p.goal_weight_kg != null || p.goal_body_fat_pct != null) && (
-                <span className="font-normal text-fg/50">
-                  {' '}
-                  →{' '}
-                  {[
-                    p.goal_weight_kg != null ? fmtLb(p.goal_weight_kg) : null,
-                    p.goal_body_fat_pct != null ? `${p.goal_body_fat_pct}% bf` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </span>
-              )}
-          </p>
-          <p className="truncate text-xs text-fg/50">
-            {goalText}
-            {forecast && ` · goal around ${forecast}`} · burn ≈{' '}
-            {health.computed.maintenance_calories.toLocaleString()} kcal
-            {targetsMode === 'auto' && ' · auto'}
-          </p>
-        </div>
         <button
           onClick={onLogWeight}
-          className="flex shrink-0 items-center gap-1.5 rounded-xl border border-accent-bright/40 bg-accent-bright/15 px-3 py-2 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
+          className="flex items-center justify-center gap-1.5 rounded-xl border border-gold/40 bg-gold/15 px-3 py-2.5 text-xs font-semibold text-gold transition-colors hover:bg-gold/25"
         >
-          <Scale className="h-3.5 w-3.5" /> Log weight
+          <Scale className="h-3.5 w-3.5" /> Log Weigh-In
         </button>
       </div>
     </section>

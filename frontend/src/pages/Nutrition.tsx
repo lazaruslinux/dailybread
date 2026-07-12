@@ -3,6 +3,7 @@ import {
   BookOpen,
   ChevronLeft,
   ChevronRight,
+  Lock,
   Flame,
   Footprints,
   Plus,
@@ -13,6 +14,7 @@ import {
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import * as api from '../lib/api'
+import { CrumbFloat } from '../components/CrumbFloat'
 import {
   FoodIdentity,
   FoodPicker,
@@ -305,7 +307,7 @@ function TargetsSheet({
             ))}
           </div>
           <p className={`mt-2 text-xs font-semibold ${sum === 100 ? 'text-fg/40' : 'text-gold'}`}>
-            Total {sum}%{sum !== 100 && ' — should be 100%'}
+            Total {sum}%{sum !== 100 && ' (should be 100%)'}
           </p>
         </div>
         <FormError message={error} />
@@ -1036,14 +1038,86 @@ function ExerciseCard({
 
 // ---- one meal group --------------------------------------------------------------
 
+// The day's sign-off: lock in the tracking (+2 breadcrumbs the first time a
+// date is locked) and the diary goes read-only until unlocked. Unlock, fix,
+// re-lock all you like; the crumbs paid once.
+function LockCard({ day, onChanged }: { day: api.DiaryDay; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [float, setFloat] = useState<{ amount: number; key: number } | null>(null)
+
+  if (day.entries.length === 0 && !day.locked) return null
+
+  async function flip() {
+    setBusy(true)
+    try {
+      if (day.locked) {
+        await api.unlockDiaryDay(day.date)
+      } else {
+        const res = await api.lockDiaryDay(day.date)
+        if (res.crumbs_awarded > 0) {
+          setFloat({ amount: res.crumbs_awarded, key: Date.now() })
+          window.dispatchEvent(new Event('db:profile-changed'))
+          await new Promise((r) => setTimeout(r, 1100)) // let the +2 land
+        }
+      }
+      onChanged()
+    } catch {
+      // the tap didn't stick; the next one tries again
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (day.locked) {
+    return (
+      <div className="glass flex items-center gap-2.5 px-4 py-3" data-lock-card>
+        <Lock className="h-4 w-4 shrink-0 text-gold" strokeWidth={2.5} />
+        <span className="min-w-0 flex-1 text-sm font-medium text-fg/80">
+          Day locked in
+        </span>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={flip}
+          className="shrink-0 text-xs font-semibold text-accent-bright"
+        >
+          Unlock to edit
+        </button>
+      </div>
+    )
+  }
+  return (
+    <div className="relative" data-lock-card>
+      {float && <CrumbFloat key={float.key} amount={float.amount} />}
+      <button
+        type="button"
+        disabled={busy}
+        onClick={flip}
+        className="glass flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-fg/5"
+      >
+        <Lock className="h-4 w-4 shrink-0 text-gold" strokeWidth={2.5} />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold text-fg/85">Lock in my day</span>
+          <span className="block text-xs text-fg/45">
+            Done tracking? Locking in earns breadcrumbs
+          </span>
+        </span>
+      </button>
+    </div>
+  )
+}
+
+
 function SlotCard({
   slot,
   entries,
+  locked,
   onAdd,
   onEdit,
 }: {
   slot: api.DiarySlot
   entries: api.DiaryEntry[]
+  locked: boolean
   onAdd: () => void
   onEdit: (e: api.DiaryEntry) => void
 }) {
@@ -1058,22 +1132,28 @@ function SlotCard({
             <span className="text-xs text-fg/45">{Math.round(total)} kcal</span>
           )}
         </div>
-        <button
-          onClick={onAdd}
-          aria-label={`Add to ${SLOT_LABEL[slot]}`}
-          className="rounded-lg p-1.5 text-accent-bright transition-colors hover:bg-accent-bright/15"
-        >
-          <Plus className="h-4.5 w-4.5" strokeWidth={2.5} />
-        </button>
+        {!locked && (
+          <button
+            onClick={onAdd}
+            aria-label={`Add to ${SLOT_LABEL[slot]}`}
+            className="rounded-lg p-1.5 text-accent-bright transition-colors hover:bg-accent-bright/15"
+          >
+            <Plus className="h-4.5 w-4.5" strokeWidth={2.5} />
+          </button>
+        )}
       </div>
 
       {entries.length === 0 ? (
-        <button
-          onClick={onAdd}
-          className="mt-1 w-full rounded-xl border border-dashed border-fg/20 px-3 py-2.5 text-left text-sm text-fg/40 transition-colors hover:border-accent-bright/40 hover:text-fg/60"
-        >
-          + Add {slot === 'snack' ? 'a snack' : slot}
-        </button>
+        locked ? (
+          <p className="mt-1 px-1 text-sm text-fg/35">Nothing logged.</p>
+        ) : (
+          <button
+            onClick={onAdd}
+            className="mt-1 w-full rounded-xl border border-dashed border-fg/20 px-3 py-2.5 text-left text-sm text-fg/40 transition-colors hover:border-accent-bright/40 hover:text-fg/60"
+          >
+            + Add {slot === 'snack' ? 'a snack' : slot}
+          </button>
+        )
       ) : (
         <div className="flex flex-col">
           {entries.map((e) => {
@@ -1081,6 +1161,7 @@ function SlotCard({
             return (
               <button
                 key={e.id}
+                disabled={locked}
                 onClick={() => onEdit(e)}
                 className="-mx-1.5 flex items-center justify-between gap-3 rounded-lg px-1.5 py-2 text-left transition-colors hover:bg-fg/10"
               >
@@ -1198,9 +1279,9 @@ function NutritionTab() {
       ) : day !== null ? (
         <>
           <TargetsCard day={day} onEdit={() => setEditingTargets(true)} />
+          <LockCard day={day} onChanged={refresh} />
           <HealthCard
             health={health}
-            targetsMode={day.targets.mode}
             onEdit={() => setEditingHealth(true)}
             onLogWeight={() => setLoggingWeight(true)}
           />
@@ -1209,6 +1290,7 @@ function NutritionTab() {
               key={s.id}
               slot={s.id}
               entries={bySlot[s.id]}
+              locked={day.locked}
               onAdd={() => {
                 setFlow((f) => f + 1)
                 setAdding(s.id)

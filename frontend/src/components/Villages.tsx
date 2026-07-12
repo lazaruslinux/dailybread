@@ -1,5 +1,5 @@
 import { AnimatePresence } from 'framer-motion'
-import { Copy, Plus } from 'lucide-react'
+import { Copy, Plus, UserRound } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { MOODS } from '../lib/moods'
@@ -334,7 +334,7 @@ function PresenceToggle({ initial, onChanged }: { initial: boolean; onChanged: (
           Share my mood and status with Villages
         </span>
         <span className="block text-xs text-fg/45">
-          Off means village families see only your name and photo, never how your day is going
+          Hides/unhides your mood and status from your profile
         </span>
       </span>
       <span
@@ -517,6 +517,20 @@ export function VillagesCard() {
                         </span>
                       </button>
                     ))}
+                    {f.kid_count > 0 && (
+                      <div
+                        className="flex w-14 flex-col items-center gap-1 py-1"
+                        title={`${f.kid_count} kid${f.kid_count === 1 ? '' : 's'} on dailybread`}
+                      >
+                        <span className="flex h-11 w-11 items-center justify-center rounded-full border border-dashed border-fg/25 bg-fg/5 text-fg/45">
+                          <UserRound className="h-4 w-4" strokeWidth={2} />
+                          <span className="ml-0.5 text-xs font-bold">+{f.kid_count}</span>
+                        </span>
+                        <span className="w-full truncate text-center text-[10px] text-fg/40">
+                          {f.kid_count === 1 ? 'kid' : 'kids'}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

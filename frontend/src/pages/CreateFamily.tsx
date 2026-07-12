@@ -28,8 +28,12 @@ const TOUR: { title: string; body: string; versesChoice?: boolean }[] = [
     body: 'Every member gets their own sign-in, a daily mood, and a private journal. Later, villages can link your family with another one to share recipes, and nothing more, unless you choose it.',
   },
   {
+    title: 'Breadcrumbs',
+    body: "Little things earn breadcrumbs: showing up, reading, moving, logging your meals. Crumbs become your level, worn in a small circle beside your name, and the whole family climbs the same ladder from Slice to Breadmaster. The full recipe lives in You, under Breadcrumbs & Levels.",
+  },
+  {
     title: 'Daily bread, if you want it',
-    body: "Three short verses, chosen for the day, can wait at the bottom of your board. Opting in includes the little streak game: check all three off and a small book by your avatar counts the days you keep it going. Change your mind anytime in You.",
+    body: "Three short verses, chosen for the day, can wait at the bottom of your board. Opting in includes the streak: read all three each day and it grows, earning breadcrumbs and bonuses along the way. Change your mind anytime in You.",
     versesChoice: true,
   },
 ]

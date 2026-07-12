@@ -80,7 +80,7 @@ def test_plans_are_family_scoped(owner, other):
     assert other.get(f"/meals/plan?date={TODAY}").json()["votes"] == []
 
 
-def test_first_pick_of_the_day_nudges_once(owner, parent, child, configured, outbox):
+def test_votes_stay_quiet_but_the_lock_in_speaks(owner, parent, child, configured, push_outbox):
     parent.put("/push/subscription", json={
         "endpoint": "https://push.example/p1", "keys": {"p256dh": "k", "auth": "a"},
     })
@@ -88,10 +88,16 @@ def test_first_pick_of_the_day_nudges_once(owner, parent, child, configured, out
         "endpoint": "https://push.example/k1", "keys": {"p256dh": "k", "auth": "a"},
     })
     vote(owner, "go_out", "Chipotle")
-    assert outbox == ["https://push.example/p1"]  # the other adult, never the kid
-    vote(owner, "delivery", "Pizza")  # changes stay quiet
-    vote(parent, "homemade")  # later picks stay quiet too
-    assert outbox == ["https://push.example/p1"]
+    vote(parent, "homemade")
+    assert push_outbox == []  # votes are a standing block, not a conversation
+
+    # Locking dinner IS setting the meal row, and that's the one dinner push.
+    res = owner.put("/meals", json={"date_for": TODAY, "slot": "dinner", "custom_title": "Tacos"})
+    assert res.status_code == 200, res.text
+    endpoints = [ep for ep, _ in push_outbox]
+    assert endpoints == ["https://push.example/p1"]  # the other adult, never the kid
+    assert push_outbox[0][1]["title"].endswith("locked in dinner")
+    assert push_outbox[0][1]["body"] == "Tacos"
 
 
 def test_week_view_carries_future_preselections(owner, parent):

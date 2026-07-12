@@ -522,7 +522,7 @@ function DayPlanSheet({
     <Sheet onClose={onClose}>
       <h3 className="mb-1 text-lg font-bold">{dayLabel}</h3>
       <p className="mb-4 text-sm text-fg/60">
-        Make your pick — it'll be waiting in the Dinner Plan when the day comes.
+        Make your pick. It'll be waiting in the Dinner Plan when the day comes.
       </p>
       <div className="flex flex-col gap-1.5">
         {CHOICES.map((c) => (

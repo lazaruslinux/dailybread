@@ -4,6 +4,7 @@ import { type ChangeEvent, useCallback, useEffect, useState } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { Avatar } from '../components/Avatar'
+import { BreadIcon } from '../components/BreadIcon'
 import { LevelBadge, TIER_META, tierOf } from '../components/LevelBadge'
 import { AvatarCrop } from '../components/AvatarCrop'
 import { Button, FormError } from '../components/ui'
@@ -12,7 +13,14 @@ import { formatTime, MOODS, MOOD_ORDER } from '../lib/moods'
 // A member's page: who they are, their bio, and how their day is going.
 // Everything self-serve is inline: your own page grows a mood picker and a
 // bio editor; someone else's page is read-only.
-export function Profile({ userId }: { userId: number }) {
+export function Profile({
+  userId,
+  onOpenCrumbs,
+}: {
+  userId: number
+  // Present only where a breadcrumbs explainer can open (the You tab).
+  onOpenCrumbs?: () => void
+}) {
   const { user: viewer } = useAuth()
   const isSelf = viewer?.id === userId
 
@@ -202,10 +210,24 @@ export function Profile({ userId }: { userId: number }) {
               style={{ width: `${Math.min((profile.level_progress / profile.next_level_cost) * 100, 100)}%` }}
             />
           </div>
-          <p className="text-[11px] text-fg/40">
-            {profile.crumbs} breadcrumb{profile.crumbs === 1 ? '' : 's'} earned ·{' '}
-            {profile.next_level_cost - profile.level_progress} to level {profile.level + 1}
+          <p className="flex items-center gap-1 text-[11px] text-fg/40">
+            <span
+              className="flex items-center gap-1 font-semibold text-gold"
+              title={`${profile.crumbs} breadcrumb${profile.crumbs === 1 ? '' : 's'} earned`}
+            >
+              <BreadIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
+              {profile.crumbs}
+            </span>
+            · {profile.next_level_cost - profile.level_progress} to level {profile.level + 1}
           </p>
+          {isSelf && onOpenCrumbs && (
+            <button
+              onClick={onOpenCrumbs}
+              className="text-[11px] font-semibold text-accent-bright"
+            >
+              How do breadcrumbs work?
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-1.5">
           <span className="rounded-full bg-fg/10 px-2.5 py-1 text-[11px] font-semibold text-fg/70">

@@ -5,11 +5,12 @@ Everything routes through award(): one attempted INSERT whose unique
 push engine's DigestLog uses. Callers never check "did this already pay?";
 they just ask, and the constraint answers.
 
-The earn table (see docs and the plan): first activity of the day +1, all
-three verses +3, one watch workout of 15+ minutes per day +3, each completed
-card +1 (capped at COMPLETE_DAILY_CAP a day so junk-card farming is
-pointless), and verse-streak milestones +5/+15/+50 at 7/30/100 days. Mood,
-status, and journal deliberately earn nothing: honesty is never paid.
+The earn table: first activity of the day +1, all three verses +3, one watch
+workout of 15+ minutes per day +3, locking in the day's calorie tracking +2,
+and verse-streak milestones +5/+15/+50 at 7/30/100 days. Board completions
+pay KIDS ONLY (+1 on parent approval, capped) — for adults the board is just
+life, and paying for it made junk tasks worth creating. Mood, status, and
+journal deliberately earn nothing: honesty is never paid.
 """
 
 import datetime as dt
@@ -23,9 +24,10 @@ from app.models import CrumbLedger, User
 LOGIN_CRUMBS = 1
 VERSES_CRUMBS = 3
 WORKOUT_CRUMBS = 3
+DIARY_CRUMBS = 2
 COMPLETE_CRUMBS = 1
-# Max crumbs/day from card completions, any kind. Three, deliberately tight:
-# "create a task, check it, repeat" must never be the best way to level.
+# Max crumbs/day from card completions (kids only). Three, deliberately
+# tight: checking off chores should feel seen, never be the way to level.
 COMPLETE_DAILY_CAP = 3
 WORKOUT_MIN_SECONDS = 15 * 60
 
@@ -90,7 +92,10 @@ def award(
 
 
 def award_completion(db: Session, user: User, item_id: int, date_for: dt.date) -> int:
-    """A completed card, +1, respecting the daily cap for this source."""
+    """A completed card, +1, KIDS ONLY (the parent's approval is the gate no
+    adult can farm), respecting the daily cap for this source."""
+    if not user.is_minor:
+        return 0
     earned_today = db.scalar(
         select(func.coalesce(func.sum(CrumbLedger.amount), 0)).where(
             CrumbLedger.user_id == user.id,

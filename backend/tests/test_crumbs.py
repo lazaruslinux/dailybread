@@ -157,27 +157,29 @@ def _make(client, **overrides):
     return res.json()
 
 
-def test_completing_a_card_pays_one_and_only_once(owner):
+def test_adult_completions_pay_nothing(owner):
+    # The board is just life for a grown-up; paying for it made junk tasks
+    # worth creating. Kids alone earn here, and only through approval.
     item = _make(owner, date_for=TODAY.isoformat())
     before = crumbs_total(owner)
     res = owner.post(f"/items/{item['id']}/complete?date={TODAY.isoformat()}")
-    assert res.json()["crumbs_awarded"] == 1
-    # Uncheck and recheck: the ledger key remembers.
-    owner.delete(f"/items/{item['id']}/complete?date={TODAY.isoformat()}")
-    res = owner.post(f"/items/{item['id']}/complete?date={TODAY.isoformat()}")
     assert res.json()["crumbs_awarded"] == 0
-    assert crumbs_total(owner) == before + 1
+    assert crumbs_total(owner) == before
 
 
-def test_completions_cap_at_three_a_day(owner):
-    items = [_make(owner, title=f"Chore {i}") for i in range(5)]
+def test_kid_completions_cap_at_three_a_day(owner, child):
+    kid_id = user_id(child)
+    items = [_make(owner, title=f"Chore {i}", assignee_ids=[kid_id]) for i in range(5)]
+    for item in items:
+        child.post(f"/items/{item['id']}/complete?date={TODAY.isoformat()}")
     awarded = sum(
-        owner.post(f"/items/{item['id']}/complete?date={TODAY.isoformat()}").json()[
-            "crumbs_awarded"
-        ]
+        owner.post(
+            f"/items/{item['id']}/complete?date={TODAY.isoformat()}&for={kid_id}"
+        ).json()["crumbs_awarded"]
         for item in items
     )
-    assert awarded == 3  # junk-card farming hits the wall fast
+    assert awarded == 3  # even a diligent kid levels by the day, not the pile
+    assert crumbs_total(child) >= 3
 
 
 def test_a_kids_crumb_lands_on_approval(owner, child):
@@ -216,3 +218,80 @@ def test_the_profile_carries_the_economy_panel(owner):
     assert profile["crumbs"] >= 1
     assert profile["next_level_cost"] == 10
     assert profile["level_progress"] == profile["crumbs"]
+
+
+# ---- locking in the day's calories ------------------------------------------------
+
+
+def _log_food(client, date=TODAY.isoformat()):
+    res = client.post(
+        "/diary",
+        json={
+            "date_for": date,
+            "slot": "breakfast",
+            "amount": 100,
+            "unit": "g",
+            "source": "usda",
+            "source_id": "111222",
+            "name": "Rolled Oats",
+            "brand": "",
+            "calories": 100.0,
+            "protein_g": 10.0,
+            "carbs_g": 20.0,
+            "fat_g": 2.0,
+        },
+    )
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+def test_locking_the_day_pays_two_once(owner):
+    _log_food(owner)
+    before = crumbs_total(owner)
+    res = owner.post(f"/diary/lock?date={TODAY.isoformat()}")
+    assert res.status_code == 200, res.text
+    assert res.json() == {"locked": True, "crumbs_awarded": 2}
+    assert crumbs_total(owner) == before + 2
+    # Unlock to fix something, re-lock: the ledger key already paid.
+    assert owner.delete(f"/diary/lock?date={TODAY.isoformat()}").json()["locked"] is False
+    res = owner.post(f"/diary/lock?date={TODAY.isoformat()}")
+    assert res.json() == {"locked": True, "crumbs_awarded": 0}
+    assert crumbs_total(owner) == before + 2
+
+
+def test_an_empty_day_cannot_be_locked(owner):
+    assert owner.post(f"/diary/lock?date={TODAY.isoformat()}").status_code == 400
+
+
+def test_a_locked_day_refuses_changes(owner):
+    entry = _log_food(owner)
+    owner.post(f"/diary/lock?date={TODAY.isoformat()}")
+    assert owner.post(
+        "/diary",
+        json={
+            "date_for": TODAY.isoformat(),
+            "slot": "lunch",
+            "amount": 50,
+            "unit": "g",
+            "source": "usda",
+            "source_id": "333444",
+            "name": "Rice",
+            "brand": "",
+            "calories": 60.0,
+        },
+    ).status_code == 400
+    assert owner.patch(f"/diary/{entry['id']}", json={"amount": 150}).status_code == 400
+    assert owner.delete(f"/diary/{entry['id']}").status_code == 400
+    assert owner.get(f"/diary?date={TODAY.isoformat()}").json()["locked"] is True
+    # Unlocking opens the day back up.
+    owner.delete(f"/diary/lock?date={TODAY.isoformat()}")
+    assert owner.patch(f"/diary/{entry['id']}", json={"amount": 150}).status_code == 200
+
+
+def test_locking_old_days_earns_nothing(owner):
+    week_ago = (TODAY - dt.timedelta(days=7)).isoformat()
+    _log_food(owner, date=week_ago)
+    before = crumbs_total(owner)
+    res = owner.post(f"/diary/lock?date={week_ago}")
+    assert res.json() == {"locked": True, "crumbs_awarded": 0}
+    assert crumbs_total(owner) == before

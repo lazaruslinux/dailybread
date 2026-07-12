@@ -1,11 +1,9 @@
 """The day's scheduled pushes: morning digest, mid-day check, evening check-in.
 
 Morning: "Good morning, <name>! X items on today's board. Next up: <card> at
-<time>. Tap to review & read your Daily Bread!" — open items only, Next up is
-the next undone card whose time is still ahead. Midday and evening go only to
-members actually using the food diary. Minors and empty boards stay silent,
-and the claim log keeps each push to one per member per day whatever the
-server does.
+<time>." with open items only; evening asks about the day. Minors and empty
+boards stay silent, and the claim log keeps each push to one per member per
+day whatever the server does.
 """
 
 import datetime as dt
@@ -158,69 +156,7 @@ def test_unsubscribed_members_are_skipped_but_not_burned(
     assert push_outbox[1][0] == SUB2["endpoint"]
 
 
-# ---- the mid-day check and the evening check-in -------------------------------------
-
-OATS = {
-    "source": "usda",
-    "source_id": "111222",
-    "name": "Rolled Oats",
-    "brand": "",
-    "calories": 100.0,
-    "protein_g": 10.0,
-    "carbs_g": 20.0,
-    "fat_g": 2.0,
-    "sugar_g": 1.0,
-}
-
-
-def log_food(client, amount=100):
-    res = client.post(
-        "/diary",
-        json={
-            "date_for": TODAY.isoformat(),
-            "slot": "breakfast",
-            "amount": amount,
-            "unit": "g",
-            **OATS,
-        },
-    )
-    assert res.status_code == 201, res.text
-
-
-def test_midday_check_counts_calories_left(owner, configured, push_outbox, engine_db):
-    owner.put("/push/subscription", json=SUB)
-    log_food(owner, amount=100)  # 100 kcal against the default 2,000 target
-
-    assert push_engine.digest_tick(at(12)) == 1
-    endpoint, payload = push_outbox[0]
-    assert payload["title"] == "Mid-day check"
-    assert payload["body"] == "What's for lunch? 1,900 calories left for the day."
-
-
-def test_midday_over_budget_says_so(owner, configured, push_outbox, engine_db):
-    owner.put("/push/subscription", json=SUB)
-    res = owner.put(
-        "/diary/targets",
-        json={"calories": 500, "protein_pct": 30, "carbs_pct": 40, "fat_pct": 30},
-    )
-    assert res.status_code == 200, res.text
-    log_food(owner, amount=600)  # 600 kcal against a 500 target
-
-    push_engine.digest_tick(at(12))
-    assert push_outbox[0][1]["body"] == "What's for lunch? 100 calories over so far."
-
-
-def test_midday_skips_non_trackers_for_good(owner, parent, configured, push_outbox, engine_db):
-    # The second parent never logs food: no lunch nudge — and starting to log
-    # AFTER noon doesn't trigger a belated one either (the claim landed).
-    owner.put("/push/subscription", json=SUB)
-    parent.put("/push/subscription", json=SUB2)
-    log_food(owner)
-
-    assert push_engine.digest_tick(at(12)) == 1
-    log_food(parent)
-    assert push_engine.digest_tick(at(13)) == 0
-    assert [ep for ep, _ in push_outbox] == [SUB["endpoint"]]
+# ---- the evening check-in -------------------------------------
 
 
 def test_evening_checkin_asks_about_the_day(owner, parent, configured, push_outbox, engine_db):
@@ -245,13 +181,11 @@ def test_evening_window_closes_at_ten(owner, configured, push_outbox, engine_db)
     assert push_engine.digest_tick(at(21, 59)) == 1
 
 
-def test_all_three_land_on_a_trackers_day(owner, configured, push_outbox, engine_db):
+def test_both_checkins_land_on_a_full_day(owner, configured, push_outbox, engine_db):
     owner.put("/push/subscription", json=SUB)
     seed_day(owner)
-    log_food(owner)
 
     assert push_engine.digest_tick(at(7)) == 1
-    assert push_engine.digest_tick(at(12, 30)) == 1
     assert push_engine.digest_tick(at(19)) == 1
     titles = [p["title"] for _, p in push_outbox]
-    assert titles == ["Good morning, Owner!", "Mid-day check", "Evening check-in"]
+    assert titles == ["Good morning, Owner!", "Evening check-in"]

@@ -1,7 +1,7 @@
-"""Per-kind push preferences, and the four notification kinds they gate:
-the past-due sweep, the dinner-time reminder, the sync-went-quiet nudge, and
-the verse-streak-at-risk word. Prefs subtract from a default of everything-on;
-a missing key always reads as on, so new kinds never need a backfill.
+"""Per-kind push preferences and the scheduled kinds they gate: past-due
+alerts, the check-ins, the sync timeout, and the streak reminder. Prefs
+subtract from a default of everything-on; a missing key always reads as on,
+so new kinds never need a backfill.
 """
 
 import datetime as dt
@@ -45,17 +45,17 @@ def test_prefs_default_to_everything_on(owner):
 
 
 def test_flipping_one_kind_keeps_the_rest(owner):
-    res = owner.put("/push/prefs", json={"prefs": {"midday": False}})
+    res = owner.put("/push/prefs", json={"prefs": {"evening": False}})
     assert res.status_code == 200
     prefs = res.json()["prefs"]
-    assert prefs["midday"] is False
+    assert prefs["evening"] is False
     assert prefs["morning"] is True
     # A second partial update doesn't resurrect the first.
     owner.put("/push/prefs", json={"prefs": {"family": False}})
     prefs = owner.get("/push/prefs").json()["prefs"]
-    assert prefs == {**prefs, "midday": False, "family": False}
+    assert prefs == {**prefs, "evening": False, "family": False}
     # And flipping back on really clears it.
-    owner.put("/push/prefs", json={"prefs": {"midday": True, "family": True}})
+    owner.put("/push/prefs", json={"prefs": {"evening": True, "family": True}})
     assert all(owner.get("/push/prefs").json()["prefs"].values())
 
 
@@ -121,73 +121,59 @@ def test_digest_off_claims_quietly(owner, configured, push_outbox, engine_db):
     assert push_outbox == []
 
 
-# ---- the past-due sweep ---------------------------------------------------------
+# ---- past-due alerts ------------------------------------------------------------
 
 
-def test_overdue_sweep_lists_what_slipped(owner, configured, push_outbox, engine_db):
+YESTERDAY = TODAY - dt.timedelta(days=1)
+
+
+def test_past_due_alert_fires_a_day_later_once(owner, configured, push_outbox, engine_db):
     owner.put("/push/subscription", json=SUB)
     make(
         owner,
-        kind="appointment",
-        title="Dentist",
-        date_for=TODAY.isoformat(),
-        time_of_day="14:00:00",
-        end_time="14:30:00",
+        title="Call the plumber",
+        date_for=YESTERDAY.isoformat(),
+        time_of_day="09:00:00",
     )
-    make(owner, title="Call the plumber", date_for=TODAY.isoformat(), time_of_day="09:00:00")
-
-    assert push_engine.digest_tick(at(15, 59)) == 0  # not yet: the sweep is at 4
-    assert push_engine.digest_tick(at(16)) == 1
-    _endpoint, payload = push_outbox[0]
-    assert payload["title"] == "A few things slipped past"
-    assert payload["body"] == "Still open from today: Call the plumber, Dentist."
-    # Once per day, whatever the server does.
-    assert push_engine.digest_tick(at(17)) == 0
-    assert len(push_outbox) == 1
+    push_outbox.clear()  # setup's board-change push isn't under test here
+    assert push_engine.digest_tick(at(8)) == 0  # 23 hours: not yet
+    assert push_engine.digest_tick(at(10)) == 1  # 25 hours: the nudge
+    _ep, payload = push_outbox[0]
+    assert payload["title"] == "Past due: Call the plumber"
+    assert payload["body"] == "Was due yesterday at 9:00 AM and it's still open."
+    assert push_engine.digest_tick(at(11)) == 0  # once, ever
 
 
-def test_overdue_caps_at_three_titles(owner, configured, push_outbox, engine_db):
+def test_done_and_ancient_cards_never_alert(owner, configured, push_outbox, engine_db):
     owner.put("/push/subscription", json=SUB)
-    for hour in (8, 9, 10, 11):
-        make(owner, title=f"Chore {hour}", date_for=TODAY.isoformat(), time_of_day=f"{hour:02d}:00:00")
-
-    push_engine.digest_tick(at(16))
-    body = push_outbox[0][1]["body"]
-    assert body == "Still open from today: Chore 8, Chore 9, Chore 10 and 1 more."
-
-
-def test_overdue_skips_done_future_and_routines(owner, configured, push_outbox, engine_db):
-    owner.put("/push/subscription", json=SUB)
-    done = make(owner, title="Done thing", date_for=TODAY.isoformat(), time_of_day="09:00:00")
+    done = make(owner, title="Handled", date_for=YESTERDAY.isoformat(), time_of_day="09:00:00")
     owner.post(f"/items/{done['id']}/complete?date={TODAY.isoformat()}")
-    make(owner, title="Tonight thing", date_for=TODAY.isoformat(), time_of_day="20:00:00")
-    make(
-        owner,
-        kind="routine",
-        title="Morning run",
-        time_of_day="06:00:00",
-        repeat={"type": "weekly", "days": [0, 1, 2, 3, 4, 5, 6]},
-    )
+    push_outbox.clear()
+    assert push_engine.digest_tick(at(10)) == 0
 
-    # The done card, the still-ahead card, and the routine are all left be —
-    # and with nothing overdue the sweep claims quietly, so a card going
-    # overdue at 17:30 doesn't ring a belated sweep.
-    assert push_engine.digest_tick(at(16)) == 0
-    assert push_outbox == []
-    assert push_engine.digest_tick(at(18)) == 0
+    # A card whose alert moment is itself more than a day old claims quietly:
+    # the feature arriving over a backlog must not dogpile.
+    with engine_db() as db:
+        from app.models import Item as _Item
+
+        row = db.query(_Item).filter_by(title="Handled").one()
+        row.date_for = TODAY - dt.timedelta(days=3)
+        db.commit()
+    assert push_engine.digest_tick(at(10)) == 0
 
 
-def test_overdue_respects_the_pref(owner, configured, push_outbox, engine_db):
+def test_past_due_alert_respects_the_pref(owner, configured, push_outbox, engine_db):
     owner.put("/push/subscription", json=SUB)
     owner.put("/push/prefs", json={"prefs": {"overdue": False}})
-    make(owner, title="Slipped", date_for=TODAY.isoformat(), time_of_day="09:00:00")
-    assert push_engine.digest_tick(at(16)) == 0
+    make(owner, title="Slipped", date_for=YESTERDAY.isoformat(), time_of_day="09:00:00")
+    push_outbox.clear()
+    assert push_engine.digest_tick(at(10)) == 0
 
 
-# ---- the evening's tomorrow preview ---------------------------------------------
+# ---- the evening check-in ---------------------------------------------------
 
 
-def test_evening_previews_tomorrow(owner, configured, push_outbox, engine_db):
+def test_evening_is_a_plain_question(owner, configured, push_outbox, engine_db):
     owner.put("/push/subscription", json=SUB)
     tomorrow = TODAY + dt.timedelta(days=1)
     make(
@@ -198,78 +184,10 @@ def test_evening_previews_tomorrow(owner, configured, push_outbox, engine_db):
         time_of_day="09:00:00",
         end_time="09:30:00",
     )
-    make(
-        owner,
-        kind="appointment",
-        title="Parent-teacher night",
-        date_for=tomorrow.isoformat(),
-        time_of_day="18:00:00",
-        end_time="19:00:00",
-    )
-
+    push_outbox.clear()
     assert push_engine.digest_tick(at(19)) == 1
-    body = push_outbox[0][1]["body"]
-    assert body == "How was your day? Tomorrow: Dentist at 9:00 AM (+1 more)."
-
-
-def test_evening_stays_plain_when_tomorrow_is_clear(owner, configured, push_outbox, engine_db):
-    owner.put("/push/subscription", json=SUB)
-    assert push_engine.digest_tick(at(19)) == 1
+    # No tomorrow preview, no agenda: the evening is for review, not planning.
     assert push_outbox[0][1]["body"] == "How was your day?"
-
-
-# ---- the dinner-time reminder ---------------------------------------------------
-
-
-def set_dinner(owner, time="18:00:00", title="Tacos"):
-    res = owner.put(
-        "/meals",
-        json={"date_for": TODAY.isoformat(), "slot": "dinner", "custom_title": title},
-    )
-    assert res.status_code == 200, res.text
-    res = owner.put(
-        "/meals/time",
-        json={"date_for": TODAY.isoformat(), "slot": "dinner", "time_of_day": time},
-    )
-    assert res.status_code == 200, res.text
-
-
-def test_dinner_reminder_rings_the_household_once(
-    owner, parent, child, configured, push_outbox, engine_db
-):
-    owner.put("/push/subscription", json=SUB)
-    parent.put("/push/subscription", json=SUB2)
-    child.put("/push/subscription", json={"endpoint": "https://push.example/kid", "keys": {"p256dh": "k3", "auth": "a3"}})
-    set_dinner(owner)
-
-    assert push_engine.digest_tick(at(17, 15)) == 0  # 45 min out, lead is 30
-    assert push_engine.digest_tick(at(17, 40)) == 2  # both adults, never the kid
-    payloads = {ep: p for ep, p in push_outbox}
-    assert payloads[SUB["endpoint"]]["title"] == "Dinner at 6:00 PM"
-    assert payloads[SUB["endpoint"]]["body"] == "Tacos"
-    # Once per evening, even while still inside the window.
-    assert push_engine.digest_tick(at(17, 50)) == 0
-    # And not after dinner time itself.
-    assert push_engine.digest_tick(at(18, 10)) == 0
-
-
-def test_dinner_reminder_respects_the_pref(owner, configured, push_outbox, engine_db):
-    owner.put("/push/subscription", json=SUB)
-    owner.put("/push/prefs", json={"prefs": {"dinner": False}})
-    set_dinner(owner)
-    assert push_engine.digest_tick(at(17, 40)) == 0
-
-
-def test_a_time_only_plan_still_reminds(owner, configured, push_outbox, engine_db):
-    owner.put("/push/subscription", json=SUB)
-    res = owner.put(
-        "/meals/time",
-        json={"date_for": TODAY.isoformat(), "slot": "dinner", "time_of_day": "18:00:00"},
-    )
-    assert res.status_code == 200, res.text
-    assert push_engine.digest_tick(at(17, 40)) == 1
-    assert push_outbox[0][1]["title"] == "Dinner at 6:00 PM"
-    assert push_outbox[0][1]["body"] == ""
 
 
 # ---- the sync-went-quiet nudge --------------------------------------------------

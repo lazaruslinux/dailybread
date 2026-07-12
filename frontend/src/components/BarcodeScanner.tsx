@@ -41,7 +41,7 @@ export function BarcodeScanner({
       // Camera needs a secure context (HTTPS); anywhere else this API simply
       // isn't there and the manual field below is the way in.
       if (!navigator.mediaDevices?.getUserMedia) {
-        setNotice('No camera here — type the numbers under the barcode instead.')
+        setNotice('No camera here. Type the numbers under the barcode instead.')
         return
       }
       try {
@@ -53,7 +53,7 @@ export function BarcodeScanner({
           audio: false,
         })
       } catch {
-        setNotice('Camera unavailable or blocked — type the numbers under the barcode instead.')
+        setNotice('Camera unavailable or blocked. Type the numbers under the barcode instead.')
         return
       }
       if (cancelled) {

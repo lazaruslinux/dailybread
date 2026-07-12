@@ -22,11 +22,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app import crumbs, hc_webhook, throttle
+from app.clock import family_now
 from app.db import get_db
 from app.deps import require_adult
 from app.invitecodes import hash_code
 from app.models import (
     Completion,
+    Family,
     FitnessDaily,
     IngestToken,
     Item,
@@ -443,6 +445,9 @@ def ingest_health(
     authorization: str | None = Header(default=None),
 ):
     user = _ingest_user(db, authorization)
+    family = db.get(Family, user.family_id)
+    local_today = family_now(dt.datetime.now(), family.timezone if family else None).date()
+    seen_before = _todays_workout_ids(db, user, local_today)
     if HC_INGEST_ENABLED and hc_webhook.looks_like(payload):
         # The Android dialect (HC Webhook / Health Connect); same token, same
         # idempotent writes, times converted onto the family's clock.
@@ -456,7 +461,59 @@ def ingest_health(
     routines = _auto_complete_routines(db, user, workout_days)
     db.commit()
     _award_workout_crumbs(db, user, workout_days)
+    _push_new_workouts(db, user, local_today, seen_before)
     return IngestResultOut(days=days, workouts=workouts, routines_completed=routines)
+
+
+def _todays_workout_ids(db: Session, user: User, day: dt.date) -> set[int]:
+    return set(
+        db.scalars(
+            select(Workout.id).where(
+                Workout.user_id == user.id,
+                Workout.started_at >= dt.datetime.combine(day, dt.time.min),
+                Workout.started_at <= dt.datetime.combine(day, dt.time.max),
+            )
+        )
+    )
+
+
+def _push_new_workouts(db: Session, user: User, day: dt.date, seen_before: set[int]) -> None:
+    """Tell the household when a member finishes a real workout: only rows
+    this very sync CREATED, only today's (catch-up syncs of past days stay
+    silent), only 15+ minutes. Insert-only detection means a re-sent window
+    never re-pings. A push failure never fails the sync."""
+    from app import push
+
+    if not push.enabled():
+        return
+    try:
+        fresh = [
+            w
+            for w in db.scalars(
+                select(Workout).where(
+                    Workout.id.in_(_todays_workout_ids(db, user, day) - seen_before)
+                )
+            )
+            if (w.duration_s or 0) >= crumbs.WORKOUT_MIN_SECONDS
+        ]
+        if not fresh:
+            return
+        first_name = user.display_name.split()[0]
+        adults = db.scalars(
+            select(User).where(User.family_id == user.family_id, User.id != user.id)
+        ).all()
+        for workout in fresh:
+            payload = {
+                "title": f"{first_name} completed a workout",
+                "body": f"{workout.activity} · {round((workout.duration_s or 0) / 60)} min",
+                "tag": f"workout-{workout.id}",
+                "url": "/",
+            }
+            for member in adults:
+                if not member.is_minor and push.wants(member, "workouts"):
+                    push.send_to_user(db, member.id, payload)
+    except Exception:
+        log.exception("workout push failed (the sync itself landed)")
 
 
 def _award_workout_crumbs(db: Session, user: User, workout_days: set[dt.date]) -> None:

@@ -144,6 +144,14 @@ def _village_out(db: Session, village: Village, viewer_family_id: int) -> Villag
                     crumbs=total,
                 )
             )
+    # Kid accounts cross the wall as a COUNT only, nothing else.
+    kid_counts = dict(
+        db.execute(
+            select(User.family_id, func.count())
+            .where(User.family_id.in_(family_ids), User.role == Role.child)
+            .group_by(User.family_id)
+        ).all()
+    ) if family_ids else {}
     active = _invite_active(village, _utcnow())
     return VillageOut(
         id=village.id,
@@ -155,6 +163,7 @@ def _village_out(db: Session, village: Village, viewer_family_id: int) -> Villag
                 name=family.name,
                 joined_at=vf.joined_at,
                 parents=parents_by_family.get(family.id, []),
+                kid_count=kid_counts.get(family.id, 0),
             )
             for vf, family in rows
         ],
@@ -534,7 +543,7 @@ def save_a_copy(
     if share.family_id == parent.family_id:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            "It's already your recipe — no copy needed",
+            "It's already your recipe, no copy needed",
         )
     src = db.get(Recipe, share.recipe_id)
 

@@ -566,6 +566,29 @@ class FoodServingOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SavedFoodIn(BaseModel):
+    """A food being pinned to the family's Saved Foods: the same
+    find-or-create contract as recipe ingredients, minus any amount (a pin
+    is about the food, not a portion). food_id reuses an already-stored row;
+    otherwise source/source_id/name/macros describe it."""
+
+    food_id: int | None = None
+    source: FoodSource
+    source_id: str | None = Field(default=None, max_length=64)
+    name: str = Field(min_length=1, max_length=200)
+    brand: str = Field(default="", max_length=120)
+    calories: float | None = Field(default=None, ge=0, le=100000)
+    protein_g: float | None = Field(default=None, ge=0, le=10000)
+    carbs_g: float | None = Field(default=None, ge=0, le=10000)
+    fat_g: float | None = Field(default=None, ge=0, le=10000)
+    saturated_fat_g: float | None = Field(default=None, ge=0, le=10000)
+    trans_fat_g: float | None = Field(default=None, ge=0, le=10000)
+    cholesterol_mg: float | None = Field(default=None, ge=0, le=10_000_000)
+    sodium_mg: float | None = Field(default=None, ge=0, le=10_000_000)
+    fiber_g: float | None = Field(default=None, ge=0, le=10000)
+    sugar_g: float | None = Field(default=None, ge=0, le=10000)
+
+
 class FoodOut(BaseModel):
     """A food with per-100g nutrition. id is None for an un-saved search/barcode
     result (the client saves it when it's used in a recipe); set for a stored
@@ -856,6 +879,16 @@ class DiaryDayOut(BaseModel):
     entries: list[DiaryEntryOut]
     exercise: list[ExerciseOut] = []
     burned: float = 0.0
+    # The day is locked in: entries refuse changes until unlocked.
+    locked: bool = False
+
+
+class DiaryLockOut(BaseModel):
+    """The lock/unlock response: the day's new state, and what the lock just
+    earned (+2 the first time a date is locked, 0 forever after)."""
+
+    locked: bool
+    crumbs_awarded: int = 0
 
 
 # ---- profiles and moods --------------------------------------------------------
@@ -1161,6 +1194,9 @@ class VillageFamilyOut(BaseModel):
     name: str
     joined_at: dt.datetime
     parents: list[VillageParentOut] = []
+    # How many kid accounts the family has on the app. Only the COUNT crosses
+    # the wall; kids' names, faces, and everything else stay sealed.
+    kid_count: int = 0
 
 
 class VillageCheckOut(BaseModel):

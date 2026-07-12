@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react'
+import { BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ExternalLink, Zap } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import * as api from '../lib/api'
 import { verseLink, versesForDate } from '../lib/verses'
@@ -79,7 +79,9 @@ export function VerseCard() {
         data-verse-card-folded
       >
         <BookOpen className="h-4 w-4 shrink-0 text-gold/80" strokeWidth={2} />
-        <span className="min-w-0 flex-1 truncate text-sm text-fg/60">Read today</span>
+        <span className="min-w-0 flex-1 truncate text-[10px] font-semibold uppercase tracking-widest text-gold/70">
+          Daily bread
+        </span>
         <ChevronDown className="h-4 w-4 shrink-0 text-fg/35" />
       </motion.button>
     )
@@ -99,6 +101,16 @@ export function VerseCard() {
           Daily bread
         </span>
         <div className="flex items-center gap-1">
+          {allRead && (
+            <button
+              type="button"
+              aria-label="Fold the verses away"
+              onClick={() => setCollapsed(true)}
+              className="rounded-lg p-1 text-fg/40 transition-colors hover:bg-fg/10 hover:text-fg/75"
+            >
+              <ChevronUp className="h-4 w-4" strokeWidth={2.5} />
+            </button>
+          )}
           <button
             type="button"
             aria-label="Previous verse"
@@ -181,8 +193,9 @@ export function VerseCard() {
             )}
           </div>
           {allRead && !collapsed && (state?.streak ?? 0) > 0 && (
-            <p className="mt-2 text-center text-[11px] font-semibold text-gold/70">
+            <p className="mt-2 flex items-center justify-center gap-1 text-[11px] font-semibold text-gold/70">
               {state?.streak} day streak
+              <Zap className="h-3 w-3 text-gold" strokeWidth={2.5} />
             </p>
           )}
         </motion.div>

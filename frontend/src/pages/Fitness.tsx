@@ -181,7 +181,7 @@ const PLATFORM_COPY: Record<Platform, { title: string; intro: string; after: str
     intro:
       'Your phone sends the numbers here itself; no cloud service ever sees them. You need an iPhone app that can send Apple Health data to a web address on a schedule (Health Auto Export is the one the docs walk through). This makes a sync key for it. If you already have one, this replaces it.',
     after:
-      'Point the exporter app at this address, add the header below, and choose which metrics to send — turn on route data for the little run maps.',
+      'Point the exporter app at this address, add the header below, and choose which metrics to send. Turn on route data for the little run maps.',
   },
   android: {
     title: 'Connect Health Connect',
@@ -874,7 +874,42 @@ function WeightSparkline({ points }: { points: WeighPoint[] }) {
   )
 }
 
-function WeightCard({ points, onOpen }: { points: WeighPoint[]; onOpen: () => void }) {
+// "Goal 200 lb by Nov 3": the Health Calculator's plan, one line. Pure
+// arithmetic on the profile (lbs to go / lbs per week), empty when there's
+// no active lose/gain plan.
+function weightGoalText(health: api.Health): string | null {
+  const p = health.profile
+  const w = health.latest_weight
+  const c = health.computed
+  if (!p || !w || !c || c.at_goal || p.goal_weight_kg == null) return null
+  const goalLb = lb1(p.goal_weight_kg)
+  if (p.goal !== 'lose' && p.goal !== 'gain') return `Goal ${goalLb} lb`
+  const rate = p.rate_lbs_per_week ?? 0
+  if (rate <= 0) return `Goal ${goalLb} lb`
+  const lbsToGo = Math.abs(w.weight_kg - p.goal_weight_kg) * 2.20462
+  const days = Math.round((lbsToGo / rate) * 7)
+  if (days <= 0 || days >= 365 * 3) return `Goal ${goalLb} lb`
+  const when = new Date(Date.now() + days * 86_400_000)
+  const label = when.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(when.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}),
+  })
+  return `Goal ${goalLb} lb by ${label}`
+}
+
+
+function WeightCard({
+  points,
+  goal,
+  onOpen,
+}: {
+  points: WeighPoint[]
+  // The plan, read-only: the goal is EDITED in Nutrition's Health Calculator
+  // (where the calorie budget lives); here it just captions the progress.
+  goal: string | null
+  onOpen: () => void
+}) {
   const latest = points[points.length - 1]
   return (
     <button type="button" onClick={onOpen} className="glass relative flex items-center gap-3 p-4 text-left">
@@ -882,7 +917,10 @@ function WeightCard({ points, onOpen }: { points: WeighPoint[]; onOpen: () => vo
         <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
           <Scale className="h-3.5 w-3.5" style={{ color: 'var(--fit-weight)' }} /> Weight
         </span>
-        <p className="mt-1 text-[11px] text-fg/45">Last weigh-in · {fmtShortDate(latest.date)}</p>
+        <p className="mt-1 text-[11px] text-fg/45">
+          Last weigh-in · {fmtShortDate(latest.date)}
+          {goal && ` · ${goal}`}
+        </p>
         <p className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fit-weight)' }}>
           {lb1(latest.kg).toLocaleString()}
           <span className="ml-1 text-sm font-semibold">lb</span>
@@ -1241,7 +1279,11 @@ export function Fitness() {
           </div>
 
           {health !== null && weighSeries(health.weights).length > 0 && (
-            <WeightCard points={weighSeries(health.weights)} onOpen={() => setWeightOpen(true)} />
+            <WeightCard
+              points={weighSeries(health.weights)}
+              goal={weightGoalText(health)}
+              onOpen={() => setWeightOpen(true)}
+            />
           )}
 
           {data.workouts.length > 0 && (
@@ -1308,7 +1350,7 @@ export function Fitness() {
               </button>
               {data.count_watch_kcal && (
                 <p className="mt-2 text-xs text-fg/45">
-                  Each synced workout's own calories are added to that day's diary — never the
+                  Each synced workout's own calories are added to that day's diary, never the
                   all-day active total. If you also log exercise by hand, the larger of the two
                   counts, not both.
                 </p>

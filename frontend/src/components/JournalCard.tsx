@@ -68,7 +68,7 @@ export function JournalCard() {
       </span>
       <p className="mt-1 font-display text-lg leading-tight text-fg">{formatDay(today)}</p>
       <p className="mb-3 mt-1 text-xs text-fg/45">
-        Private to you. Tonight it moves to your archive and tomorrow starts fresh.
+        How did your day turn out? Write out how you feel here, and save it if you'd like.
       </p>
 
       <textarea

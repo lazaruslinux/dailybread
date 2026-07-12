@@ -635,8 +635,9 @@ def create_item(
     _push_board_change(
         db,
         _board_change_recipients(db, item, parent),
-        parent,
-        "added",
+        parent.display_name.split()[0],
+        "scheduled" if item.kind == ItemKind.appointment else "added",
+        item.kind,
         item.title,
         _schedule_text(item),
     )
@@ -704,8 +705,9 @@ def update_item(
         _push_board_change(
             db,
             _board_change_recipients(db, item, parent),
-            parent,
-            "moved",
+            parent.display_name.split()[0],
+            "rescheduled",
+            item.kind,
             item.title,
             f"Now {_schedule_text(item)}",
         )
@@ -726,7 +728,7 @@ def delete_item(
     recipients = _board_change_recipients(db, item, parent)
     db.delete(item)  # completions cascade away with it
     db.commit()
-    _push_board_change(db, recipients, parent, "removed", title, "")
+    _push_board_change(db, recipients, parent.display_name.split()[0], "removed", kind, title)
 
 
 # ---- cancelling (appointments and activities) -----------------------------------
@@ -769,6 +771,14 @@ def cancel_item(
         )
     )
     db.commit()
+    _push_board_change(
+        db,
+        _board_change_recipients(db, item, parent),
+        parent.display_name.split()[0],
+        "cancelled",
+        item.kind,
+        item.title,
+    )
     return _build_feed_item(
         db, item, parent, date_for, _completions_by_item(db, [item])[item.id]
     )
@@ -843,15 +853,33 @@ def _board_change_recipients(db: Session, item: Item, actor: User) -> list[int]:
     ]
 
 
+# How each kind reads in a sentence: "Alex added a task: Take out the trash".
+_KIND_PHRASE = {
+    ItemKind.task: "a task",
+    ItemKind.activity: "an activity",
+    ItemKind.appointment: "an appointment",
+    ItemKind.routine: "a routine",
+}
+
+
 def _push_board_change(
-    db: Session, recipient_ids: list[int], actor: User, verb: str, title: str, body: str
+    db: Session,
+    recipient_ids: list[int],
+    actor_first: str,
+    verb: str,
+    kind: ItemKind,
+    title: str,
+    body: str = "",
 ) -> None:
-    if not recipient_ids:
+    """One family push per board action, phrased like a person: the verb, the
+    kind, and the card's name right in the title. Routines never push here —
+    they're the board's daily heartbeat, not news (kid routines still reach
+    parents through Kid Tasks)."""
+    if kind == ItemKind.routine or not recipient_ids:
         return
     try:
-        first = actor.display_name.split()[0]
         payload = {
-            "title": f"{first} {verb}: {title}",
+            "title": f"{actor_first} {verb} {_KIND_PHRASE[kind]}: {title}",
             "body": body,
             "tag": f"board-change-{title[:40]}",
             "url": "/",
@@ -927,7 +955,7 @@ def complete_item(
         # A called-off occurrence can't be done. Putting it back on
         # (DELETE /cancel) is the only move from here.
         raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "It's been called off — put it back on first"
+            status.HTTP_400_BAD_REQUEST, "It's been called off. Put it back on first"
         )
 
     awarded = 0
@@ -945,6 +973,16 @@ def complete_item(
             # The crumb belongs to whoever DID the thing (the target), and
             # only once it's official — a pending kid tap earns on approval.
             awarded = crumbs.award_completion(db, target, item.id, date_for)
+            # The family hears about it in the DOER's name; whoever tapped is
+            # the one excluded from hearing their own news.
+            _push_board_change(
+                db,
+                _board_change_recipients(db, item, user),
+                target.display_name.split()[0],
+                "completed",
+                item.kind,
+                item.title,
+            )
     elif exists.pending and user.role == Role.parent:
         # Approval: promote the kid's pending row in place (never a second row,
         # so the (item, member, day) uniqueness keeps holding) and remember who
@@ -955,6 +993,14 @@ def complete_item(
         doer = db.get(User, exists.user_id)
         if doer is not None:
             awarded = crumbs.award_completion(db, doer, item.id, exists.date_for)
+            _push_board_change(
+                db,
+                _board_change_recipients(db, item, user),
+                doer.display_name.split()[0],
+                "completed",
+                item.kind,
+                item.title,
+            )
 
     out = _build_feed_item(
         db, item, user, date_for, _completions_by_item(db, [item])[item.id]

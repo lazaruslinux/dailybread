@@ -98,7 +98,7 @@ function ShareSheet({
           </button>
         ))}
         {recipes?.length === 0 && (
-          <p className="py-4 text-center text-sm text-fg/40">No recipes yet — build one first.</p>
+          <p className="py-4 text-center text-sm text-fg/40">No recipes yet. Build one first.</p>
         )}
       </div>
     </Sheet>
@@ -157,7 +157,7 @@ export function ShareToVillage({ recipe }: { recipe: api.Recipe }) {
           <span className="flex min-w-0 items-center gap-1.5">
             <Share2 className="h-3.5 w-3.5 shrink-0 text-accent-bright" />
             <span className="truncate">
-              Shared to {sh.village_name} — your edits show there live
+              Shared to {sh.village_name}. Your edits show there live
             </span>
           </span>
           <button
@@ -207,6 +207,8 @@ export function SharedRecipesBox() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState<string | null>(null)
+  // Like the recipe library: show the newest couple, fold the rest.
+  const [showAll, setShowAll] = useState(false)
 
   const isParent = user?.role === 'parent'
 
@@ -299,7 +301,7 @@ export function SharedRecipesBox() {
         </p>
       ) : (
         <div className="flex flex-col gap-1.5">
-          {theirs.map((s) => (
+          {(showAll ? theirs : theirs.slice(0, 2)).map((s) => (
             <button
               key={s.share_id}
               type="button"
@@ -323,6 +325,15 @@ export function SharedRecipesBox() {
               )}
             </button>
           ))}
+          {theirs.length > 2 && (
+            <button
+              type="button"
+              onClick={() => setShowAll((v) => !v)}
+              className="mt-0.5 w-full rounded-xl border border-fg/10 bg-fg/5 py-2 text-center text-xs font-semibold text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
+            >
+              {showAll ? 'Show fewer' : `Show all ${theirs.length} recipes`}
+            </button>
+          )}
         </div>
       )}
 

@@ -12,7 +12,7 @@ Per member, inside the window:
   - each fully-read verse day        +3   (verses:<date>)
   - streak milestones crossed        +5/+15/+50 (vstreak:<n>)
   - each day with a 15+ min workout  +3   (workout:<date>)
-  - completions, capped 10 a day     +1   (item:<id>:<date>)
+  - completions, KIDS only, capped   +1   (item:<id>:<date>)
   - a login proxy: any day they left a trace (completion, diary entry, mood,
     verse check)                     +1   (login:<date>)
 """
@@ -92,6 +92,7 @@ def backfill_user(db, user: User, start: dt.date) -> int:
         )
 
     # Completions, oldest first, deterministic, capped like the live rule.
+    # Kids only, same as the live hook: adults' boards are just life.
     by_day: dict[dt.date, list[int]] = defaultdict(list)
     for item_id, day in db.execute(
         select(Completion.item_id, Completion.date_for)
@@ -104,12 +105,13 @@ def backfill_user(db, user: User, start: dt.date) -> int:
         .order_by(Completion.date_for, Completion.item_id)
     ):
         by_day[day].append(item_id)
-    for day, item_ids in by_day.items():
-        for item_id in item_ids[: crumbs.COMPLETE_DAILY_CAP]:
-            total += crumbs.award(
-                db, user, "complete", crumbs.COMPLETE_CRUMBS,
-                f"item:{item_id}:{day.isoformat()}", day,
-            )
+    if user.is_minor:
+        for day, item_ids in by_day.items():
+            for item_id in item_ids[: crumbs.COMPLETE_DAILY_CAP]:
+                total += crumbs.award(
+                    db, user, "complete", crumbs.COMPLETE_CRUMBS,
+                    f"item:{item_id}:{day.isoformat()}", day,
+                )
 
     # The login proxy: any day with a trace of them.
     active: set[dt.date] = set(by_day)

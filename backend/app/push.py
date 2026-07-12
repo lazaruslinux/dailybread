@@ -29,8 +29,6 @@ from app.models import (
     IngestToken,
     Item,
     ItemKind,
-    Meal,
-    MealSlot,
     PushSubscription,
     ReminderLog,
     User,
@@ -41,23 +39,22 @@ log = logging.getLogger("dailybread.push")
 
 TICK_SECONDS = 60
 
-# Every notification kind a member can turn off individually. The board-change
-# trio and dinner picks share one switch ("family"): they're all "someone
-# changed something you can see", and ten-plus toggles is where people stop
-# reading. "verse" is additionally gated on verses_enabled — no verses, no
-# streak to protect.
+# Every notification kind a member can turn off individually. Board updates
+# and meal picks share one switch ("family"): they're all "someone changed
+# something you can see", and ten-plus toggles is where people stop reading.
+# "verse" is additionally gated on verses_enabled — no verses, no streak to
+# protect.
 PREF_KINDS = frozenset(
     {
-        "timed",  # the lead-time ping before a timed card
-        "overdue",  # the afternoon past-due sweep
-        "morning",  # the morning digest
-        "midday",  # the lunchtime food check
-        "evening",  # the evening check-in (with tomorrow's preview)
-        "family",  # board changes + dinner picks
-        "dinner",  # the dinner-time reminder
-        "approvals",  # a kid's check-off awaiting a parent
-        "sync",  # health sync went quiet
-        "verse",  # verse streak about to end
+        "timed",  # the lead-time ping before anything timed (Before Events)
+        "overdue",  # a nudge 24 hours after something goes past due
+        "morning",  # the morning summary
+        "evening",  # the evening check-in
+        "family",  # board updates + dinner lock-ins
+        "workouts",  # a family member finished a workout
+        "approvals",  # a kid's check-off awaiting a parent (Kid Tasks)
+        "sync",  # health sync went quiet (Health Sync Timeout)
+        "verse",  # verse streak about to end (Streak Reminders)
     }
 )
 
@@ -169,13 +166,20 @@ def reminder_tick(now: dt.datetime) -> int:
             .all()
         )
         # Each card is judged on ITS family's clock: inside the lead window,
-        # and (for anything recurring) on a day its schedule lands on.
+        # and (for anything recurring) on a day its schedule lands on. The
+        # lead depends on the kind: appointments get an hour of runway (shoes
+        # on, drive somewhere), everything else the short heads-up.
         due: list[tuple[Item, dt.date]] = []
         for item in items:
             local = clocks.get(item.family_id, now)
             today = local.date()
+            lead = (
+                settings.appointment_lead_minutes
+                if item.kind == ItemKind.appointment
+                else settings.reminder_lead_minutes
+            )
             window_start = local.time()
-            window_end = (local + dt.timedelta(minutes=settings.reminder_lead_minutes)).time()
+            window_end = (local + dt.timedelta(minutes=lead)).time()
             if window_end < window_start:
                 window_end = dt.time(23, 59, 59)  # clamp at midnight; the next day picks up the rest
             if not (window_start < item.time_of_day <= window_end):
@@ -358,110 +362,64 @@ def _todays_board(db: Session, user: User, now: dt.datetime) -> tuple[int, Item 
     return len(open_items), next_item
 
 
-def _overdue_today(db: Session, user: User, now: dt.datetime) -> list[Item]:
-    """Today's still-open cards whose moment has already passed, oldest first.
-    Routines are left out on purpose: they come around again tomorrow, and a
-    4 PM poke about a skipped morning run is nagging, not helping — the sweep
-    is for one-off commitments that will otherwise silently slip."""
-    past = [
-        item
-        for item in _open_today(db, user, now)
-        if item.kind != ItemKind.routine
-        and item.time_of_day is not None
-        and not item.all_day
-        and item.time_of_day <= now.time()
-    ]
-    return sorted(past, key=lambda i: i.time_of_day)
+def _past_due_pass(db: Session, clocks: dict[int, dt.datetime], now: dt.datetime) -> int:
+    """One nudge, 24 hours after a dated card's moment passed with nobody
+    marking it: "Past due: Call the plumber". One-shots only (routines reset
+    daily and never go "past due" on the board). Claimed on (item, the day
+    AFTER its date) via ReminderLog, which can't collide: a dated card only
+    ever claims its own day for the before-hand reminder. An alert more than
+    a day stale (a long server outage, or the feature arriving over an
+    existing backlog) claims quietly instead of dogpiling old cards."""
+    from app.routers.items import _completions_by_item
 
-
-def _tomorrow_preview(db: Session, user: User, local: dt.datetime) -> str:
-    """The evening check-in's look-ahead: tomorrow's earliest unresolved timed
-    card (never routines — they're every day by definition), or ""."""
-    from app.routers.items import _completions_by_item, _occurs
-
-    tomorrow = local.date() + dt.timedelta(days=1)
+    sent = 0
+    candidate_days = {local.date() - dt.timedelta(days=1) for local in clocks.values()}
     items = (
         db.scalars(
             select(Item)
             .options(selectinload(Item.assignees))
             .where(
-                Item.family_id == user.family_id,
                 Item.kind != ItemKind.routine,
-                Item.time_of_day.is_not(None),
-                or_(Item.date_for == tomorrow, Item.repeat_type.is_not(None)),
+                Item.repeat_type.is_(None),
+                Item.date_for.in_(candidate_days),
             )
         )
         .unique()
         .all()
     )
-    mine = [
-        item
-        for item in items
-        if not item.all_day
-        and _is_recipient(item, user)
-        and (item.repeat_type is None or _occurs(item, tomorrow))
-    ]
-    if not mine:
-        return ""
-    comps = _completions_by_item(db, mine)
-    open_items: list[Item] = []
-    for item in mine:
-        rows = comps[item.id]
-        if item.date_for is not None:
-            # A dated card checked (or called off) early is settled.
-            if any(not pend or canc for _uid, _day, pend, canc in rows):
-                continue
-        elif any(day == tomorrow and (not pend or canc) for _uid, day, pend, canc in rows):
+    if not items:
+        return 0
+    comps = _completions_by_item(db, items)
+    for item in items:
+        local = clocks.get(item.family_id, now)
+        due_at = dt.datetime.combine(
+            item.date_for,
+            item.time_of_day if item.time_of_day and not item.all_day else dt.time(23, 59),
+        )
+        alert_at = due_at + dt.timedelta(hours=24)
+        if local < alert_at:
             continue
-        open_items.append(item)
-    if not open_items:
-        return ""
-    first = min(open_items, key=lambda i: i.time_of_day)
-    line = f" Tomorrow: {first.title} at {_fmt(first.time_of_day)}"
-    if len(open_items) > 1:
-        line += f" (+{len(open_items) - 1} more)"
-    return line + "."
-
-
-def _food_trackers(db: Session, users: list[User], today: dt.date) -> list[User]:
-    """The members actually using the food diary (an entry in the last week),
-    so the lunch and evening nudges never bother someone who doesn't track."""
-    from app.models import DiaryEntry
-
-    active = set(
-        db.scalars(
-            select(DiaryEntry.user_id)
-            .where(DiaryEntry.date_for >= today - dt.timedelta(days=7))
-            .distinct()
-        )
-    )
-    return [u for u in users if u.id in active]
-
-
-def _calories_left(db: Session, user: User, today: dt.date) -> int:
-    """The same number the Nutrition tab shows: the day's calorie budget
-    (auto or manual target, raised by logged exercise) minus what's logged."""
-    from app.models import DiaryEntry, ExerciseEntry, NutritionTarget
-    from app.routers.diary import _targets_out
-
-    eaten = sum(
-        e.calories or 0.0
-        for e in db.scalars(
-            select(DiaryEntry).where(
-                DiaryEntry.user_id == user.id, DiaryEntry.date_for == today
-            )
-        )
-    )
-    burned = sum(
-        w.kcal
-        for w in db.scalars(
-            select(ExerciseEntry).where(
-                ExerciseEntry.user_id == user.id, ExerciseEntry.date_for == today
-            )
-        )
-    )
-    targets = _targets_out(db, user.id, db.get(NutritionTarget, user.id), round(burned, 1))
-    return int(round(targets.calories - eaten))
+        if comps[item.id]:  # done or cancelled, whenever it was marked
+            continue
+        if _already_reminded(db, item, item.date_for + dt.timedelta(days=1)):
+            continue
+        if local - alert_at > dt.timedelta(hours=24):
+            continue  # claimed quietly: too stale to nag about now
+        when = "yesterday"
+        if item.time_of_day and not item.all_day:
+            when += f" at {_fmt(item.time_of_day)}"
+        people = [
+            p for p in _recipients(db, item) if not p.is_minor and wants(p, "overdue")
+        ]
+        payload = {
+            "title": f"Past due: {item.title}",
+            "body": f"Was due {when} and it's still open.",
+            "tag": f"pastdue-{item.id}",
+            "url": "/",
+        }
+        for person in people:
+            sent += send_to_user(db, person.id, payload)
+    return sent
 
 
 def digest_tick(now: dt.datetime) -> int:
@@ -471,21 +429,16 @@ def digest_tick(now: dt.datetime) -> int:
 
     morning (digest_hour → noon): a personal summary of the day's board.
     Alongside it, "sync went quiet" for members whose health import stalled.
-    midday (midday_hour → 17:00): lunch nudge with calories left; only for
-    members actually using the food diary.
-    overdue (overdue_hour → 19:00): today's timed cards that slipped past
-    unchecked, one sweep, never a per-item drumbeat.
     evening (evening_hour → 22:00): "How was your day?" for every adult —
-    the day's sign-off, pointing at mood, status, and journal — now with
-    tomorrow's first appointment. Alongside it, the verse-streak-at-risk
-    nudge for opted-in readers.
-    dinner: not an hour window but a lead window before tonight's planned
-    dinner time, when the family set one.
+    the day's sign-off, pointing at mood, status, and journal. Alongside it,
+    the verse-streak-at-risk nudge for opted-in readers.
+    past-due: not an hour window — a per-item nudge 24 hours after a dated
+    card's moment passed unmarked.
 
-    Empty boards and non-trackers stay quiet, but still claim their row, so
-    a card added at 9:01 doesn't ring a belated good-morning. A turned-off
-    preference is checked after the claim for the same reason: flipping a
-    kind back on mid-window must not fire a stale push.
+    Empty boards stay quiet, but still claim their row, so a card added at
+    9:01 doesn't ring a belated good-morning. A turned-off preference is
+    checked after the claim for the same reason: flipping a kind back on
+    mid-window must not fire a stale push.
 
     Every window and date is the FAMILY's, not the server's: a household
     three timezones over gets its good-morning at its own 7am."""
@@ -517,37 +470,6 @@ def digest_tick(now: dt.datetime) -> int:
                     },
                 )
 
-        due = [
-            (user, local)
-            for user, local in _due_users(db, "midday", clocks, now)
-            if settings.midday_hour <= local.hour < 17
-        ]
-        trackers = {u.id for u in _food_trackers(db, [u for u, _ in due], now.date())}
-        for user, local in due:
-            today = local.date()
-            if not _claim_digest(db, user.id, today, "midday"):
-                continue
-            if not wants(user, "midday"):
-                continue
-            if user.id not in trackers:
-                continue  # claimed quietly: logging lunch later won't ping
-            left = _calories_left(db, user, today)
-            budget = (
-                f"{left:,} calories left for the day."
-                if left >= 0
-                else f"{-left:,} calories over so far."
-            )
-            sent += send_to_user(
-                db,
-                user.id,
-                {
-                    "title": "Mid-day check",
-                    "body": f"What's for lunch? {budget}",
-                    "tag": f"midday-{today.isoformat()}",
-                    "url": "/",
-                },
-            )
-
         for user, local in _due_users(db, "evening", clocks, now):
             if settings.evening_hour <= local.hour < 22:
                 today = local.date()
@@ -560,107 +482,15 @@ def digest_tick(now: dt.datetime) -> int:
                     user.id,
                     {
                         "title": "Evening check-in",
-                        "body": "How was your day?" + _tomorrow_preview(db, user, local),
+                        "body": "How was your day?",
                         "tag": f"evening-{today.isoformat()}",
                         "url": "/",
                     },
                 )
 
-        sent += _overdue_pass(db, clocks, now)
-        sent += _dinner_pass(db, clocks, now)
+        sent += _past_due_pass(db, clocks, now)
         sent += _sync_quiet_pass(db, clocks, now)
         sent += _verse_pass(db, clocks, now)
-    return sent
-
-
-def _overdue_pass(db: Session, clocks: dict[int, dt.datetime], now: dt.datetime) -> int:
-    """One afternoon sweep of today's timed cards that slipped past unchecked:
-    "Still open from today: …". Nothing overdue claims quietly, so a card
-    that goes overdue at 17:30 doesn't ring a belated sweep."""
-    sent = 0
-    for user, local in _due_users(db, "overdue", clocks, now):
-        if settings.overdue_hour <= local.hour < 19:
-            today = local.date()
-            if not _claim_digest(db, user.id, today, "overdue"):
-                continue
-            if not wants(user, "overdue"):
-                continue
-            missed = _overdue_today(db, user, local)
-            if not missed:
-                continue
-            titles = [item.title for item in missed[:3]]
-            body = "Still open from today: " + ", ".join(titles)
-            if len(missed) > 3:
-                body += f" and {len(missed) - 3} more"
-            body += "."
-            sent += send_to_user(
-                db,
-                user.id,
-                {
-                    "title": "A few things slipped past",
-                    "body": body,
-                    "tag": f"overdue-{today.isoformat()}",
-                    "url": "/",
-                },
-            )
-    return sent
-
-
-def _dinner_pass(db: Session, clocks: dict[int, dt.datetime], now: dt.datetime) -> int:
-    """When tonight's dinner plan carries a set time, the household's adults
-    hear about it dinner_lead_minutes before. The claim is per member per day,
-    so nudging the time later the same evening doesn't ring twice."""
-    sent = 0
-    candidate_days = {local.date() for local in clocks.values()} or {now.date()}
-    meals = (
-        db.scalars(
-            select(Meal)
-            .options(selectinload(Meal.recipe))
-            .where(
-                Meal.slot == MealSlot.dinner,
-                Meal.time_of_day.is_not(None),
-                Meal.date_for.in_(candidate_days),
-            )
-        )
-        .unique()
-        .all()
-    )
-    for meal in meals:
-        local = clocks.get(meal.family_id, now)
-        if meal.date_for != local.date():
-            continue
-        window_start = (
-            dt.datetime.combine(meal.date_for, meal.time_of_day)
-            - dt.timedelta(minutes=settings.dinner_lead_minutes)
-        ).time()
-        if window_start > meal.time_of_day:
-            window_start = dt.time(0, 0)  # a dinner just past midnight; clamp
-        if not (window_start <= local.time() < meal.time_of_day):
-            continue
-        what = meal.recipe.name if meal.recipe is not None else (meal.custom_title or "")
-        payload = {
-            "title": f"Dinner at {_fmt(meal.time_of_day)}",
-            "body": what,
-            "tag": f"dinner-{meal.date_for.isoformat()}",
-            "url": "/",
-        }
-        # Same as _due_users: no SQL DISTINCT over a User row (json column);
-        # .unique() dedupes the join by identity.
-        adults = (
-            db.scalars(
-                select(User)
-                .join(PushSubscription, PushSubscription.user_id == User.id)
-                .where(User.family_id == meal.family_id)
-            )
-            .unique()
-            .all()
-        )
-        for member in adults:
-            if member.is_minor or not wants(member, "dinner"):
-                continue
-            if not _claim_digest(db, member.id, meal.date_for, "dinner"):
-                continue
-            sent += send_to_user(db, member.id, payload)
     return sent
 
 

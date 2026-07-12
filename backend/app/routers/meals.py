@@ -99,7 +99,39 @@ def set_meal(
     meal.custom_title = None if recipe is not None else title
     db.commit()
     db.refresh(meal)
+    if meal.slot == MealSlot.dinner:
+        _push_dinner_lock(db, parent, meal, recipe)
     return _out(meal)
+
+
+def _push_dinner_lock(db: Session, parent: User, meal: Meal, recipe: Recipe | None) -> None:
+    """Locking dinner IS setting the meal row, and it's the one dinner moment
+    the family hears about (votes stay quiet). Clearing the meal (unlock)
+    says nothing either."""
+    try:
+        from app import push
+
+        if not push.enabled():
+            return
+        what = recipe.name if recipe is not None else (meal.custom_title or "")
+        body = what
+        if meal.time_of_day is not None:
+            hour = meal.time_of_day.hour % 12 or 12
+            suffix = "AM" if meal.time_of_day.hour < 12 else "PM"
+            body = f"{what} · {hour}:{meal.time_of_day.minute:02d} {suffix}"
+        payload = {
+            "title": f"{parent.display_name.split()[0]} locked in dinner",
+            "body": body,
+            "tag": f"dinner-lock-{meal.date_for.isoformat()}",
+            "url": "/",
+        }
+        for member in db.scalars(
+            select(User).where(User.family_id == parent.family_id, User.id != parent.id)
+        ):
+            if not member.is_minor and push.wants(member, "family"):
+                push.send_to_user(db, member.id, payload)
+    except Exception:
+        pass  # the plan is saved; a failed nudge is not worth a 500
 
 
 @router.put("/time", response_model=MealOut)
@@ -264,15 +296,6 @@ def cast_dinner_vote(
     if data.recipe_id is not None:
         recipe_id = _get_recipe(db, data.recipe_id, parent.family_id).id
 
-    first_of_day = (
-        db.scalar(
-            select(DinnerVote).where(
-                DinnerVote.family_id == parent.family_id, DinnerVote.date_for == date_for
-            )
-        )
-        is None
-    )
-
     vote = db.scalar(
         select(DinnerVote).where(
             DinnerVote.family_id == parent.family_id,
@@ -287,40 +310,9 @@ def cast_dinner_vote(
     vote.detail = data.detail.strip()
     vote.recipe_id = recipe_id
     db.commit()
-
-    # The day's first pick nudges the other adults once; later picks and
-    # changes stay quiet — the block is standing, not a conversation thread.
-    if first_of_day:
-        try:
-            from app import push
-
-            if push.enabled():
-                first = parent.display_name.split()[0]
-                label = {
-                    DinnerChoice.self_serve: "Self-serve",
-                    DinnerChoice.homemade: "Homemade",
-                    DinnerChoice.go_out: "Go out",
-                    DinnerChoice.delivery: "Delivery",
-                }[data.choice]
-                extra = vote.detail or (
-                    db.get(Recipe, recipe_id).name if recipe_id else ""
-                )
-                payload = {
-                    "title": f"{first} made a dinner pick",
-                    "body": f"{label} · {extra}" if extra else label,
-                    "tag": f"dinner-plan-{date_for.isoformat()}",
-                    "url": "/",
-                }
-                for member in db.scalars(
-                    select(User).where(
-                        User.family_id == parent.family_id, User.id != parent.id
-                    )
-                ):
-                    if not member.is_minor and push.wants(member, "family"):
-                        push.send_to_user(db, member.id, payload)
-        except Exception:
-            pass  # the vote is saved; a failed nudge is not worth a 500
-
+    # Votes stay quiet on purpose: the plan block is standing, not a
+    # conversation thread. The family hears when dinner gets LOCKED IN
+    # (set_meal), the one moment that decides the night.
     return _plan_out(db, parent.family_id, date_for)
 
 

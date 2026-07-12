@@ -689,6 +689,27 @@ class FoodServing(Base):
     food: Mapped["Food"] = relationship(back_populates="servings")
 
 
+class SavedFood(Base):
+    """A family's pinned foods: search or barcode results bookmarked for
+    quick re-use (the Kitchen shelf and the picker). The pin references the
+    shared cache row (or the family's custom food); removing the pin never
+    deletes the food."""
+
+    __tablename__ = "saved_foods"
+    __table_args__ = (UniqueConstraint("family_id", "food_id", name="uq_saved_food"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
+    food_id: Mapped[int] = mapped_column(ForeignKey("foods.id", ondelete="CASCADE"))
+    # Who pinned it; informational, survives account removal.
+    saved_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    food: Mapped["Food"] = relationship()
+
+
 class DiarySlot(str, enum.Enum):
     """Which part of the day a diary entry belongs to. Deliberately its own
     enum (not MealSlot): the menu plans meals for the family's evening, the
@@ -1073,6 +1094,21 @@ class Workout(Base):
     # full-resolution track. Present only when the exporter sends route data.
     route: Mapped[list | None] = mapped_column(JSON, nullable=True)
     source: Mapped[str] = mapped_column(String(20), default="apple", server_default="apple")
+
+
+class DiaryDayLock(Base):
+    """A member's "my day is recorded" mark on one diary date. Presence is the
+    lock: a locked day refuses entry changes until unlocked, so the mark
+    means something. The FIRST lock of a date pays +2 breadcrumbs (ledger key
+    diary:<date>); unlocking and re-locking pays nothing more, ever."""
+
+    __tablename__ = "diary_day_locks"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    date_for: Mapped[dt.date] = mapped_column(Date, primary_key=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class CrumbLedger(Base):

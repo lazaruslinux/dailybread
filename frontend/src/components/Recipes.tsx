@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { BookOpen, ChevronDown, ChevronLeft, Pencil, Plus, ScanBarcode, Search, ShoppingBasket, Trash2, X , Share2 } from 'lucide-react'
+import { Bookmark, BookmarkCheck, BookOpen, ChevronDown, ChevronLeft, Pencil, Plus, ScanBarcode, Search, ShoppingBasket, Trash2, X , Share2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '../lib/api'
@@ -624,12 +624,65 @@ export function FoodPicker({ onPick, onBack }: { onPick: (food: api.Food) => voi
     }
   }
 
+  const [saved, setSaved] = useState<api.Food[]>([])
+
   // The family's custom foods are always shown (they're a short list); load
-  // once, and the recently-used shelf alongside.
+  // once, with the recently-used and saved shelves alongside.
   useEffect(() => {
     api.getCustomFoods().then(setCustom).catch(() => {})
     api.getRecentFoods().then(setRecent).catch(() => {})
+    api.getSavedFoods().then(setSaved).catch(() => {})
   }, [])
+
+  // A food's saved-state matches by id when it has one, else by its source
+  // identity (a fresh search result has no id until something stores it).
+  const savedKey = (f: api.Food) => (f.id != null ? `#${f.id}` : `${f.source}:${f.source_id}`)
+  const savedKeys = useMemo(() => {
+    const keys = new Set<string>()
+    for (const f of saved) {
+      keys.add(`#${f.id}`)
+      if (f.source_id) keys.add(`${f.source}:${f.source_id}`)
+    }
+    return keys
+  }, [saved])
+
+  async function toggleSaved(food: api.Food) {
+    if (savedKeys.has(savedKey(food))) {
+      const pin = saved.find(
+        (f) => f.id === food.id || (food.source_id != null && f.source === food.source && f.source_id === food.source_id),
+      )
+      if (pin?.id == null) return
+      setSaved((list) => list.filter((f) => f.id !== pin.id))
+      try {
+        await api.unsaveFood(pin.id)
+      } catch {
+        api.getSavedFoods().then(setSaved).catch(() => {})
+      }
+    } else {
+      try {
+        const stored = await api.saveFood({
+          food_id: food.id,
+          source: food.source,
+          source_id: food.source_id,
+          name: food.name,
+          brand: food.brand,
+          calories: food.calories,
+          protein_g: food.protein_g,
+          carbs_g: food.carbs_g,
+          fat_g: food.fat_g,
+          saturated_fat_g: food.saturated_fat_g,
+          trans_fat_g: food.trans_fat_g,
+          cholesterol_mg: food.cholesterol_mg,
+          sodium_mg: food.sodium_mg,
+          fiber_g: food.fiber_g,
+          sugar_g: food.sugar_g,
+        })
+        setSaved((list) => [stored, ...list])
+      } catch {
+        // the bookmark stays hollow; the next tap tries again
+      }
+    }
+  }
 
   // Debounce search so we don't hit the server on every keystroke.
   useEffect(() => {
@@ -660,23 +713,41 @@ export function FoodPicker({ onPick, onBack }: { onPick: (food: api.Food) => voi
   }, [custom, q])
 
   function Row({ food }: { food: api.Food }) {
-    // Cronometer-style: name on top, the brand + label serving beneath, and the
-    // source database as a badge on the right.
+    // Cronometer-style: name on top, the brand + label serving beneath, the
+    // source database as a badge, and a bookmark to pin database foods to
+    // the family's Saved Foods (custom foods are already kept).
     const sub = [food.brand, food.serving].filter(Boolean).join(' · ')
+    const pinned = savedKeys.has(savedKey(food))
     return (
-      <button
-        type="button"
-        onClick={() => onPick(food)}
-        className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-fg/10"
-      >
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium">{food.name}</span>
-          {sub && <span className="block truncate text-xs text-fg/45">{sub}</span>}
-        </span>
-        <span className="shrink-0 rounded-md border border-fg/10 bg-fg/5 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fg/50">
-          {SOURCE_LABEL[food.source]}
-        </span>
-      </button>
+      <div className="flex w-full items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onPick(food)}
+          className="flex min-w-0 flex-1 items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-fg/10"
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium">{food.name}</span>
+            {sub && <span className="block truncate text-xs text-fg/45">{sub}</span>}
+          </span>
+          <span className="shrink-0 rounded-md border border-fg/10 bg-fg/5 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fg/50">
+            {SOURCE_LABEL[food.source]}
+          </span>
+        </button>
+        {food.source !== 'custom' && (
+          <button
+            type="button"
+            onClick={() => void toggleSaved(food)}
+            aria-label={pinned ? `Remove ${food.name} from saved foods` : `Save ${food.name}`}
+            className={`shrink-0 rounded-lg p-1.5 transition-colors hover:bg-fg/10 ${pinned ? 'text-gold' : 'text-fg/35'}`}
+          >
+            {pinned ? (
+              <BookmarkCheck className="h-4 w-4" strokeWidth={2.5} />
+            ) : (
+              <Bookmark className="h-4 w-4" strokeWidth={2} />
+            )}
+          </button>
+        )}
+      </div>
     )
   }
 
@@ -718,6 +789,19 @@ export function FoodPicker({ onPick, onBack }: { onPick: (food: api.Food) => voi
       {looking && <p className="mt-2 px-1 text-sm text-fg/50">Looking up the barcode…</p>}
 
       <div className="mt-3 flex flex-col gap-3">
+        {q.trim().length < 2 && saved.length > 0 && (
+          <div>
+            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-fg/40">
+              Saved foods
+            </span>
+            <div className="flex flex-col">
+              {saved.map((f) => (
+                <Row key={`s${f.id}`} food={f} />
+              ))}
+            </div>
+          </div>
+        )}
+
         {q.trim().length < 2 && recent.length > 0 && (
           <div>
             <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-fg/40">
@@ -1153,7 +1237,7 @@ function RecipeSheet({
           </div>
           {lines.length === 0 ? (
             <p className="rounded-xl bg-fg/5 px-3 py-4 text-center text-sm text-fg/45">
-              Add foods and their amounts — nutrition adds up as you go.
+              Add foods and their amounts. Nutrition adds up as you go.
             </p>
           ) : (
             <div className="flex flex-col gap-1.5">
@@ -1686,6 +1770,83 @@ function FoodSheet({
 // The Custom Foods box: a family's own foods for anything USDA/Open Food Facts
 // lacks. They show up as pickable ingredients in the recipe builder too. Sits
 // under Recipes on the Kitchen page. Everyone browses; only parents add/edit.
+// The family's Saved Foods: search or barcode results pinned for quick
+// re-use. Unpinning never deletes the food itself.
+export function SavedFoodBox() {
+  const [foods, setFoods] = useState<api.Food[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const preview = useLibraryPreview(foods)
+
+  const refresh = useCallback(async () => {
+    try {
+      setFoods(await api.getSavedFoods())
+      setError(null)
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Could not load saved foods.')
+    }
+  }, [])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  async function unpin(food: api.Food) {
+    if (food.id == null) return
+    setFoods((list) => list.filter((f) => f.id !== food.id))
+    try {
+      await api.unsaveFood(food.id)
+    } catch {
+      refresh() // the pin stays; the next tap tries again
+    }
+  }
+
+  return (
+    <CollapsibleCard
+      title="Saved foods"
+      summary={foods.length ? String(foods.length) : undefined}
+      storageKey="saved-foods"
+    >
+      <FormError message={error} />
+      {foods.length === 0 ? (
+        <p className="py-6 text-center text-sm text-fg/50">
+          Tap the bookmark on any food you search or scan to keep it here for quick re-use.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {preview.shown.map((f) => {
+            const summary = foodSummary(f)
+            return (
+              <li key={f.id} className="flex w-full items-center gap-3 rounded-xl bg-fg/5 px-3 py-2.5">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">
+                    {f.brand ? `${f.brand}, ${f.name}` : f.name}
+                  </span>
+                  {summary && <span className="block truncate text-xs text-fg/45">{summary}</span>}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => unpin(f)}
+                  aria-label={`Remove ${f.name} from saved foods`}
+                  className="shrink-0 rounded-lg p-1.5 text-gold transition-colors hover:bg-fg/10"
+                >
+                  <BookmarkCheck className="h-4 w-4" strokeWidth={2.5} />
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      <LibraryFoldButton
+        total={foods.length}
+        showAll={preview.showAll}
+        onToggle={() => preview.setShowAll((v) => !v)}
+        noun="foods"
+      />
+    </CollapsibleCard>
+  )
+}
+
+
 export function CustomFoodBox() {
   const { user } = useAuth()
   const canEdit = user?.role === 'parent'
@@ -1735,7 +1896,7 @@ export function CustomFoodBox() {
         {foods.length === 0 ? (
           <p className="py-6 text-center text-sm text-fg/50">
             {canEdit
-              ? 'Add anything the food database is missing — a homemade dish, a local brand — and use it in recipes.'
+              ? 'Add anything the food database is missing (a homemade dish, a local brand) and use it in recipes.'
               : 'No custom foods yet.'}
           </p>
         ) : (

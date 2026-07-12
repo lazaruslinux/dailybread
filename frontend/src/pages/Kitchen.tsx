@@ -1,6 +1,6 @@
 import { DinnerPlanner } from '../components/Meals'
 import { GroceryPanel } from '../components/Grocery'
-import { CustomFoodBox, RecipeBox } from '../components/Recipes'
+import { CustomFoodBox, RecipeBox, SavedFoodBox } from '../components/Recipes'
 import { SharedRecipesBox } from '../components/SharedRecipes'
 
 // The Kitchen tab, top to bottom: tonight's dinner and the week's menu (the
@@ -13,6 +13,7 @@ export function Kitchen() {
       <GroceryPanel />
       <RecipeBox />
       <SharedRecipesBox />
+      <SavedFoodBox />
       <CustomFoodBox />
     </div>
   )

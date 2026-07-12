@@ -275,9 +275,22 @@ def test_repeating_appointment_checked_today_stays_quiet(
 # ---- board-change notifications --------------------------------------------------
 
 
-def test_adding_a_card_notifies_once(owner, parent, child, configured, outbox, engine_db):
+def test_adding_a_card_notifies_once_with_its_name(owner, parent, child, configured, push_outbox, engine_db):
     parent.put("/push/subscription", json=SUB)
     child.put("/push/subscription", json=SUB2)
+    res = owner.post(
+        "/items",
+        json={"kind": "task", "title": "Take out the trash", "visibility": "family"},
+    )
+    assert res.status_code == 201, res.text
+    # ONE push per action for a family-visible card: the other adult's device.
+    # Never the actor, never a kid — and the card's name rides in the title.
+    assert [ep for ep, _ in push_outbox] == [SUB["endpoint"]]
+    assert push_outbox[0][1]["title"] == "Owner added a task: Take out the trash"
+
+
+def test_routines_never_make_board_news(owner, parent, configured, outbox, engine_db):
+    parent.put("/push/subscription", json=SUB)
     res = owner.post(
         "/items",
         json={
@@ -288,9 +301,11 @@ def test_adding_a_card_notifies_once(owner, parent, child, configured, outbox, e
         },
     )
     assert res.status_code == 201, res.text
-    # ONE push per action for a family-visible card: the other adult's device.
-    # Never one per occurrence, never the actor, never a kid.
-    assert outbox == [SUB["endpoint"]]
+    item_id = res.json()["id"]
+    owner.patch(f"/items/{item_id}", json={"time_of_day": "07:00:00"})
+    owner.delete(f"/items/{item_id}")
+    # The board's daily heartbeat is not news: add, reschedule, remove, silent.
+    assert outbox == []
 
 
 def test_only_schedule_changes_notify(owner, parent, configured, outbox, engine_db):
@@ -323,3 +338,96 @@ def test_private_card_changes_stay_private(owner, parent, configured, outbox, en
     )
     assert res.status_code == 201
     assert outbox == []  # the other parent can't see it, so they don't hear about it
+
+
+def test_appointments_get_an_hour_of_runway(owner, configured, outbox, engine_db):
+    owner.put("/push/subscription", json=SUB)
+    owner.post(
+        "/items",
+        json={
+            "kind": "appointment",
+            "title": "Dentist",
+            "date_for": dt.date.today().isoformat(),
+            "time_of_day": "15:00:00",
+            "end_time": "15:30:00",
+        },
+    )
+    owner.post(
+        "/items",
+        json={
+            "kind": "task",
+            "title": "Take out bins",
+            "date_for": dt.date.today().isoformat(),
+            "time_of_day": "15:00:00",
+        },
+    )
+    outbox.clear()
+    # 14:10: the appointment is inside its hour lead, the task (15 min) is not.
+    assert push_engine.reminder_tick(_now_at(14, 10)) == 1
+    # 14:50: now the task's window opens too.
+    assert push_engine.reminder_tick(_now_at(14, 50)) == 1
+
+
+def test_a_synced_workout_tells_the_family(owner, parent, child, configured, push_outbox, engine_db):
+    parent.put("/push/subscription", json=SUB)
+    child.put("/push/subscription", json=SUB2)
+    token = owner.post("/me/fitness/token").json()["token"]
+    day = dt.date.today().isoformat()
+    payload = {
+        "data": {
+            "workouts": [
+                {
+                    "id": "wk-push-1",
+                    "name": "Outdoor Run",
+                    "start": f"{day} 06:30:00 -0700",
+                    "end": f"{day} 07:01:00 -0700",
+                    "duration": 1860,
+                },
+                {
+                    "id": "wk-push-2",
+                    "name": "Cool Down",
+                    "start": f"{day} 07:05:00 -0700",
+                    "end": f"{day} 07:10:00 -0700",
+                    "duration": 300,
+                },
+            ]
+        }
+    }
+    res = owner.post(
+        "/ingest/health", json=payload, headers={"Authorization": f"Bearer {token}"}
+    )
+    assert res.status_code == 200, res.text
+    # One push for the real workout (the 5-minute cool-down is not news),
+    # to the other adult only, never the kid, never the runner.
+    assert [ep for ep, _ in push_outbox] == [SUB["endpoint"]]
+    assert push_outbox[0][1]["title"] == "Owner completed a workout"
+    assert push_outbox[0][1]["body"] == "Outdoor Run · 31 min"
+
+    # The same window re-sent is an update, not news.
+    res = owner.post(
+        "/ingest/health", json=payload, headers={"Authorization": f"Bearer {token}"}
+    )
+    assert res.status_code == 200
+    assert len(push_outbox) == 1
+
+
+def test_workout_push_respects_the_pref(owner, parent, configured, push_outbox, engine_db):
+    parent.put("/push/subscription", json=SUB)
+    parent.put("/push/prefs", json={"prefs": {"workouts": False}})
+    token = owner.post("/me/fitness/token").json()["token"]
+    day = dt.date.today().isoformat()
+    payload = {
+        "data": {
+            "workouts": [
+                {
+                    "id": "wk-push-3",
+                    "name": "Outdoor Run",
+                    "start": f"{day} 06:30:00 -0700",
+                    "end": f"{day} 07:01:00 -0700",
+                    "duration": 1860,
+                }
+            ]
+        }
+    }
+    owner.post("/ingest/health", json=payload, headers={"Authorization": f"Bearer {token}"})
+    assert push_outbox == []

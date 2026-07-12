@@ -7,8 +7,10 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.deps import require_adult, require_family
 from app.health import computed_for
+from app import crumbs
 from app.models import (
     UNIT_TO_BASE,
+    DiaryDayLock,
     DiaryEntry,
     ExerciseEntry,
     Food,
@@ -25,6 +27,7 @@ from app.schemas import (
     FOOD_NUTRIENTS,
     DiaryDayOut,
     DiaryEntryIn,
+    DiaryLockOut,
     DiaryEntryOut,
     DiaryEntryUpdate,
     RecipeMacros,
@@ -81,6 +84,18 @@ def _check_date(date_for: dt.date) -> None:
     One day of headroom absorbs client/server clock and timezone drift."""
     if date_for > dt.date.today() + dt.timedelta(days=1):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "That date hasn't happened yet")
+
+
+def _locked(db: Session, user_id: int, date_for: dt.date) -> bool:
+    return db.get(DiaryDayLock, (user_id, date_for)) is not None
+
+
+def _require_unlocked(db: Session, user: User, date_for: dt.date) -> None:
+    """A locked-in day is a recorded day: unlock it first to change it."""
+    if _locked(db, user.id, date_for):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "That day is locked in. Unlock it first."
+        )
 
 
 def _own_entry(db: Session, entry_id: int, user: User) -> DiaryEntry:
@@ -211,7 +226,57 @@ def get_day(
         entries=[DiaryEntryOut.model_validate(e) for e in entries],
         exercise=[_exercise_out(w) for w in workouts],
         burned=earned,
+        locked=_locked(db, user.id, date),
     )
+
+
+# ---- locking in the day -------------------------------------------------------
+
+
+@router.post("/lock", response_model=DiaryLockOut)
+def lock_day(
+    date: dt.date,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_family),
+):
+    """Lock in the day's calorie tracking. The FIRST lock of a date pays +2
+    breadcrumbs (only for today, give or take clock drift, so locking a
+    month of old days earns nothing); unlock and re-lock all you want, the
+    ledger key already paid. A locked day refuses entry changes."""
+    _check_date(date)
+    has_entries = db.scalar(
+        select(DiaryEntry.id)
+        .where(DiaryEntry.user_id == user.id, DiaryEntry.date_for == date)
+        .limit(1)
+    )
+    if has_entries is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Log something first, then lock in the day"
+        )
+    awarded = 0
+    if not _locked(db, user.id, date):
+        db.add(DiaryDayLock(user_id=user.id, date_for=date))
+        db.commit()
+        if abs(date - dt.date.today()) <= dt.timedelta(days=1):
+            awarded = crumbs.award(
+                db, user, "diary", crumbs.DIARY_CRUMBS, f"diary:{date.isoformat()}", date
+            )
+    return DiaryLockOut(locked=True, crumbs_awarded=awarded)
+
+
+@router.delete("/lock", response_model=DiaryLockOut)
+def unlock_day(
+    date: dt.date,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_family),
+):
+    """Unlock a day to make changes. Nothing is clawed back; re-locking
+    simply pays nothing new."""
+    row = db.get(DiaryDayLock, (user.id, date))
+    if row is not None:
+        db.delete(row)
+        db.commit()
+    return DiaryLockOut(locked=False, crumbs_awarded=0)
 
 
 # ---- entries ----------------------------------------------------------------------
@@ -224,6 +289,7 @@ def create_entry(
     user: User = Depends(require_family),
 ):
     _check_date(data.date_for)
+    _require_unlocked(db, user, data.date_for)
 
     if data.recipe_id is not None:
         recipe = _own_recipe(db, data.recipe_id, user.family_id)
@@ -263,10 +329,12 @@ def update_entry(
     user: User = Depends(require_family),
 ):
     entry = _own_entry(db, entry_id, user)
+    _require_unlocked(db, user, entry.date_for)
     fields = data.model_fields_set
 
     if data.date_for is not None:
         _check_date(data.date_for)
+        _require_unlocked(db, user, data.date_for)
         entry.date_for = data.date_for
     if data.slot is not None:
         entry.slot = data.slot
@@ -324,5 +392,7 @@ def delete_entry(
     db: Session = Depends(get_db),
     user: User = Depends(require_family),
 ):
-    db.delete(_own_entry(db, entry_id, user))
+    entry = _own_entry(db, entry_id, user)
+    _require_unlocked(db, user, entry.date_for)
+    db.delete(entry)
     db.commit()

@@ -955,6 +955,29 @@ export const getMyCrumbs = () => request<Crumbs>('/me/crumbs')
 
 export const getFamily = () => request<FamilyMember[]>(`/users?date=${localDate()}`)
 
+// The day's calorie lock-in: the first lock of a date pays +2 breadcrumbs;
+// unlock to make changes, re-lock pays nothing new.
+export interface DiaryLock {
+  locked: boolean
+  crumbs_awarded: number
+}
+
+export const lockDiaryDay = (date: string) =>
+  request<DiaryLock>(`/diary/lock?date=${date}`, { method: 'POST' })
+
+export const unlockDiaryDay = (date: string) =>
+  request<DiaryLock>(`/diary/lock?date=${date}`, { method: 'DELETE' })
+
+// ---- saved foods -------------------------------------------------------------
+
+export const getSavedFoods = () => request<Food[]>('/foods/saved')
+
+export const saveFood = (food: Omit<Food, 'id' | 'base_unit' | 'serving' | 'servings'> & { food_id?: number | null }) =>
+  request<Food>('/foods/saved', { method: 'POST', body: JSON.stringify(food) })
+
+export const unsaveFood = (foodId: number) =>
+  request<void>(`/foods/saved/${foodId}`, { method: 'DELETE' })
+
 // ---- daily verses ----------------------------------------------------------------
 
 export interface Verses {
@@ -1107,6 +1130,8 @@ export interface DiaryDay {
   entries: DiaryEntry[]
   exercise: ExerciseEntry[]
   burned: number
+  // The day is locked in: entries refuse changes until unlocked.
+  locked: boolean
 }
 
 // Logging something eaten: a recipe by servings (recipe_id + amount), or a
@@ -1325,6 +1350,7 @@ export interface VillageParent {
 }
 
 export interface VillageFamily {
+  kid_count: number
   id: number
   name: string
   joined_at: string

@@ -17,7 +17,7 @@ from app.models import (
     RecipeIngredient,
     User,
 )
-from app.schemas import FOOD_NUTRIENTS, FoodIn, FoodOut, FoodServingOut
+from app.schemas import FOOD_NUTRIENTS, FoodIn, FoodOut, FoodServingOut, SavedFoodIn
 
 router = APIRouter(prefix="/foods", tags=["foods"])
 
@@ -145,6 +145,71 @@ def recent_foods(db: Session = Depends(get_db), user: User = Depends(require_fam
     ).all()
     by_id = {f.id: f for f in rows}
     return [by_id[i] for i in ordered_ids if i in by_id]
+
+
+# ---- saved foods ---------------------------------------------------------------
+# The family's pinned foods: a scan or search result bookmarked for quick
+# re-use. The pin points at the shared cache row (find-or-created exactly like
+# a recipe ingredient), so unpinning never loses data a snapshot relies on.
+
+
+@router.get("/saved", response_model=list[FoodOut])
+def saved_foods(db: Session = Depends(get_db), user: User = Depends(require_family)):
+    from app.models import SavedFood
+
+    pins = (
+        db.scalars(
+            select(SavedFood)
+            .options(selectinload(SavedFood.food).selectinload(Food.servings))
+            .where(SavedFood.family_id == user.family_id)
+            .order_by(SavedFood.created_at.desc())
+        )
+        .unique()
+        .all()
+    )
+    return [pin.food for pin in pins]
+
+
+@router.post("/saved", response_model=FoodOut, status_code=status.HTTP_201_CREATED)
+def save_food(
+    data: SavedFoodIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_family),
+):
+    from app.models import SavedFood
+    from app.routers.recipes import _resolve_food
+    from app.schemas import RecipeIngredientIn
+
+    food = _resolve_food(
+        db, user.family_id, RecipeIngredientIn(**data.model_dump(), amount=1, unit="g")
+    )
+    existing = db.scalar(
+        select(SavedFood).where(
+            SavedFood.family_id == user.family_id, SavedFood.food_id == food.id
+        )
+    )
+    if existing is None:
+        db.add(SavedFood(family_id=user.family_id, food_id=food.id, saved_by_id=user.id))
+        db.commit()
+    return food
+
+
+@router.delete("/saved/{food_id}", status_code=status.HTTP_204_NO_CONTENT)
+def unsave_food(
+    food_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_family),
+):
+    from app.models import SavedFood
+
+    pin = db.scalar(
+        select(SavedFood).where(
+            SavedFood.family_id == user.family_id, SavedFood.food_id == food_id
+        )
+    )
+    if pin is not None:
+        db.delete(pin)
+        db.commit()
 
 
 @router.get("/barcode/{code}", response_model=FoodOut)

@@ -39,22 +39,16 @@ class Settings(BaseSettings):
     vapid_public_key: str = ""
     vapid_private_key: str = ""
     vapid_subject: str = "mailto:admin@example.com"
-    # How many minutes before a timed card its reminder goes out.
+    # How many minutes before a timed card its reminder goes out. Appointments
+    # get a longer runway: an hour to get shoes on and drive somewhere.
     reminder_lead_minutes: int = 15
-    # Local hours (0-23) for the day's three scheduled pushes. Each has a
-    # window it may send in (morning until noon, midday until 17, evening
-    # until 22), so a server that was down at the slot still catches up
-    # while the message makes sense - and never later.
+    appointment_lead_minutes: int = 60
+    # Local hours (0-23) for the day's scheduled pushes. Each has a window it
+    # may send in (morning until noon, evening until 22), so a server that
+    # was down at the slot still catches up while the message makes sense,
+    # and never later.
     digest_hour: int = 7
-    midday_hour: int = 12
     evening_hour: int = 19
-    # The afternoon past-due sweep: one push listing today's timed cards whose
-    # moment has passed unchecked (window overdue_hour until 19, when the
-    # evening check-in takes over).
-    overdue_hour: int = 16
-    # How many minutes before a dinner plan's set time the household hears
-    # "dinner's coming up".
-    dinner_lead_minutes: int = 30
     # A member's phone counts as quiet when its health sync hasn't posted for
     # this many hours; the nudge repeats at most weekly.
     sync_stale_hours: int = 48
