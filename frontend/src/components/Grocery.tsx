@@ -227,7 +227,7 @@ export function GroceryPanel() {
       defaultOpen
     >
       {/* Tabs: All (combined) + Unsorted (store-less) + one per store; parents add more. */}
-      <div className="-mx-1 mb-4 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
+      <div className="-mx-1 mb-3 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
         <button type="button" onClick={() => setActive('all')} className={chip(isAll)}>
           All
           {toGrab > 0 && <span className="text-xs text-fg/50">{toGrab}</span>}
@@ -316,13 +316,13 @@ export function GroceryPanel() {
             The list is empty.{canEdit ? ' Add the first item above.' : ''}
           </p>
         ) : (
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2.5">
             {groups().map((g) => (
               <div key={g.key}>
-                <p className="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wide text-fg/40">
+                <p className="mb-1 px-2.5 text-[11px] font-semibold uppercase tracking-wide text-fg/40">
                   {g.label}
                 </p>
-                <ul className="flex flex-col gap-1">{g.items.map(renderItem)}</ul>
+                <ul className="flex flex-col gap-0.5">{g.items.map(renderItem)}</ul>
               </div>
             ))}
           </div>
@@ -335,7 +335,7 @@ export function GroceryPanel() {
               {canEdit ? ' Add the first item above.' : ''}
             </p>
           )}
-          <ul className="flex flex-col gap-1">{visible.map(renderItem)}</ul>
+          <ul className="flex flex-col gap-0.5">{visible.map(renderItem)}</ul>
         </>
       )}
 

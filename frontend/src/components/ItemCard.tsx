@@ -143,7 +143,7 @@ export function ItemCard({
       transition={{ delay: index * 0.05, type: 'spring', stiffness: 300, damping: 26 }}
       whileTap={{ scale: 0.97 }}
       onClick={onOpen}
-      className="glass flex cursor-pointer touch-pan-y select-none items-center gap-3 p-4"
+      className="glass flex cursor-pointer touch-pan-y select-none items-center gap-3 p-3.5"
     >
       {showCheckbox ? (
         // Generous tap target around a modest circle; stops propagation so

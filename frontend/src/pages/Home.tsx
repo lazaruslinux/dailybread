@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { CalendarClock, Check, ChevronLeft, ChevronRight, Hourglass, Plus, Rows3, Undo2, X } from 'lucide-react'
+import { CalendarClock, CalendarDays, Check, ChevronLeft, ChevronRight, Hourglass, Plus, Rows3, Undo2, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../lib/api'
 import { avatarUrl } from '../lib/api'
@@ -191,9 +191,11 @@ function WelcomeCrumb() {
 export function Home({
   onOpenProfile,
   onOpenKitchen,
+  onOpenCalendar,
 }: {
   onOpenProfile: (id: number) => void
   onOpenKitchen: () => void
+  onOpenCalendar: () => void
 }) {
   const { user } = useAuth()
   const isParent = user?.role === 'parent'
@@ -613,7 +615,9 @@ export function Home({
 
       <TonightCard onOpenKitchen={onOpenKitchen} />
 
-      <div className="mb-4 flex justify-center" data-view-toggle>
+      {/* The board's control bar: List/Timeline swap the view in place (enclosed
+          segmented pill), Calendar navigates away (free-standing accent pill). */}
+      <div className="mb-4 flex items-stretch justify-center gap-2" data-view-toggle>
         <div className="flex gap-1 rounded-full border border-fg/10 bg-fg/5 p-1">
           {(
             [
@@ -626,20 +630,28 @@ export function Home({
               type="button"
               onClick={() => pickView(id)}
               aria-pressed={view === id}
-              className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+              className={`flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-semibold transition-colors ${
                 view === id ? 'bg-accent-bright/20 text-fg' : 'text-fg/50 hover:text-fg/80'
               }`}
             >
-              <Icon className="h-3.5 w-3.5" strokeWidth={2.5} /> {label}
+              <Icon className="h-4 w-4" strokeWidth={2.5} /> {label}
             </button>
           ))}
         </div>
+        <button
+          type="button"
+          onClick={onOpenCalendar}
+          aria-label="View calendar"
+          className="flex items-center gap-1.5 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-3.5 text-sm font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
+        >
+          <CalendarDays className="h-4 w-4" strokeWidth={2.5} /> Calendar
+        </button>
       </div>
 
       {isParent && family.length > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-1.5">
           <span className="mr-0.5 text-[11px] font-semibold uppercase tracking-wide text-fg/35">
-            Show
+            Filter
           </span>
           <FilterChip active={filter.length === 0} onClick={() => setFilter([])}>
             All

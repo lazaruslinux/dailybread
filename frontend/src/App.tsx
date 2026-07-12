@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { CalendarDays, ChevronLeft } from 'lucide-react'
+import { ChevronLeft } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from './auth/AuthContext'
 import * as api from './lib/api'
@@ -101,18 +101,7 @@ function AppShell() {
           ) : (
             <p className="text-sm font-semibold text-fg/70">{TAB_TITLE[tab]}</p>
           )}
-          <div className="flex items-center gap-2">
-            <HealthBadge />
-            {tab === 'home' && !overlay && (
-              <button
-                onClick={() => setOverlay({ name: 'calendar' })}
-                aria-label="View calendar"
-                className="flex items-center gap-1.5 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-3 py-1.5 text-sm font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
-              >
-                <CalendarDays className="h-4 w-4" strokeWidth={2.5} /> Calendar
-              </button>
-            )}
-          </div>
+          <HealthBadge />
         </div>
 
         {tab === 'home' && !overlay && (
@@ -139,7 +128,11 @@ function AppShell() {
           )}
           {overlay?.name === 'calendar' && <Calendar />}
           {!overlay && tab === 'home' && (
-            <Home onOpenProfile={(id) => setOverlay({ name: 'profile', id })} onOpenKitchen={() => setTab('kitchen')} />
+            <Home
+              onOpenProfile={(id) => setOverlay({ name: 'profile', id })}
+              onOpenKitchen={() => setTab('kitchen')}
+              onOpenCalendar={() => setOverlay({ name: 'calendar' })}
+            />
           )}
           {!overlay && tab === 'nutrition' && !isMinor && <Nutrition />}
           {!overlay && tab === 'fitness' && !isMinor && <Fitness />}
