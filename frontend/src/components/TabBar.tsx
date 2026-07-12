@@ -28,9 +28,13 @@ export function TabBar({
 }) {
   const visible = tabs ? TABS.filter(({ id }) => tabs.includes(id)) : TABS
   return (
+    // sticky, not fixed: iOS Safari freezes fixed elements into the page
+    // after the keyboard opens (his prod screenshot 2026-07-12 showed the bar
+    // stuck mid-scroll beside the journal). A sticky bar at the end of the
+    // page flow pins to the viewport bottom without that failure mode.
     <nav
       aria-label="Main"
-      className="fixed inset-x-0 bottom-0 z-30 pb-[env(safe-area-inset-bottom)]"
+      className="sticky bottom-0 z-30 -mx-5 mt-auto pt-3 pb-[env(safe-area-inset-bottom)]"
     >
       <div className="mx-auto mb-3 flex w-full max-w-md justify-center px-5">
         <div className="glass flex w-full items-stretch justify-around p-1.5">

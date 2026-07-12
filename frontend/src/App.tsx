@@ -62,9 +62,11 @@ function AppShell() {
     setTab(next)
   }
 
-  // pb-28 clears the floating tab bar so the last card is never buried.
+  // Flex column: the sticky tab bar rides at the end of the flow (mt-auto
+  // keeps it at the screen bottom even when a page is short), so content no
+  // longer needs bottom padding to clear a fixed bar.
   return (
-    <div className="mx-auto min-h-svh w-full max-w-md px-5 pb-28 pt-8">
+    <div className="mx-auto flex min-h-svh w-full max-w-md flex-col px-5 pt-8">
       <header className="mb-6">
         {tab === 'home' && !overlay ? (
           // Home wears the brand: loaf + lettering centered, the health badge
