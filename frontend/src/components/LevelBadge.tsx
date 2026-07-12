@@ -13,8 +13,8 @@ export const TIER_META: Record<
   slice: { label: 'Slice', ring: 'border-fg/35 bg-fg/5', text: 'text-fg/75' },
   roll: {
     label: 'Roll',
-    ring: 'border-amber-600/70 bg-amber-500/15',
-    text: 'text-amber-800 dark:text-amber-300',
+    ring: 'border-tier-roll/70 bg-tier-roll/10',
+    text: 'text-tier-roll',
   },
   loaf: { label: 'Loaf', ring: 'border-gold/80 bg-gold/15 shadow-[0_0_6px_-2px]', text: 'text-gold' },
   baker: {
@@ -26,8 +26,8 @@ export const TIER_META: Record<
     label: 'Breadmaster',
     // The gradient ring is a wrapper trick: the outer circle IS the ring.
     ring: 'border-transparent',
-    text: 'text-amber-800 dark:text-amber-200',
-    gradient: 'bg-gradient-to-br from-amber-300 via-gold to-orange-600 shadow-[0_0_10px_-2px]',
+    text: 'text-tier-master',
+    gradient: 'bg-gradient-to-br from-tier-roll via-gold to-tier-master shadow-[0_0_10px_-2px]',
   },
 }
 

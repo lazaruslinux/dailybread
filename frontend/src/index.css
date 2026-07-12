@@ -13,6 +13,8 @@
   --color-accent-bright: var(--accent-bright);
   --color-fg: var(--fg);
   --color-gold: var(--gold);
+  --color-tier-roll: var(--tier-roll);
+  --color-tier-master: var(--tier-master);
   --color-fit-steps: var(--fit-steps);
   --color-fit-active: var(--fit-active);
   --color-fit-exercise: var(--fit-exercise);
@@ -46,6 +48,12 @@
   --accent-strong: #92400e; /* amber-800, gradient partner */
   --accent-bright: #92400e; /* dark enough to read on paper */
   --gold: #a16207; /* deep amber for the verse label on white */
+
+  /* Breadcrumb tier identities that the gold token doesn't cover. Deep and
+     ink-like on paper; the dark theme brightens them. Tailwind dark: variants
+     would follow the SYSTEM scheme, not data-theme — never use them here. */
+  --tier-roll: #92400e;
+  --tier-master: #9a3412;
 
   /* Initials-avatar gradient. Its own tokens, NOT the accent pair: people
      should stay warm in every theme instead of inheriting the UI color. */
@@ -92,6 +100,9 @@
      links and highlights should sit in the forest, not glow out of it. */
   --accent-bright: #3bb977;
   --gold: #fcd34d;
+
+  --tier-roll: #fbbf24;
+  --tier-master: #fde68a;
 
   /* People stay warm on the dark ground too: clay, not theme green. */
   --avatar-1: #a97455;
