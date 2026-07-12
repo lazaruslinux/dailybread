@@ -22,7 +22,7 @@ const TOUR: { title: string; body: string; note?: string; versesChoice?: boolean
   },
   {
     title: 'Health',
-    body: "Your private, personal hub for every metric your phone and watch already collect: steps, workouts with route maps, calories burned, heart rate, and weigh-ins. iPhones connect through the Health Auto Export app; Android phones sync through Health Connect. Either way the data flows straight from your phone to your family's own server, and only you can see it.",
+    body: "Your private, personal hub for tracking every metric of your Apple or Android health data. Steps, workouts with route maps, and weigh-ins sync straight from your phone to your family's own server, and only you can see them.",
     note: 'Android support is new and still being field-tested.',
   },
   {
