@@ -1,5 +1,5 @@
-"""The dinner plan: four standing modes, adult picks with avatars and short
-details, kids following the leader, lock-in via the ordinary meal row."""
+"""The dinner plan: four standing modes, every member votes (kids' picks are
+advisory - only a parent locks in), lock-in via the ordinary meal row."""
 import datetime as dt
 
 TODAY = dt.date.today().isoformat()
@@ -30,11 +30,45 @@ def test_adults_pick_change_and_retract(owner, parent):
     assert [v["user"]["display_name"] for v in res.json()["votes"]] == ["Second Parent"]
 
 
-def test_children_never_vote_but_ride_along(owner, child):
-    assert vote(child, "go_out", "Anywhere").status_code == 403
+def test_kids_vote_switch_and_retract(owner, child):
+    """A kid's vote is a real ballot: cast, change, retract - always only
+    their own row. Once they vote they leave the ride-along kids list."""
+    res = vote(child, "go_out", "Anywhere")
+    assert res.status_code == 200, res.text
+    plan = res.json()
+    assert [(v["user"]["display_name"], v["choice"]) for v in plan["votes"]] == [
+        ("The Kid", "go_out")
+    ]
+    assert plan["kids"] == []  # voted, so no longer a mere ride-along
+
+    res = vote(child, "homemade", "tacos")
+    choices = [v["choice"] for v in res.json()["votes"]]
+    assert choices == ["homemade"]  # replaced, never duplicated
+
+    plan = child.delete(f"/meals/plan?date={TODAY}").json()
+    assert plan["votes"] == []
+    assert [k["display_name"] for k in plan["kids"]] == ["The Kid"]
+
+
+def test_kids_who_have_not_voted_ride_along(owner, child):
     vote(owner, "self_serve")
     plan = owner.get(f"/meals/plan?date={TODAY}").json()
     assert [k["display_name"] for k in plan["kids"]] == ["The Kid"]
+
+
+def test_kids_never_lock_set_time_or_unlock(owner, child):
+    vote(child, "go_out", "Anywhere")
+    assert (
+        child.put("/meals", json={"date_for": TODAY, "custom_title": "Go out"}).status_code
+        == 403
+    )
+    assert (
+        child.put("/meals/time", json={"date_for": TODAY, "time_of_day": "18:00"}).status_code
+        == 403
+    )
+    vote(owner, "go_out", "Chipotle")
+    owner.put("/meals", json={"date_for": TODAY, "custom_title": "Go out"})
+    assert child.delete(f"/meals?date={TODAY}").status_code == 403
 
 
 def test_choice_payload_rules(owner, other):

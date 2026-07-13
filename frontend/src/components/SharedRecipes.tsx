@@ -211,8 +211,19 @@ export function SharedRecipesBox() {
   const [showAll, setShowAll] = useState(false)
 
   const isParent = user?.role === 'parent'
+  const isMinor = user?.is_minor ?? false
 
   const refresh = useCallback(() => {
+    // Minors can't read the village roster (it carries other households'
+    // moods and levels), but the recipe shelf is theirs to browse - go
+    // straight to it and let the shelf's own contents decide rendering.
+    if (isMinor) {
+      api
+        .villageShelf()
+        .then(setShelf)
+        .catch(() => {})
+      return
+    }
     api
       .listVillages()
       .then((v) => {
@@ -221,7 +232,7 @@ export function SharedRecipesBox() {
         setShelf([])
       })
       .catch(() => {})
-  }, [])
+  }, [isMinor])
 
   useEffect(() => {
     refresh()
@@ -235,7 +246,10 @@ export function SharedRecipesBox() {
     }
   }, [refresh])
 
-  if (villages.length === 0) return null
+  // Adults: the box exists whenever the family has a village, even before
+  // anything is shared. Kids can't see the roster, so for them the shelf's
+  // own contents are the signal.
+  if (isMinor ? shelf.length === 0 : villages.length === 0) return null
   const theirs = shelf.filter((s) => !s.is_own)
   const mine = shelf.filter((s) => s.is_own)
 
@@ -318,7 +332,7 @@ export function SharedRecipesBox() {
                   Last updated {compactStamp(s.updated_at)}
                 </span>
               </span>
-              {s.per_serving.calories != null && (
+              {!isMinor && s.per_serving.calories != null && (
                 <span className="shrink-0 text-xs font-semibold text-fg/50">
                   {Math.round(s.per_serving.calories)} kcal
                 </span>

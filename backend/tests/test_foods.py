@@ -73,6 +73,14 @@ def test_barcode_rejects_non_numeric(owner):
     assert owner.get("/foods/barcode/not-a-code").status_code == 400
 
 
+def test_minors_get_no_food_lookups(child):
+    """Kids have no nutrition area, so the picker's third-party lookups are
+    closed to them too - search, the recent shelf, and barcode scans."""
+    assert child.get("/foods/search?q=apple").status_code == 403
+    assert child.get("/foods/recent").status_code == 403
+    assert child.get("/foods/barcode/0051500255162").status_code == 403
+
+
 # A minimal valid custom-food body: one serving, nutrition entered per it.
 def _food(name, **over):
     body = {"name": name, "servings": [{"name": "1 serving", "grams": 100}], "basis_index": 0}

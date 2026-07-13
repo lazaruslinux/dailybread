@@ -194,11 +194,13 @@ def clear_meal(
 
 
 # ---- the dinner plan ---------------------------------------------------------------
-# Four standing modes, always on for a day until dinner is set. Adults pick
-# one (changeable, retractable); each pick shows as that adult's avatar plus
-# their short detail. Kids never vote — the client pins their avatars to the
-# leading choice. Locking the plan is just setting the normal meal row, so
-# unlocking (clearing the meal) brings the untouched votes straight back.
+# Four standing modes, always on for a day until dinner is set. Every member
+# picks one (changeable, retractable); each pick shows as that member's
+# avatar plus their short detail. Kids' votes are advisory by construction:
+# only a parent can lock the plan in. A kid who hasn't voted rides along in
+# the kids list so the row still shows the whole family. Locking the plan is
+# just setting the normal meal row, so unlocking (clearing the meal) brings
+# the untouched votes straight back.
 
 
 def _plan_out(db: Session, family_id: int, date_for: dt.date) -> DinnerPlanOut:
@@ -213,12 +215,15 @@ def _plan_out(db: Session, family_id: int, date_for: dt.date) -> DinnerPlanOut:
         r.id: r.name
         for r in db.scalars(select(Recipe).where(Recipe.id.in_(recipe_ids)))
     } if recipe_ids else {}
+    # Kids who VOTED are real voter chips; only the ones who haven't weighed
+    # in yet ride along here, so every face still shows on the row.
+    voted_ids = {v.user_id for v, _ in rows}
     kids = [
         u
         for u in db.scalars(
             select(User).where(User.family_id == family_id).order_by(User.created_at)
         )
-        if u.is_minor
+        if u.is_minor and u.id not in voted_ids
     ]
     return DinnerPlanOut(
         date_for=date_for,
@@ -281,10 +286,11 @@ def cast_dinner_vote(
     data: DinnerVoteIn,
     date_for: dt.date = Query(alias="date"),
     db: Session = Depends(get_db),
-    parent: User = Depends(require_parent),
+    user: User = Depends(require_family),
 ):
-    """Set (or change) my pick for the night. Adults only — kid avatars are
-    display, not ballots."""
+    """Set (or change) my pick for the night. Every member votes, kids
+    included — the ballot only ever touches the caller's own row, and only
+    a parent can turn the winning pick into the actual plan (set_meal)."""
     from app.models import DinnerChoice
     from app.routers.recipes import _get_recipe
 
@@ -294,17 +300,17 @@ def cast_dinner_vote(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Only homemade takes a recipe")
     recipe_id = None
     if data.recipe_id is not None:
-        recipe_id = _get_recipe(db, data.recipe_id, parent.family_id).id
+        recipe_id = _get_recipe(db, data.recipe_id, user.family_id).id
 
     vote = db.scalar(
         select(DinnerVote).where(
-            DinnerVote.family_id == parent.family_id,
+            DinnerVote.family_id == user.family_id,
             DinnerVote.date_for == date_for,
-            DinnerVote.user_id == parent.id,
+            DinnerVote.user_id == user.id,
         )
     )
     if vote is None:
-        vote = DinnerVote(family_id=parent.family_id, date_for=date_for, user_id=parent.id)
+        vote = DinnerVote(family_id=user.family_id, date_for=date_for, user_id=user.id)
         db.add(vote)
     vote.choice = data.choice
     vote.detail = data.detail.strip()
@@ -313,23 +319,23 @@ def cast_dinner_vote(
     # Votes stay quiet on purpose: the plan block is standing, not a
     # conversation thread. The family hears when dinner gets LOCKED IN
     # (set_meal), the one moment that decides the night.
-    return _plan_out(db, parent.family_id, date_for)
+    return _plan_out(db, user.family_id, date_for)
 
 
 @router.delete("/plan", response_model=DinnerPlanOut)
 def retract_dinner_vote(
     date_for: dt.date = Query(alias="date"),
     db: Session = Depends(get_db),
-    parent: User = Depends(require_parent),
+    user: User = Depends(require_family),
 ):
     vote = db.scalar(
         select(DinnerVote).where(
-            DinnerVote.family_id == parent.family_id,
+            DinnerVote.family_id == user.family_id,
             DinnerVote.date_for == date_for,
-            DinnerVote.user_id == parent.id,
+            DinnerVote.user_id == user.id,
         )
     )
     if vote is not None:
         db.delete(vote)
         db.commit()
-    return _plan_out(db, parent.family_id, date_for)
+    return _plan_out(db, user.family_id, date_for)

@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from app import throttle
 from app.invitecodes import hash_code, mint_code, normalize, pretty, still_valid
 from app.db import get_db
-from app.deps import require_admin, require_family, require_parent
+from app.deps import require_admin, require_adult, require_family, require_parent
 from app.models import (
     Family,
     Food,
@@ -181,8 +181,10 @@ def _family_in_a_village(db: Session, family_id: int) -> bool:
 
 
 @router.get("", response_model=list[VillageOut])
-def list_villages(db: Session = Depends(get_db), user: User = Depends(require_family)):
-    """The family's villages. Any member may look; only admins change them."""
+def list_villages(db: Session = Depends(get_db), user: User = Depends(require_adult)):
+    """The family's villages. Adults may look; only admins change them. The
+    roster carries other households' names, moods, and levels, so minors
+    don't get it — kids' only cross-family window is the recipe shelf."""
     villages = db.scalars(
         select(Village)
         .join(VillageFamily, VillageFamily.village_id == Village.id)

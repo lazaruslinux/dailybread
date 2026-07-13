@@ -90,7 +90,8 @@ class CreateUserIn(BootstrapIn):
     role: Role = Role.child
     # None means "use the default for the role" (parent -> admin, child -> not).
     is_admin: bool | None = None
-    # Kid mode switch-off date. Leaving it empty keeps a child account a minor.
+    # Informational only (prefills the health profile's age math). Kid mode
+    # follows the ROLE, never this date - see User.is_minor in models.py.
     birthdate: dt.date | None = None
     # True creates the account with NO family: on first login they get the
     # create-your-family wizard and become head of their own household.

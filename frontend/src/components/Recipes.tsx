@@ -327,7 +327,10 @@ const MORE_NUTRIENTS: { key: keyof api.RecipeMacros; label: string; unit: string
 ]
 
 export function NutritionPanel({ m }: { m: api.RecipeMacros }) {
+  const { user } = useAuth()
   const [open, setOpen] = useState(false)
+  // Kid mode: recipes are ingredients and steps, not calorie counts.
+  if (user?.is_minor) return null
   const hasMore = MORE_NUTRIENTS.some((r) => m[r.key] != null)
   return (
     <div>
@@ -492,7 +495,7 @@ function RecipeDetail({
                 <span className="text-fg/85">{ing.name}</span>
                 <span className="shrink-0 tabular-nums text-fg/45">
                   {+ing.amount.toFixed(2)} {UNIT_LABEL[ing.unit] ?? ing.unit}
-                  {ing.calories != null && ` · ${Math.round(ing.calories)} cal`}
+                  {canEdit && ing.calories != null && ` · ${Math.round(ing.calories)} cal`}
                 </span>
               </li>
             ))}
@@ -1351,7 +1354,8 @@ export function RecipeBox() {
         ) : (
           <ul className="flex flex-col gap-2">
             {preview.shown.map((r) => {
-              const summary = macroSummary(r.per_serving)
+              // Kid mode: the row is just the recipe's name - no macro line.
+              const summary = canEdit ? macroSummary(r.per_serving) : ''
               return (
                 <li key={r.id}>
                   <button
@@ -1447,13 +1451,16 @@ const numOrNull = (s: string) => (s.trim() === '' ? null : Number(s))
 const decimal = (s: string) => s.replace(/[^0-9.]/g, '')
 
 // A one-line summary for a custom-food row: its first serving and that serving's
-// calories, backed out of the per-100-base figure we store.
-function foodSummary(f: api.Food): string {
+// calories, backed out of the per-100-base figure we store. Kid mode drops the
+// calorie figure (showCal false) and keeps the serving name.
+function foodSummary(f: api.Food, showCal = true): string {
   const s = f.servings[0]
-  const cal = (grams: number) => (f.calories != null ? `${Math.round((f.calories * grams) / 100)} cal` : '')
+  const cal = (grams: number) =>
+    showCal && f.calories != null ? `${Math.round((f.calories * grams) / 100)} cal` : ''
   const parts = [f.brand]
   if (s) parts.push([s.name, cal(s.grams)].filter(Boolean).join(' · '))
-  else if (f.calories != null) parts.push(`${Math.round(f.calories)} cal / 100 ${UNIT_LABEL[f.base_unit]}`)
+  else if (showCal && f.calories != null)
+    parts.push(`${Math.round(f.calories)} cal / 100 ${UNIT_LABEL[f.base_unit]}`)
   return parts.filter(Boolean).join(' · ')
 }
 
@@ -1773,6 +1780,8 @@ function FoodSheet({
 // The family's Saved Foods: search or barcode results pinned for quick
 // re-use. Unpinning never deletes the food itself.
 export function SavedFoodBox() {
+  const { user } = useAuth()
+  const canEdit = user?.role === 'parent'
   const [foods, setFoods] = useState<api.Food[]>([])
   const [error, setError] = useState<string | null>(null)
   const preview = useLibraryPreview(foods)
@@ -1814,7 +1823,7 @@ export function SavedFoodBox() {
       ) : (
         <ul className="flex flex-col gap-2">
           {preview.shown.map((f) => {
-            const summary = foodSummary(f)
+            const summary = foodSummary(f, canEdit)
             return (
               <li key={f.id} className="flex w-full items-center gap-3 rounded-xl bg-fg/5 px-3 py-2.5">
                 <span className="min-w-0 flex-1">
@@ -1823,14 +1832,16 @@ export function SavedFoodBox() {
                   </span>
                   {summary && <span className="block truncate text-xs text-fg/45">{summary}</span>}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => unpin(f)}
-                  aria-label={`Remove ${f.name} from saved foods`}
-                  className="shrink-0 rounded-lg p-1.5 text-gold transition-colors hover:bg-fg/10"
-                >
-                  <BookmarkCheck className="h-4 w-4" strokeWidth={2.5} />
-                </button>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => unpin(f)}
+                    aria-label={`Remove ${f.name} from saved foods`}
+                    className="shrink-0 rounded-lg p-1.5 text-gold transition-colors hover:bg-fg/10"
+                  >
+                    <BookmarkCheck className="h-4 w-4" strokeWidth={2.5} />
+                  </button>
+                )}
               </li>
             )
           })}
@@ -1902,7 +1913,7 @@ export function CustomFoodBox() {
         ) : (
           <ul className="flex flex-col gap-2">
             {preview.shown.map((f) => {
-              const summary = foodSummary(f)
+              const summary = foodSummary(f, canEdit)
               const inner = (
                 <>
                   <span className="min-w-0 flex-1">

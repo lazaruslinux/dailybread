@@ -8,8 +8,9 @@ import { Button, Field, FormError } from './ui'
 
 // The Kitchen's hero: tonight's dinner, with the week's menu underneath.
 // Parents plan a night from the recipe box or type a one-off ("Pizza out");
-// kids see the menu read-only. Dinner-only for now — the API already carries
-// a slot, so breakfast/lunch are a UI change later.
+// kids vote on tonight but the week planner stays read-only for them.
+// Dinner-only for now — the API already carries a slot, so breakfast/lunch
+// are a UI change later.
 
 function toISO(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -97,8 +98,12 @@ function TimeSheet({
 }
 
 // The night's per-serving figures as readable pills. Only nutrients the
-// recipe actually knows are shown — never a misleading zero.
+// recipe actually knows are shown — never a misleading zero. Kid mode shows
+// none of it: kids have no nutrition area, and dinner shouldn't come with a
+// calorie count for them.
 function MacroPills({ ps }: { ps: api.RecipeMacros }) {
+  const { user } = useAuth()
+  if (user?.is_minor) return null
   const pills = [
     ps.calories != null ? `${Math.round(ps.calories)} cal` : null,
     ps.protein_g != null ? `${Math.round(ps.protein_g)}g protein` : null,
@@ -125,9 +130,10 @@ function MacroPills({ ps }: { ps: api.RecipeMacros }) {
 // The Dinner Plan: four standing modes, always on for today until dinner is
 // set, and the same four modes behind every day of the week planner — a pick
 // made for Friday is simply Friday's vote, preselected when Friday arrives.
-// Adults tap a pick; each voter's typed detail rides WITH their name, so two
-// competing restaurants read as two people's picks. Kid-mode avatars ride the
-// leading choice, faded — they eat whatever wins, they never vote.
+// Every member taps a pick; each voter's typed detail rides WITH their name,
+// so two competing restaurants read as two people's picks. A kid's vote is a
+// real chip on their chosen row — advisory, since only a parent can lock the
+// night in. Kids who HAVEN'T voted ride the leading choice, faded.
 
 const CHOICES: {
   id: api.DinnerChoice
@@ -404,7 +410,6 @@ function DinnerPlanBlock({
   }
 
   function tapped(c: (typeof CHOICES)[number]) {
-    if (!isParent) return
     if (c.id === 'self_serve') {
       if (myVote?.choice === 'self_serve') retract()
       else voteFor('self_serve').catch(() => {})

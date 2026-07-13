@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 from app import foods_api
 from app.config import settings
 from app.db import get_db
-from app.deps import require_family, require_parent
+from app.deps import require_adult, require_family, require_parent
 from app.models import (
     DiaryEntry,
     Food,
@@ -97,9 +97,11 @@ def _searched(q: str) -> list[foods_api.FoodResult]:
 def search_foods(
     q: str = Query(min_length=1, max_length=100),
     db: Session = Depends(get_db),
-    user: User = Depends(require_family),
+    user: User = Depends(require_adult),
 ):
-    """Search the food database (USDA FoodData Central), server-side."""
+    """Search the food database (USDA FoodData Central), server-side. Adult
+    only, like every diary surface that uses the picker: minors have no
+    nutrition area, so they get no third-party food lookups either."""
     try:
         results = _searched(q)
     except foods_api.FoodApiError as e:
@@ -111,7 +113,7 @@ _RECENT_LIMIT = 8
 
 
 @router.get("/recent", response_model=list[FoodOut])
-def recent_foods(db: Session = Depends(get_db), user: User = Depends(require_family)):
+def recent_foods(db: Session = Depends(get_db), user: User = Depends(require_adult)):
     """The picker's quick-add shelf: foods this member logged in their diary
     lately, then foods the family's recipes recently used, deduped and newest
     first. Personal picks outrank the family's — what YOU eat several times a
@@ -174,8 +176,10 @@ def saved_foods(db: Session = Depends(get_db), user: User = Depends(require_fami
 def save_food(
     data: SavedFoodIn,
     db: Session = Depends(get_db),
-    user: User = Depends(require_family),
+    user: User = Depends(require_parent),
 ):
+    # The shelf is family-shared: everyone browses it in the Kitchen, so
+    # changing it is a parent's move (same rule as recipes and groceries).
     from app.models import SavedFood
     from app.routers.recipes import _resolve_food
     from app.schemas import RecipeIngredientIn
@@ -198,7 +202,7 @@ def save_food(
 def unsave_food(
     food_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_family),
+    user: User = Depends(require_parent),
 ):
     from app.models import SavedFood
 
@@ -216,7 +220,7 @@ def unsave_food(
 def lookup_barcode(
     code: str,
     db: Session = Depends(get_db),
-    user: User = Depends(require_family),
+    user: User = Depends(require_adult),
 ):
     """Resolve a scanned barcode, checking home before asking the internet:
     first the family's own custom foods (a product they entered by hand after

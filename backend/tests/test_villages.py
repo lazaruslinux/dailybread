@@ -57,11 +57,14 @@ def test_only_admins_create(parent, child, homeless):
         assert client.post("/villages", json={"name": "Nope"}).status_code == 403
 
 
-def test_any_member_may_list(child, owner):
+def test_adults_list_but_minors_never_see_the_roster(child, owner, parent):
+    """The roster carries other households' names, moods, and levels, so a
+    kid never gets it. Their cross-family window is the recipe shelf only
+    (test_shelf_shows_other_families_only covers the kid read there)."""
     _create(owner)
-    res = child.get("/villages")
-    assert res.status_code == 200
-    assert len(res.json()) == 1
+    assert parent.get("/villages").status_code == 200
+    assert len(owner.get("/villages").json()) == 1
+    assert child.get("/villages").status_code == 403
 
 
 # ---- joining -------------------------------------------------------------------

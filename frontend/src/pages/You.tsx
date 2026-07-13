@@ -236,14 +236,16 @@ export function You({ onOpenAdmin }: { onOpenAdmin: () => void }) {
 
       <div className="flex flex-col gap-2">
         <SettingsRow Icon={BreadIcon as unknown as LucideIcon} page="crumbs" onOpen={setSub} />
-        <SettingsRow Icon={Bell} page="notifications" onOpen={setSub} />
+        {/* Minors get no notifications (the server sends them none, so the
+            page would be empty), no health area, and no village roster; the
+            API 403s the latter two anyway. */}
+        {!user.is_minor && <SettingsRow Icon={Bell} page="notifications" onOpen={setSub} />}
         <SettingsRow Icon={Palette} page="appearance" onOpen={setSub} />
-        {/* Minors have no health area at all; the API 403s them anyway. */}
         {!user.is_minor && (
           <SettingsRow Icon={HeartPulse} page="health" onOpen={setSub} iconClass="text-red-400" />
         )}
         <SettingsRow Icon={BookOpen} page="verses" onOpen={setSub} />
-        <SettingsRow Icon={Trees} page="villages" onOpen={setSub} />
+        {!user.is_minor && <SettingsRow Icon={Trees} page="villages" onOpen={setSub} />}
       </div>
 
       <div className="flex flex-col gap-2">

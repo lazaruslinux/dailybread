@@ -1,14 +1,23 @@
 import { useEffect, useState } from 'react'
 import { BookOpen, CalendarCheck, Dumbbell, Lock, Sparkles, Sun } from 'lucide-react'
 import * as api from '../lib/api'
+import { useAuth } from '../auth/AuthContext'
 import { BreadIcon } from '../components/BreadIcon'
 import { LevelBadge, TIER_META, tierOf } from '../components/LevelBadge'
 
 // The one place the economy explains itself: how crumbs are earned, what
 // levels cost, and what the tier ladder looks like. Static words, live
-// numbers for your own progress up top.
+// numbers for your own progress up top. Each earn names its audience so a
+// kid isn't pitched workouts and calorie locks from tabs they don't have.
 
-const EARNS = [
+const EARNS: {
+  Icon: typeof Sun
+  label: string
+  amount: string
+  detail: string
+  kidDetail?: string
+  adultOnly?: boolean
+}[] = [
   {
     Icon: Sun,
     label: 'Show up',
@@ -26,18 +35,21 @@ const EARNS = [
     label: 'Finish a workout',
     amount: '+3',
     detail: '15 minutes or more, synced from your watch, once a day',
+    adultOnly: true,
   },
   {
     Icon: Lock,
     label: 'Lock in your calories',
     amount: '+2',
     detail: "Log your day's food, then lock it in on the Nutrition tab",
+    adultOnly: true,
   },
   {
     Icon: CalendarCheck,
     label: 'Kid tasks',
     amount: '+1',
     detail: 'Kids earn when a parent approves a check-off, up to 3 a day',
+    kidDetail: 'Check off your cards; the crumb lands when a parent approves, up to 3 a day',
   },
   {
     Icon: Sparkles,
@@ -50,6 +62,9 @@ const EARNS = [
 const LADDER = [5, 15, 25, 35, 45]
 
 export function BreadcrumbsPage() {
+  const { user } = useAuth()
+  const isMinor = user?.is_minor ?? false
+  const earns = EARNS.filter((e) => !(isMinor && e.adultOnly))
   const [me, setMe] = useState<api.Crumbs | null>(null)
   useEffect(() => {
     api.getMyCrumbs().then(setMe).catch(() => {})
@@ -84,14 +99,16 @@ export function BreadcrumbsPage() {
           How to earn
         </span>
         <div className="flex flex-col gap-1">
-          {EARNS.map((earn) => (
+          {earns.map((earn) => (
             <div key={earn.label} className="flex items-center gap-3 rounded-xl px-1.5 py-2">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-fg/10">
                 <earn.Icon className="h-4.5 w-4.5 text-gold" strokeWidth={2} />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-semibold text-fg/85">{earn.label}</span>
-                <span className="block text-xs leading-snug text-fg/45">{earn.detail}</span>
+                <span className="block text-xs leading-snug text-fg/45">
+                  {isMinor && earn.kidDetail ? earn.kidDetail : earn.detail}
+                </span>
               </span>
               <span className="flex shrink-0 items-center gap-1 text-sm font-bold text-gold">
                 <BreadIcon className="h-3.5 w-3.5" strokeWidth={2.5} />

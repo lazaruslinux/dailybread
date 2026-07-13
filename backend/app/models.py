@@ -598,10 +598,10 @@ class DinnerChoice(str, enum.Enum):
 
 
 class DinnerVote(Base):
-    """One adult's standing pick for a night's dinner mode, with an optional
+    """One member's standing pick for a night's dinner mode, with an optional
     short detail ("Chipotle") or, for homemade, a recipe. One changeable vote
-    per member per night; kid avatars merely FOLLOW the leading choice in the
-    UI — children never vote. Locking the plan sets the normal meal row and
+    per member per night, kids included - their votes are advisory because
+    only a parent can lock the plan in. Locking sets the normal meal row and
     leaves these untouched, so unlocking brings the votes right back."""
 
     __tablename__ = "dinner_votes"
