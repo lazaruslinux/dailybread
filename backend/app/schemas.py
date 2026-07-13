@@ -1296,6 +1296,8 @@ class WorkoutOut(BaseModel):
     # Downsampled [lat, lon] pairs for the little route thumbnail, when the
     # exporter sent GPS data.
     route: list[list[float]] | None = None
+    # Which dialect the workout came from ("apple" / "android").
+    source: str = "apple"
 
     model_config = {"from_attributes": True}
 
@@ -1305,6 +1307,8 @@ class FitnessDayOut(BaseModel):
     active_kcal: float | None
     exercise_minutes: float | None
     resting_hr: float | None
+    # Walking + running distance in meters (the client renders miles).
+    distance: float | None = None
 
 
 class FitnessWeekDayOut(BaseModel):
@@ -1315,6 +1319,8 @@ class FitnessWeekDayOut(BaseModel):
     active_kcal: float | None
     exercise_minutes: float | None
     resting_hr: float | None
+    # Walking + running distance in meters (the client renders miles).
+    distance: float | None = None
 
 
 class FitnessGoalsOut(BaseModel):

@@ -78,6 +78,21 @@ def test_hc_payload_lands_on_the_fitness_tab(owner):
     assert w["activity"] == "Running"
     assert w["distance_m"] == 5100
     assert w["route"] is None
+    assert w["source"] == "android"
+
+
+def test_hc_daily_distance_lands_in_meters(owner):
+    token = _mint(owner)
+    payload = {
+        "app_version": "1.4.0",
+        "distance": [
+            {"distance_meters": 1500, "start_time": _utc(TODAY, 9)},
+            {"distance_meters": 2500, "start_time": _utc(TODAY, 15)},
+        ],
+    }
+    assert _send(owner, token, payload).status_code == 200
+    body = owner.get(f"/me/fitness?date={TODAY.isoformat()}").json()
+    assert body["today"]["distance"] == 4000
 
 
 def test_hc_weight_and_body_fat_join_the_weight_log(owner):

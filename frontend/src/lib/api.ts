@@ -398,6 +398,8 @@ export interface Workout {
   avg_hr: number | null
   // Downsampled [lat, lon] pairs for the route thumbnail, when GPS came along.
   route: number[][] | null
+  // Which dialect the workout came from ("apple" / "android").
+  source: string
 }
 
 export interface FitnessDay {
@@ -405,6 +407,8 @@ export interface FitnessDay {
   active_kcal: number | null
   exercise_minutes: number | null
   resting_hr: number | null
+  // Walking + running distance in meters (rendered as miles).
+  distance: number | null
 }
 
 export interface FitnessWeekDay {
@@ -413,6 +417,8 @@ export interface FitnessWeekDay {
   active_kcal: number | null
   exercise_minutes: number | null
   resting_hr: number | null
+  // Walking + running distance in meters (rendered as miles).
+  distance: number | null
 }
 
 export interface FitnessGoals {

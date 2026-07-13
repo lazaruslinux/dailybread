@@ -17,6 +17,7 @@
   --color-tier-master: var(--tier-master);
   --color-fit-steps: var(--fit-steps);
   --color-fit-active: var(--fit-active);
+  --color-fit-distance: var(--fit-distance);
   --color-fit-exercise: var(--fit-exercise);
   --color-fit-hr: var(--fit-hr);
   --color-fit-weight: var(--fit-weight);
@@ -64,8 +65,9 @@
   /* Fitness metric identities. One fixed hue per metric, both themes;
      validated (lightness band, chroma, CVD separation, 3:1 contrast)
      against this theme's paper surface — don't eyeball replacements. */
-  --fit-steps: #7c4dea;
+  --fit-steps: #2563eb; /* cool blue (was violet); distinct from active/exercise/hr */
   --fit-active: #d94f10;
+  --fit-distance: #4338ca; /* indigo; kept well clear of the exercise teal beside it */
   --fit-exercise: #0c8f82;
   --fit-hr: #cf2637; /* warm heart-red; every metric surface is also labeled + iconed */
   --fit-weight: #be185d;
@@ -111,8 +113,9 @@
 
   /* Fitness metric identities, re-picked for the dark surface (not a flip
      of the light set); validated like the light ones. */
-  --fit-steps: #8b5cf6;
+  --fit-steps: #3b82f6; /* cool blue (was violet) */
   --fit-active: #ea580c;
+  --fit-distance: #818cf8; /* indigo */
   --fit-exercise: #0d9488;
   --fit-hr: #ef4444;
   --fit-weight: #ec4899;

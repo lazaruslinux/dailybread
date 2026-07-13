@@ -71,6 +71,11 @@ METRIC_MAP = {
 }
 WEIGHT_METRIC = "weight_body_mass"
 BODYFAT_METRIC = "body_fat_percentage"
+# Walking + Running Distance. Kept out of METRIC_MAP because it needs per-entry
+# unit handling (mi/km) rather than the plain sum/avg the others use; stored
+# normalized to meters as the "distance" daily metric. Confirm this exporter key
+# against a real HAE payload before relying on it in the wild.
+DISTANCE_METRIC = "walking_running_distance"
 
 # One shared bucket for bad tokens, same reasoning as signup invites: the
 # tokens are long random secrets, so every wrong guess is a fresh key and
@@ -111,16 +116,20 @@ def _units(raw, fallback: str = "") -> str:
     return fallback
 
 
+def _meters(qty: float, unit: str) -> float:
+    u = unit.lower()
+    if u in ("km", "kilometers"):
+        return qty * 1000.0
+    if u in ("mi", "miles"):
+        return qty * MILE_M
+    return qty  # meters, or a bare number we take at face value
+
+
 def _distance_m(raw) -> float | None:
     qty = _qty(raw)
     if qty is None:
         return None
-    unit = _units(raw).lower()
-    if unit in ("km", "kilometers"):
-        return qty * 1000.0
-    if unit in ("mi", "miles"):
-        return qty * MILE_M
-    return qty  # meters, or a bare number we take at face value
+    return _meters(qty, _units(raw))
 
 
 def _ingest_user(db: Session, authorization: str | None) -> User:
@@ -183,6 +192,9 @@ def _import_metrics(db: Session, user: User, metrics) -> int:
         if name == BODYFAT_METRIC:
             bodyfat_points.extend(points)
             continue
+        if name == DISTANCE_METRIC:
+            touched += _import_distance(db, user, points, unit)
+            continue
         if name not in METRIC_MAP:
             continue  # metrics we don't track yet are silently fine
         metric, combine = METRIC_MAP[name]
@@ -198,6 +210,22 @@ def _import_metrics(db: Session, user: User, metrics) -> int:
             _upsert_daily(db, user, day, metric, value, unit)
             touched += 1
     return touched + _import_body_fat(db, user, bodyfat_points)
+
+
+def _import_distance(db: Session, user: User, points, unit: str) -> int:
+    """Daily walking + running distance, normalized to meters. The exporter
+    carries one unit for the whole metric (mi or km), so we sum the day's
+    points and convert once."""
+    by_day: dict[dt.date, float] = defaultdict(float)
+    for point in points if isinstance(points, list) else []:
+        when = _parse_when(point.get("date")) if isinstance(point, dict) else None
+        qty = _qty(point.get("qty")) if isinstance(point, dict) else None
+        if when is None or qty is None:
+            continue
+        by_day[when.date()] += qty
+    for day, native_total in by_day.items():
+        _upsert_daily(db, user, day, "distance", _meters(native_total, unit), "m")
+    return len(by_day)
 
 
 def _import_weight(db: Session, user: User, points, unit: str) -> int:
@@ -308,6 +336,7 @@ def _upsert_workout(
     distance_m: float | None,
     avg_hr: float | None,
     route: list | None,
+    source: str = "apple",
 ) -> None:
     """The one idempotent workout write both dialects (Apple and Android)
     share: a stable exporter id wins, otherwise (member, start, activity).
@@ -336,6 +365,7 @@ def _upsert_workout(
     row.kcal = kcal
     row.distance_m = distance_m
     row.avg_hr = avg_hr
+    row.source = source
     if route is not None:
         row.route = route
 
@@ -562,6 +592,7 @@ def _days_out(
             active_kcal=by_day_metric.get((day, "active_kcal")),
             exercise_minutes=by_day_metric.get((day, "exercise_minutes")),
             resting_hr=by_day_metric.get((day, "resting_hr")),
+            distance=by_day_metric.get((day, "distance")),
         )
         for day in (start + dt.timedelta(days=i) for i in range((end - start).days + 1))
     ]
@@ -595,6 +626,7 @@ def my_fitness(
             active_kcal=today_out.active_kcal,
             exercise_minutes=today_out.exercise_minutes,
             resting_hr=today_out.resting_hr,
+            distance=today_out.distance,
         ),
         week=week,
         workouts=[WorkoutOut.model_validate(w) for w in workouts],

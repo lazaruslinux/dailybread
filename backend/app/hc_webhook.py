@@ -94,6 +94,15 @@ def import_payload(
         upsert_daily(db, user, day, "active_kcal", total, "kcal")
         days += 1
 
+    # Daily distance in meters. Provisional key/field, mirroring the workout
+    # session's distance_meters — absent today; harmless if the bridge omits it,
+    # confirm against a real Health Connect payload before relying on it.
+    for day, total in _sum_by_day(
+        _points(payload, "distance"), "start_time", "distance_meters", tz
+    ).items():
+        upsert_daily(db, user, day, "distance", total, "m")
+        days += 1
+
     # Resting HR arrives as point readings; the day's value is their average.
     hr_by_day: dict[dt.date, list[float]] = {}
     for p in _points(payload, "resting_heart_rate"):
@@ -128,6 +137,7 @@ def import_payload(
             distance_m=_num(p.get("distance_meters")),
             avg_hr=_num(p.get("avg_heart_rate")),
             route=None,
+            source="android",
         )
         workouts += 1
         workout_days.add(started.date())

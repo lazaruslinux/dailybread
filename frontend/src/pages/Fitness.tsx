@@ -5,11 +5,14 @@ import {
   ChevronRight,
   Copy,
   Dumbbell,
+  Eye,
+  EyeOff,
   Flame,
   Footprints,
   HeartPulse,
   Link2,
   Mountain,
+  Route,
   Scale,
   Timer,
   Unplug,
@@ -34,7 +37,7 @@ import { Button, Field, FormError } from '../components/ui'
 // rings, and the detail sheets all read from this. goalKey marks the metrics
 // with a tunable daily target (resting HR has none — lower is its own story).
 type MetricDef = {
-  key: 'steps' | 'active_kcal' | 'exercise_minutes' | 'resting_hr'
+  key: 'steps' | 'active_kcal' | 'distance' | 'exercise_minutes' | 'resting_hr'
   label: string
   title: string
   icon: typeof Footprints
@@ -43,7 +46,14 @@ type MetricDef = {
   goalKey?: keyof api.FitnessGoals
   bestWord: string
   bestPick: 'max' | 'min'
+  // How the stored value reads to a person. Defaults to a rounded count; the
+  // distance metric is stored in meters and rendered as miles.
+  fmt?: (v: number | null) => string
 }
+
+// The distance metric arrives in meters; every surface shows one decimal mile.
+const fmtMilesNum = (v: number | null): string =>
+  v === null ? '–' : (v / 1609.344).toFixed(1)
 
 const METRICS: MetricDef[] = [
   {
@@ -66,6 +76,17 @@ const METRICS: MetricDef[] = [
     goalKey: 'active_kcal',
     bestWord: 'Best day',
     bestPick: 'max',
+  },
+  {
+    key: 'distance',
+    label: 'Distance',
+    title: 'Distance',
+    icon: Route,
+    colorVar: '--fit-distance',
+    unit: 'mi',
+    bestWord: 'Best day',
+    bestPick: 'max',
+    fmt: fmtMilesNum,
   },
   {
     key: 'exercise_minutes',
@@ -422,7 +443,7 @@ function MetricCard({
       </span>
       <p className="mt-1 text-[11px] text-fg/45">Today</p>
       <p className="text-2xl font-bold tracking-tight" style={{ color: `var(${colorVar})` }}>
-        {fmtNumber(value)}
+        {(def.fmt ?? fmtNumber)(value)}
         {unit && <span className="ml-1 text-sm font-semibold">{unit}</span>}
       </p>
       <MiniBars
@@ -649,6 +670,7 @@ function MetricDetail({
   const selectedDay = history?.find((d) => d.date_for === selected) ?? null
   const Icon = def.icon
   const unitSuffix = def.unit ? ` ${def.unit}` : ''
+  const fmtVal = def.fmt ?? fmtNumber
 
   return (
     <Sheet onClose={onClose}>
@@ -658,7 +680,7 @@ function MetricDetail({
       </h3>
       <p className="text-[11px] text-fg/45">Today</p>
       <p className="text-3xl font-bold tracking-tight" style={{ color: `var(${def.colorVar})` }}>
-        {fmtNumber(today)}
+        {fmtVal(today)}
         {def.unit && <span className="ml-1 text-base font-semibold">{def.unit}</span>}
       </p>
 
@@ -674,7 +696,7 @@ function MetricDetail({
                 ? `${fmtReadoutDate(selectedDay.date_for)} · ${
                     selectedDay[def.key] === null
                       ? 'no data'
-                      : fmtNumber(selectedDay[def.key]) + unitSuffix
+                      : fmtVal(selectedDay[def.key]) + unitSuffix
                   }`
                 : 'Last 30 days · tap a bar'}
             </p>
@@ -688,11 +710,11 @@ function MetricDetail({
           </div>
 
           <div className="grid grid-cols-3 gap-3">
-            <DetailStat label="7-day avg" value={avg7 === null ? '–' : fmtNumber(avg7) + unitSuffix} />
-            <DetailStat label="30-day avg" value={avg30 === null ? '–' : fmtNumber(avg30) + unitSuffix} />
+            <DetailStat label="7-day avg" value={avg7 === null ? '–' : fmtVal(avg7) + unitSuffix} />
+            <DetailStat label="30-day avg" value={avg30 === null ? '–' : fmtVal(avg30) + unitSuffix} />
             <DetailStat
               label={def.bestWord}
-              value={best === null ? '–' : fmtNumber(best[def.key]) + unitSuffix}
+              value={best === null ? '–' : fmtVal(best[def.key]) + unitSuffix}
               sub={best === null ? undefined : fmtShortDate(best.date_for)}
             />
           </div>
@@ -899,41 +921,103 @@ function weightGoalText(health: api.Health): string | null {
 }
 
 
+// Weight is the most personal number on the page, so it stays blurred behind a
+// tap. First tap reveals it in place; once revealed, the card opens the full
+// chart and a hide button re-blurs it. The reveal state lives in the parent and
+// resets when the tab remounts, so the number is never left showing after you
+// leave.
 function WeightCard({
   points,
   goal,
+  revealed,
+  onReveal,
+  onHide,
   onOpen,
 }: {
   points: WeighPoint[]
   // The plan, read-only: the goal is EDITED in Nutrition's Health Calculator
   // (where the calorie budget lives); here it just captions the progress.
   goal: string | null
+  revealed: boolean
+  onReveal: () => void
+  onHide: () => void
   onOpen: () => void
 }) {
   const latest = points[points.length - 1]
-  return (
-    <button type="button" onClick={onOpen} className="glass relative flex items-center gap-3 p-4 text-left">
-      <div className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
-          <Scale className="h-3.5 w-3.5" style={{ color: 'var(--fit-weight)' }} /> Weight
-        </span>
-        <p className="mt-1 text-[11px] text-fg/45">
-          Last weigh-in · {fmtShortDate(latest.date)}
-          {goal && ` · ${goal}`}
-        </p>
-        <p className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fit-weight)' }}>
-          {lb1(latest.kg).toLocaleString()}
-          <span className="ml-1 text-sm font-semibold">lb</span>
-          {latest.fat !== null && (
-            <span className="ml-2 text-sm font-semibold" style={{ color: 'var(--fit-bodyfat)' }}>
-              {latest.fat}% body fat
+  const label = (
+    <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
+      <Scale className="h-3.5 w-3.5" style={{ color: 'var(--fit-weight)' }} /> Weight
+    </span>
+  )
+
+  if (!revealed) {
+    return (
+      <button
+        type="button"
+        onClick={onReveal}
+        aria-label="Show weight"
+        className="glass relative flex items-center gap-3 p-4 text-left"
+      >
+        <div className="min-w-0 flex-1">
+          {label}
+          <div className="relative">
+            <div className="pointer-events-none select-none blur-[7px]" aria-hidden>
+              <p className="mt-1 text-[11px] text-fg/45">Last weigh-in · {fmtShortDate(latest.date)}</p>
+              <p className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fit-weight)' }}>
+                {lb1(latest.kg).toLocaleString()}
+                <span className="ml-1 text-sm font-semibold">lb</span>
+              </p>
+            </div>
+            <span className="absolute inset-0 flex items-center gap-1.5 text-sm font-semibold text-fg/60">
+              <Eye className="h-4 w-4" /> Tap to show
             </span>
-          )}
-        </p>
-      </div>
-      {points.length > 1 && <WeightSparkline points={points} />}
-      <ChevronRight className="h-4 w-4 shrink-0 text-fg/30" />
-    </button>
+          </div>
+        </div>
+        {points.length > 1 && (
+          <div className="pointer-events-none select-none blur-[7px]" aria-hidden>
+            <WeightSparkline points={points} />
+          </div>
+        )}
+      </button>
+    )
+  }
+
+  return (
+    <div className="glass relative flex items-center gap-2 p-4">
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label="Open weight detail"
+        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+      >
+        <div className="min-w-0 flex-1">
+          {label}
+          <p className="mt-1 text-[11px] text-fg/45">
+            Last weigh-in · {fmtShortDate(latest.date)}
+            {goal && ` · ${goal}`}
+          </p>
+          <p className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fit-weight)' }}>
+            {lb1(latest.kg).toLocaleString()}
+            <span className="ml-1 text-sm font-semibold">lb</span>
+            {latest.fat !== null && (
+              <span className="ml-2 text-sm font-semibold" style={{ color: 'var(--fit-bodyfat)' }}>
+                {latest.fat}% body fat
+              </span>
+            )}
+          </p>
+        </div>
+        {points.length > 1 && <WeightSparkline points={points} />}
+        <ChevronRight className="h-4 w-4 shrink-0 text-fg/30" />
+      </button>
+      <button
+        type="button"
+        onClick={onHide}
+        aria-label="Hide weight"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg/40 transition-colors hover:bg-fg/10 hover:text-fg"
+      >
+        <EyeOff className="h-4 w-4" />
+      </button>
+    </div>
   )
 }
 
@@ -1084,12 +1168,10 @@ function activityIcon(activity: string): ActivityIcon {
   return hit ? hit[1] : Flame
 }
 
-// A tiny map-less trace of where the workout went: the GPS points scaled into
-// a square, latitude corrected so the shape isn't stretched. Decoration only —
-// the row's text carries the information.
-function RouteThumb({ route }: { route: number[][] }) {
-  const S = 48
-  const PAD = 5
+// Project a GPS route into an S×S box, latitude corrected so the shape isn't
+// stretched. Shared by the row thumbnail and the larger detail map. Still just
+// a trace of the stored 60-point shape — nothing here calls a map service.
+function projectRoute(route: number[][], S: number, PAD: number) {
   const lats = route.map((p) => p[0])
   const lons = route.map((p) => p[1])
   const minLat = Math.min(...lats)
@@ -1102,12 +1184,26 @@ function RouteThumb({ route }: { route: number[][] }) {
   const s = Math.min((S - 2 * PAD) / w, (S - 2 * PAD) / h)
   const ox = (S - w * s) / 2
   const oy = (S - h * s) / 2
-  const xy = ([lat, lon]: number[]) =>
-    `${(ox + (lon - minLon) * kx * s).toFixed(1)},${(oy + (maxLat - lat) * s).toFixed(1)}`
+  const pt = ([lat, lon]: number[]): [number, number] => [
+    ox + (lon - minLon) * kx * s,
+    oy + (maxLat - lat) * s,
+  ]
+  return {
+    points: route.map((p) => pt(p).map((n) => n.toFixed(1)).join(',')).join(' '),
+    start: pt(route[0]),
+    end: pt(route[route.length - 1]),
+  }
+}
+
+// A tiny map-less trace of where the workout went. Decoration only — the row's
+// text carries the information.
+function RouteThumb({ route }: { route: number[][] }) {
+  const S = 48
+  const { points, start } = projectRoute(route, S, 5)
   return (
     <svg width={S} height={S} viewBox={`0 0 ${S} ${S}`} aria-hidden className="shrink-0">
       <polyline
-        points={route.map(xy).join(' ')}
+        points={points}
         fill="none"
         stroke="var(--fit-active)"
         strokeWidth={2}
@@ -1115,12 +1211,39 @@ function RouteThumb({ route }: { route: number[][] }) {
         strokeLinejoin="round"
         opacity={0.85}
       />
-      <circle cx={xy(route[0]).split(',')[0]} cy={xy(route[0]).split(',')[1]} r={2.5} fill="var(--fit-active)" />
+      <circle cx={start[0]} cy={start[1]} r={2.5} fill="var(--fit-active)" />
     </svg>
   )
 }
 
-function WorkoutRow({ workout }: { workout: api.Workout }) {
+// The same trace, drawn large for the detail sheet, with the start and finish
+// marked. No splits or per-second heart rate exist in the stored data, so the
+// route plus the summary stats are the whole picture.
+function RouteMap({ route }: { route: number[][] }) {
+  const S = 260
+  const { points, start, end } = projectRoute(route, S, 20)
+  return (
+    <svg
+      viewBox={`0 0 ${S} ${S}`}
+      role="img"
+      aria-label="Workout route"
+      className="mx-auto block w-full max-w-[280px]"
+    >
+      <polyline
+        points={points}
+        fill="none"
+        stroke="var(--fit-active)"
+        strokeWidth={3}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx={start[0]} cy={start[1]} r={5} fill="var(--fit-active)" stroke="var(--surface)" strokeWidth={2} />
+      <circle cx={end[0]} cy={end[1]} r={5} fill="var(--fg)" stroke="var(--surface)" strokeWidth={2} />
+    </svg>
+  )
+}
+
+function WorkoutRow({ workout, onOpen }: { workout: api.Workout; onOpen: () => void }) {
   const Icon = activityIcon(workout.activity)
   const bits = [
     workout.duration_s ? `${Math.round(workout.duration_s / 60)} min` : null,
@@ -1129,7 +1252,7 @@ function WorkoutRow({ workout }: { workout: api.Workout }) {
     workout.avg_hr ? `${Math.round(workout.avg_hr)} bpm avg` : null,
   ].filter(Boolean)
   return (
-    <div className="glass flex items-center gap-3 p-4">
+    <button type="button" onClick={onOpen} className="glass flex w-full items-center gap-3 p-4 text-left">
       <div
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
         style={{ background: 'color-mix(in srgb, var(--fit-active) 16%, transparent)' }}
@@ -1148,7 +1271,72 @@ function WorkoutRow({ workout }: { workout: api.Workout }) {
           </span>
         ))}
       </p>
-    </div>
+      <ChevronRight className="h-4 w-4 shrink-0 text-fg/30" />
+    </button>
+  )
+}
+
+function fmtDuration(seconds: number | null): string | null {
+  if (!seconds) return null
+  const mins = Math.round(seconds / 60)
+  if (mins < 60) return `${mins} min`
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`
+}
+
+// Average pace in min/mile, only when there's real distance to divide by.
+function fmtPace(workout: api.Workout): string | null {
+  if (!workout.distance_m || !workout.duration_s) return null
+  const miles = workout.distance_m / 1609.344
+  if (miles < 0.05) return null
+  const secPerMile = workout.duration_s / miles
+  const m = Math.floor(secPerMile / 60)
+  const s = Math.round(secPerMile % 60)
+  return `${m}:${s.toString().padStart(2, '0')} /mi`
+}
+
+// Tapping a workout opens this. Route drawn large where GPS came along (Apple),
+// then the summary stats. Splits and per-second heart rate aren't in the stored
+// data, so they aren't invented here.
+function WorkoutDetail({ workout, onClose }: { workout: api.Workout; onClose: () => void }) {
+  const Icon = activityIcon(workout.activity)
+  const stats: [string, string][] = (
+    [
+      ['Duration', fmtDuration(workout.duration_s)],
+      ['Distance', fmtMiles(workout.distance_m)],
+      ['Avg pace', fmtPace(workout)],
+      ['Calories', workout.kcal ? `${Math.round(workout.kcal)} kcal` : null],
+      ['Avg HR', workout.avg_hr ? `${Math.round(workout.avg_hr)} bpm` : null],
+    ] as [string, string | null][]
+  ).filter((s): s is [string, string] => s[1] !== null)
+  return (
+    <Sheet onClose={onClose}>
+      <h3 className="mb-1 flex items-center gap-2 text-lg font-bold">
+        <span
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+          style={{ background: 'color-mix(in srgb, var(--fit-active) 16%, transparent)' }}
+        >
+          <Icon className="h-5 w-5" style={{ color: 'var(--fit-active)' }} />
+        </span>
+        {workout.activity}
+      </h3>
+      <p className="text-[11px] text-fg/45">{fmtWhen(workout.started_at)}</p>
+
+      {workout.route && workout.route.length > 1 && (
+        <div className="mt-4 rounded-2xl bg-fg/5 p-3">
+          <RouteMap route={workout.route} />
+        </div>
+      )}
+
+      <div className="mt-4 grid grid-cols-3 gap-3">
+        {stats.map(([label, value]) => (
+          <DetailStat key={label} label={label} value={value} />
+        ))}
+      </div>
+
+      <p className="mt-4 text-xs text-fg/45">
+        Synced from {workout.source === 'android' ? 'Health Connect' : 'Apple Health'}.
+      </p>
+    </Sheet>
   )
 }
 
@@ -1162,6 +1350,9 @@ export function Fitness() {
   const [disconnecting, setDisconnecting] = useState(false)
   const [detail, setDetail] = useState<MetricDef | null>(null)
   const [weightOpen, setWeightOpen] = useState(false)
+  const [weightRevealed, setWeightRevealed] = useState(false)
+  const [workoutOpen, setWorkoutOpen] = useState<api.Workout | null>(null)
+  const [showAllWorkouts, setShowAllWorkouts] = useState(false)
   const [history, setHistory] = useState<api.FitnessWeekDay[] | null>(null)
 
   const refresh = useCallback(async () => {
@@ -1237,7 +1428,7 @@ export function Fitness() {
         <>
           <div className="glass p-5">
             <span className="mb-4 block text-xs font-semibold uppercase tracking-wide text-fg/50">
-              Today's rings
+              Today's activity
             </span>
             <div className="flex items-start gap-2">
               <RingStat
@@ -1250,7 +1441,7 @@ export function Fitness() {
               <RingStat
                 colorVar="--fit-active"
                 icon={Flame}
-                label="Active"
+                label="Active Calories"
                 value={data.today.active_kcal}
                 goal={data.goals.active_kcal}
                 unit="kcal"
@@ -1282,6 +1473,9 @@ export function Fitness() {
             <WeightCard
               points={weighSeries(health.weights)}
               goal={weightGoalText(health)}
+              revealed={weightRevealed}
+              onReveal={() => setWeightRevealed(true)}
+              onHide={() => setWeightRevealed(false)}
               onOpen={() => setWeightOpen(true)}
             />
           )}
@@ -1291,9 +1485,20 @@ export function Fitness() {
               <span className="px-1 text-xs font-semibold uppercase tracking-wide text-fg/50">
                 Workouts
               </span>
-              {data.workouts.map((w) => (
-                <WorkoutRow key={w.id} workout={w} />
+              {(showAllWorkouts ? data.workouts : data.workouts.slice(0, 3)).map((w) => (
+                <WorkoutRow key={w.id} workout={w} onOpen={() => setWorkoutOpen(w)} />
               ))}
+              {data.workouts.length > 3 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllWorkouts((v) => !v)}
+                  className="self-center px-4 py-2 text-sm font-semibold text-accent-bright hover:underline"
+                >
+                  {showAllWorkouts
+                    ? 'Show fewer'
+                    : `Show ${data.workouts.length - 3} more`}
+                </button>
+              )}
             </div>
           )}
 
@@ -1373,6 +1578,9 @@ export function Fitness() {
         )}
         {weightOpen && health !== null && (
           <WeightDetail health={health} onClose={() => setWeightOpen(false)} />
+        )}
+        {workoutOpen && (
+          <WorkoutDetail workout={workoutOpen} onClose={() => setWorkoutOpen(null)} />
         )}
         {connecting && (
           <ConnectSheet

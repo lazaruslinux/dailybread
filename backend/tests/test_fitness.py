@@ -146,6 +146,7 @@ def test_import_lands_on_the_fitness_tab(owner):
     assert workout["kcal"] == 320.0
     assert workout["distance_m"] == 5200.0  # km normalized to meters
     assert workout["avg_hr"] == 142
+    assert workout["source"] == "apple"
 
     week = body["week"]
     assert len(week) == 7
@@ -155,6 +156,46 @@ def test_import_lands_on_the_fitness_tab(owner):
     assert week[-1]["exercise_minutes"] == 34
     assert week[-1]["resting_hr"] == 60
     assert week[0]["steps"] is None and week[0]["active_kcal"] is None
+
+
+def _distance_payload(day: dt.date = TODAY, qty: float = 3.1, units: str = "mi") -> dict:
+    return {
+        "data": {
+            "metrics": [
+                {
+                    "name": "walking_running_distance",
+                    "units": units,
+                    "data": [
+                        {"date": _stamp(day, "09:00:00"), "qty": qty / 2},
+                        {"date": _stamp(day, "18:00:00"), "qty": qty / 2},
+                    ],
+                }
+            ]
+        }
+    }
+
+
+def test_daily_distance_lands_normalized_to_meters(owner):
+    token = _mint(owner)
+    # 3.1 miles across two intra-day points: summed, then converted once.
+    assert _send(owner, token, _distance_payload(qty=3.1, units="mi")).status_code == 200
+    body = owner.get("/me/fitness", params={"date": TODAY.isoformat()}).json()
+    assert abs(body["today"]["distance"] - 3.1 * 1609.344) < 1.0
+    assert abs(body["week"][-1]["distance"] - 3.1 * 1609.344) < 1.0
+
+
+def test_distance_accepts_kilometers(owner):
+    token = _mint(owner)
+    assert _send(owner, token, _distance_payload(qty=5.0, units="km")).status_code == 200
+    body = owner.get("/me/fitness", params={"date": TODAY.isoformat()}).json()
+    assert abs(body["today"]["distance"] - 5000.0) < 1.0
+
+
+def test_distance_is_none_when_not_sent(owner):
+    token = _mint(owner)
+    _send(owner, token, _payload())  # the standard payload carries no distance
+    body = owner.get("/me/fitness", params={"date": TODAY.isoformat()}).json()
+    assert body["today"]["distance"] is None
 
 
 def test_resending_a_window_never_duplicates(owner):
