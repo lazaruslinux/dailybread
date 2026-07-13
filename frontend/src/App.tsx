@@ -1,24 +1,67 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronLeft } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { useAuth } from './auth/AuthContext'
 import { applyTheme, getTheme } from './lib/theme'
 import { BreadIcon } from './components/BreadIcon'
 import { DailyGreeting } from './components/Greeting'
 import { HealthBadge } from './components/HealthBadge'
 import { TabBar, type Tab } from './components/TabBar'
-import { Admin } from './pages/Admin'
-import { Calendar } from './pages/Calendar'
-import { CreateFamily } from './pages/CreateFamily'
-import { ForcedPasswordChange } from './pages/Password'
+// Home stays in the main bundle - it's the first paint after login. Every
+// other page loads on demand as its own chunk; the service worker precaches
+// them all, so a tab's first open reads the chunk from local cache (no
+// network wait), and pages nobody visits never cost parse time on a phone.
 import { Home } from './pages/Home'
-import { Kitchen } from './pages/Kitchen'
-import { Login } from './pages/Login'
-import { Nutrition } from './pages/Nutrition'
-import { Fitness } from './pages/Fitness'
-import { Profile } from './pages/Profile'
-import { Setup } from './pages/Setup'
-import { You } from './pages/You'
+
+// A deploy can strand a phone mid-session: the page still runs the old index
+// while the auto-updating service worker swaps in the new precache, so the
+// next unvisited tab asks for a chunk hash that no longer exists anywhere.
+// Without this, that failed import unmounts React to a white screen (and a
+// home-screen PWA has no reload button). One forced reload fetches the new
+// index with a matching chunk set; the session flag stops a reload loop when
+// a chunk is missing for some other reason.
+const RELOADED_KEY = 'db_chunk_reloaded'
+function withReload<T>(load: Promise<T>): Promise<T> {
+  return load.then(
+    (m) => {
+      sessionStorage.removeItem(RELOADED_KEY)
+      return m
+    },
+    (err) => {
+      if (!sessionStorage.getItem(RELOADED_KEY)) {
+        sessionStorage.setItem(RELOADED_KEY, '1')
+        location.reload()
+        return new Promise<never>(() => {}) // the page is going away
+      }
+      throw err
+    }
+  )
+}
+const Admin = lazy(() => withReload(import('./pages/Admin').then((m) => ({ default: m.Admin }))))
+const Calendar = lazy(() =>
+  withReload(import('./pages/Calendar').then((m) => ({ default: m.Calendar })))
+)
+const CreateFamily = lazy(() =>
+  withReload(import('./pages/CreateFamily').then((m) => ({ default: m.CreateFamily })))
+)
+const ForcedPasswordChange = lazy(() =>
+  withReload(import('./pages/Password').then((m) => ({ default: m.ForcedPasswordChange })))
+)
+const Kitchen = lazy(() =>
+  withReload(import('./pages/Kitchen').then((m) => ({ default: m.Kitchen })))
+)
+const Login = lazy(() => withReload(import('./pages/Login').then((m) => ({ default: m.Login }))))
+const Nutrition = lazy(() =>
+  withReload(import('./pages/Nutrition').then((m) => ({ default: m.Nutrition })))
+)
+const Fitness = lazy(() =>
+  withReload(import('./pages/Fitness').then((m) => ({ default: m.Fitness })))
+)
+const Profile = lazy(() =>
+  withReload(import('./pages/Profile').then((m) => ({ default: m.Profile })))
+)
+const Setup = lazy(() => withReload(import('./pages/Setup').then((m) => ({ default: m.Setup }))))
+const You = lazy(() => withReload(import('./pages/You').then((m) => ({ default: m.You }))))
 
 // An overlay sits on top of the current tab (a member's profile opened from
 // the family strip, or the admin dashboard opened from You). Back returns to
@@ -110,22 +153,26 @@ function AppShell() {
           exit={{ opacity: 0, y: -10 }}
           transition={{ duration: 0.18 }}
         >
-          {overlay?.name === 'profile' && <Profile userId={overlay.id} />}
-          {overlay?.name === 'admin' && (
-            <Admin onOpenProfile={(id) => setOverlay({ name: 'profile', id })} />
-          )}
-          {overlay?.name === 'calendar' && <Calendar />}
-          {!overlay && tab === 'home' && (
-            <Home
-              onOpenProfile={(id) => setOverlay({ name: 'profile', id })}
-              onOpenKitchen={() => setTab('kitchen')}
-              onOpenCalendar={() => setOverlay({ name: 'calendar' })}
-            />
-          )}
-          {!overlay && tab === 'nutrition' && !isMinor && <Nutrition />}
-          {!overlay && tab === 'fitness' && !isMinor && <Fitness />}
-          {!overlay && tab === 'kitchen' && <Kitchen />}
-          {!overlay && tab === 'you' && <You onOpenAdmin={() => setOverlay({ name: 'admin' })} />}
+          {/* The null fallback is deliberate: chunks come from the service
+              worker cache in a few ms, so a spinner would only flash. */}
+          <Suspense fallback={null}>
+            {overlay?.name === 'profile' && <Profile userId={overlay.id} />}
+            {overlay?.name === 'admin' && (
+              <Admin onOpenProfile={(id) => setOverlay({ name: 'profile', id })} />
+            )}
+            {overlay?.name === 'calendar' && <Calendar />}
+            {!overlay && tab === 'home' && (
+              <Home
+                onOpenProfile={(id) => setOverlay({ name: 'profile', id })}
+                onOpenKitchen={() => setTab('kitchen')}
+                onOpenCalendar={() => setOverlay({ name: 'calendar' })}
+              />
+            )}
+            {!overlay && tab === 'nutrition' && !isMinor && <Nutrition />}
+            {!overlay && tab === 'fitness' && !isMinor && <Fitness />}
+            {!overlay && tab === 'kitchen' && <Kitchen />}
+            {!overlay && tab === 'you' && <You onOpenAdmin={() => setOverlay({ name: 'admin' })} />}
+          </Suspense>
         </motion.div>
       </AnimatePresence>
 
@@ -162,10 +209,32 @@ function App() {
       </div>
     )
   }
-  if (screen === 'setup') return <Setup />
-  if (screen === 'login') return <Login />
-  if (screen === 'change-password') return <ForcedPasswordChange />
-  if (screen === 'create-family') return <CreateFamily />
+  // Pre-auth screens are lazy chunks too; nothing to show while one streams
+  // in (a few ms from cache), so the fallback stays blank like the splash.
+  if (screen === 'setup')
+    return (
+      <Suspense fallback={null}>
+        <Setup />
+      </Suspense>
+    )
+  if (screen === 'login')
+    return (
+      <Suspense fallback={null}>
+        <Login />
+      </Suspense>
+    )
+  if (screen === 'change-password')
+    return (
+      <Suspense fallback={null}>
+        <ForcedPasswordChange />
+      </Suspense>
+    )
+  if (screen === 'create-family')
+    return (
+      <Suspense fallback={null}>
+        <CreateFamily />
+      </Suspense>
+    )
   return <AppShell />
 }
 
