@@ -159,16 +159,21 @@ body {
     radial-gradient(900px 650px at -15% 25%, var(--aurora-2), transparent 55%),
     radial-gradient(950px 900px at 55% 115%, var(--aurora-3), transparent 60%),
     var(--bg-base);
-  background-attachment: fixed;
+  /* NOT background-attachment: fixed — a fixed background repaints on every
+     scroll frame, which (with the backdrop-blur cards over it) pegged the phone
+     GPU and warmed the device. A normally-scrolling gradient composites once. */
 }
 
-/* The signature surface: translucent card with backdrop blur. */
+/* The signature surface: translucent card with backdrop blur. Blur radius kept
+   moderate (12px, no saturate pass): backdrop-filter cost scales with radius and
+   every card is its own layer, so a page full of them is the app's heaviest GPU
+   cost. 12px still reads as frosted glass at a fraction of blur(20px) saturate. */
 .glass {
   border-radius: 1.4rem;
   border: 1px solid var(--glass-border);
   background: var(--glass-bg);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
@@ -260,10 +265,13 @@ body::after {
   inset: 0;
   z-index: 1;
   pointer-events: none;
-  opacity: 0.02; /* light default: a whisper of grain */
-  mix-blend-mode: overlay;
+  /* No mix-blend-mode: a blend mode on a full-screen fixed layer forces the
+     whole page into one composited group and defeats the backdrop-blur layer
+     cache, so every scroll frame re-blurs every card. A plain low-opacity film
+     gives almost the same texture without that cost. */
+  opacity: 0.03; /* light default: a whisper of grain */
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 :root[data-theme='dark'] body::after {
-  opacity: 0.04;
+  opacity: 0.05;
 }

@@ -111,10 +111,9 @@ const METRICS: MetricDef[] = [
   },
 ]
 
-// Resting HR lives in its own long card (HRCard), so the 2-col grid is the
-// other four; the resting def is still used by the HR detail's 30-day trend.
-const GRID_METRICS = METRICS.filter((m) => m.key !== 'resting_hr')
-const RESTING_DEF = METRICS.find((m) => m.key === 'resting_hr') as MetricDef
+// All five metrics share the 2-col grid; resting HR opens the through-the-day
+// HR detail instead of the standard one (see the sheet stack below).
+const GRID_METRICS = METRICS
 
 // A blank day for the hour charts before (or without) intraday data.
 const EMPTY_HOURS: (number | null)[] = Array(24).fill(null)
@@ -427,6 +426,7 @@ function MiniBars({
     <div className="mt-3 flex items-end justify-between gap-1" style={{ height: 44 }}>
       {week.map((day, i) => {
         const v = values[i]
+        const isToday = i === week.length - 1
         const date = new Date(day.date_for + 'T00:00:00')
         const letter = DAY_LETTERS[(date.getDay() + 6) % 7]
         const h = v ? Math.max(5, Math.round((v / max) * 36)) : 3
@@ -439,10 +439,20 @@ function MiniBars({
                 background: v
                   ? `var(${colorVar})`
                   : 'color-mix(in srgb, var(--fg) 10%, transparent)',
+                opacity: v && !isToday ? 0.4 : 1,
+                boxShadow:
+                  isToday && v
+                    ? `0 0 0 2px color-mix(in srgb, var(${colorVar}) 55%, transparent)`
+                    : undefined,
               }}
               title={v ? `${Math.round(v).toLocaleString()} ${unit}` : 'No data'}
             />
-            <span className="text-[9px] font-semibold text-fg/35">{letter}</span>
+            <span
+              className={`text-[9px] font-semibold ${isToday ? '' : 'text-fg/35'}`}
+              style={isToday ? { color: `var(${colorVar})` } : undefined}
+            >
+              {letter}
+            </span>
           </div>
         )
       })}
@@ -465,21 +475,25 @@ function HourBars({
   colorVar,
   unit,
   fmt,
+  height = 44,
 }: {
   hours: (number | null)[]
   colorVar: string
   unit: string
   fmt?: (v: number | null) => string
+  // Bar-area height; the detail passes a taller value for the zoomed view.
+  height?: number
 }) {
   const max = Math.max(...hours.map((v) => v ?? 0), 1)
+  const barMax = height - 10
   return (
-    <div className="mt-3 flex items-end justify-between gap-px" style={{ height: 44 }}>
+    <div className="mt-3 flex items-end justify-between gap-px" style={{ height }}>
       {hours.map((v, h) => (
         <div key={h} className="flex flex-1 flex-col items-center gap-1">
           <div
             className="w-full rounded-[2px]"
             style={{
-              height: v ? Math.max(4, Math.round((v / max) * 34)) : 3,
+              height: v ? Math.max(4, Math.round((v / max) * barMax)) : 3,
               background: v
                 ? `var(${colorVar})`
                 : 'color-mix(in srgb, var(--fg) 10%, transparent)',
@@ -511,26 +525,34 @@ function WeekStrip({
   const vals = week.map((d) => d[def.key])
   const max = Math.max(...vals.map((v) => v ?? 0), 1)
   return (
-    <div className="flex items-end gap-1.5" style={{ height: 72 }}>
+    <div className="flex items-stretch gap-1.5" style={{ height: 84 }}>
       {week.map((d, i) => {
         const v = vals[i]
         const isToday = i === week.length - 1
         const h = v ? Math.max(6, Math.round((v / max) * 60)) : 4
         const letter = DAY_LETTERS[(new Date(d.date_for + 'T00:00:00').getDay() + 6) % 7]
         return (
-          <div key={d.date_for} className="flex flex-1 flex-col items-center gap-1">
+          <div
+            key={d.date_for}
+            className={`flex flex-1 flex-col items-center justify-end gap-1 rounded-lg pb-1 ${
+              isToday ? 'bg-fg/[0.06]' : ''
+            }`}
+            style={isToday ? { boxShadow: `inset 0 0 0 1px color-mix(in srgb, var(${def.colorVar}) 35%, transparent)` } : undefined}
+          >
             <div
               className="w-full rounded-[3px]"
               style={{
                 height: h,
+                maxWidth: '1.5rem',
                 background: v
                   ? `var(${def.colorVar})`
                   : 'color-mix(in srgb, var(--fg) 10%, transparent)',
-                opacity: v && !isToday ? 0.5 : 1,
+                opacity: v && !isToday ? 0.4 : 1,
               }}
             />
             <span
-              className={`text-[10px] font-semibold ${isToday ? 'text-fg/70' : 'text-fg/35'}`}
+              className={`text-[10px] font-bold ${isToday ? '' : 'font-semibold text-fg/35'}`}
+              style={isToday ? { color: `var(${def.colorVar})` } : undefined}
             >
               {letter}
             </span>
@@ -758,6 +780,7 @@ function MetricDetail({
   def,
   today,
   week,
+  hourly,
   history,
   goals,
   onGoals,
@@ -766,6 +789,9 @@ function MetricDetail({
   def: MetricDef
   today: number | null
   week: api.FitnessWeekDay[]
+  // Present for the metrics with a time-of-day chart; the detail then leads with
+  // the zoomed hourly day instead of the week comparison.
+  hourly?: (number | null)[]
   history: api.FitnessWeekDay[] | null
   goals: api.FitnessGoals
   onGoals: (goals: api.FitnessGoals) => void
@@ -812,8 +838,23 @@ function MetricDetail({
       </p>
 
       <div className="mt-4">
-        <p className="mb-2 text-xs text-fg/55">Today vs the week</p>
-        <WeekStrip week={week} def={def} />
+        {hourly ? (
+          <>
+            <p className="mb-2 text-xs text-fg/55">Today, by the hour</p>
+            <HourBars
+              hours={hourly}
+              colorVar={def.colorVar}
+              unit={def.unit ?? def.label.toLowerCase()}
+              fmt={def.fmt}
+              height={128}
+            />
+          </>
+        ) : (
+          <>
+            <p className="mb-2 text-xs text-fg/55">Today vs the week</p>
+            <WeekStrip week={week} def={def} />
+          </>
+        )}
       </div>
 
       {history === null ? (
@@ -1295,44 +1336,6 @@ function HourLine({
   )
 }
 
-// Resting HR as its own long card (like weight), with the day's heart-rate line
-// to its right. Tapping opens the through-the-day view and the resting trend.
-function HRCard({
-  resting,
-  hours,
-  onOpen,
-}: {
-  resting: number | null
-  hours: (number | null)[]
-  onOpen: () => void
-}) {
-  const has = hours.some((v) => v != null)
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="glass relative flex items-center gap-3 p-4 text-left"
-    >
-      <div className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
-          <HeartPulse className="h-3.5 w-3.5" style={{ color: 'var(--fit-hr)' }} /> Resting HR
-        </span>
-        <p className="mt-1 text-[11px] text-fg/45">Today{has ? ' · through the day' : ''}</p>
-        <p className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fit-hr)' }}>
-          {resting != null ? fmtNumber(resting) : '–'}
-          <span className="ml-1 text-sm font-semibold">bpm</span>
-        </p>
-      </div>
-      {has && (
-        <div className="w-28 shrink-0">
-          <HourLine hours={hours} colorVar="--fit-hr" height={40} />
-        </div>
-      )}
-      <ChevronRight className="h-4 w-4 shrink-0 text-fg/30" />
-    </button>
-  )
-}
-
 function HRDetail({
   def,
   resting,
@@ -1623,7 +1626,6 @@ export function Fitness() {
   const [weightOpen, setWeightOpen] = useState(false)
   const [weightRevealed, setWeightRevealed] = useState(false)
   const [workoutOpen, setWorkoutOpen] = useState<api.Workout | null>(null)
-  const [hrOpen, setHrOpen] = useState(false)
   const [showAllWorkouts, setShowAllWorkouts] = useState(false)
   const [history, setHistory] = useState<api.FitnessWeekDay[] | null>(null)
   const [intraday, setIntraday] = useState<api.FitnessIntraday | null>(null)
@@ -1654,10 +1656,6 @@ export function Fitness() {
   }
   function openDetail(def: MetricDef) {
     setDetail(def)
-    loadHistory()
-  }
-  function openHR() {
-    setHrOpen(true)
     loadHistory()
   }
 
@@ -1710,6 +1708,11 @@ export function Fitness() {
       {(data.connected || hasAnything) && (
         <>
           <div className="glass p-5">
+            {data.last_sync && (
+              <p className="mb-1 text-sm font-bold text-fg/80">
+                Last sync: {fmtWhen(data.last_sync)}
+              </p>
+            )}
             <span className="mb-4 block text-xs font-semibold uppercase tracking-wide text-fg/50">
               Today's activity
             </span>
@@ -1752,12 +1755,6 @@ export function Fitness() {
               />
             ))}
           </div>
-
-          <HRCard
-            resting={data.today.resting_hr}
-            hours={intraday?.hr ?? EMPTY_HOURS}
-            onOpen={openHR}
-          />
 
           {health !== null && weighSeries(health.weights).length > 0 && (
             <WeightCard
@@ -1856,24 +1853,25 @@ export function Fitness() {
       )}
 
       <AnimatePresence>
-        {detail && (
+        {detail && detail.key === 'resting_hr' && (
+          <HRDetail
+            def={detail}
+            resting={data.today.resting_hr}
+            hours={intraday?.hr ?? EMPTY_HOURS}
+            history={history}
+            onClose={() => setDetail(null)}
+          />
+        )}
+        {detail && detail.key !== 'resting_hr' && (
           <MetricDetail
             def={detail}
             today={data.today[detail.key]}
             week={data.week}
+            hourly={hourlyFor(detail, intraday)}
             history={history}
             goals={data.goals}
             onGoals={(goals) => setData((d) => (d ? { ...d, goals } : d))}
             onClose={() => setDetail(null)}
-          />
-        )}
-        {hrOpen && (
-          <HRDetail
-            def={RESTING_DEF}
-            resting={data.today.resting_hr}
-            hours={intraday?.hr ?? EMPTY_HOURS}
-            history={history}
-            onClose={() => setHrOpen(false)}
           />
         )}
         {weightOpen && health !== null && (
