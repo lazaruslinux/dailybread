@@ -24,7 +24,6 @@ import {
   servingIndex,
   unitsForBase,
 } from '../components/Recipes'
-import { HealthCard, HealthSheet, WeightSheet } from '../components/Health'
 import { Button, Field, FormError } from '../components/ui'
 
 // The Nutrition tab: a personal food diary, Cronometer-shaped. Targets and
@@ -1207,9 +1206,9 @@ function NutritionTab() {
   const [flow, setFlow] = useState(0)
   const [editing, setEditing] = useState<api.DiaryEntry | null>(null)
   const [editingTargets, setEditingTargets] = useState(false)
+  // Kept for the Targets card's auto-calorie mode and the exercise burn
+  // calc; the health calculator card itself lives only under You now.
   const [health, setHealth] = useState<api.Health | null>(null)
-  const [editingHealth, setEditingHealth] = useState(false)
-  const [loggingWeight, setLoggingWeight] = useState(false)
   // null = closed; {entry:null} = logging new; {entry:e} = editing.
   const [exercising, setExercising] = useState<{ entry: api.ExerciseEntry | null } | null>(null)
 
@@ -1242,8 +1241,6 @@ function NutritionTab() {
     setPicked(null)
     setEditing(null)
     setEditingTargets(false)
-    setEditingHealth(false)
-    setLoggingWeight(false)
     setExercising(null)
   }
 
@@ -1280,15 +1277,8 @@ function NutritionTab() {
         <>
           <TargetsCard day={day} onEdit={() => setEditingTargets(true)} />
           <LockCard day={day} onChanged={refresh} />
-          {/* Only the configured calculator: the set-it-up invitation lives in
-              You now (Health profile settings row). */}
-          {health?.computed != null && (
-            <HealthCard
-              health={health}
-              onEdit={() => setEditingHealth(true)}
-              onLogWeight={() => setLoggingWeight(true)}
-            />
-          )}
+          {/* The health calculator (body, plan, weigh-ins) lives only under
+              You now; Nutrition keeps the day's food and the Targets card. */}
           {SLOTS.map((s) => (
             <SlotCard
               key={s.id}
@@ -1351,17 +1341,6 @@ function NutritionTab() {
             }}
           />
         )}
-        {editingHealth && health && (
-          <HealthSheet
-            key="health"
-            health={health}
-            onClose={() => setEditingHealth(false)}
-            onSaved={() => {
-              setEditingHealth(false)
-              refresh()
-            }}
-          />
-        )}
         {exercising && (
           <ExerciseSheet
             key={exercising.entry ? `ex-${exercising.entry.id}` : `ex-new-${flow}`}
@@ -1371,17 +1350,6 @@ function NutritionTab() {
             onClose={() => setExercising(null)}
             onSaved={() => {
               closeAll()
-              refresh()
-            }}
-          />
-        )}
-        {loggingWeight && health && (
-          <WeightSheet
-            key="weight"
-            health={health}
-            onClose={() => setLoggingWeight(false)}
-            onSaved={() => {
-              setLoggingWeight(false)
               refresh()
             }}
           />
