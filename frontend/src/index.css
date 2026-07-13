@@ -88,15 +88,15 @@
 :root[data-theme='dark'] {
   --fg: #ffffff;
 
-  --bg-base: #15100a; /* dark toasted crust, warm near-black */
-  /* A low amber hearth-glow, felt not seen. */
-  --aurora-1: rgba(180, 120, 40, 0.20);
+  --bg-base: #0b0906; /* near-black with only a whisper of crust warmth */
+  /* A faint amber hearth-glow, felt not seen. */
+  --aurora-1: rgba(175, 118, 42, 0.12);
   --aurora-2: rgba(60, 40, 18, 0);
-  --aurora-3: rgba(146, 100, 30, 0.18);
+  --aurora-3: rgba(140, 96, 30, 0.10);
 
   --glass-bg: rgba(255, 255, 255, 0.05);
   --glass-border: rgba(255, 255, 255, 0.1);
-  --surface: #201810; /* opaque elevated surface, warm brown above the base */
+  --surface: #17120c; /* opaque elevated surface, a warm dark above the base */
   --field-bg: rgba(255, 255, 255, 0.05);
   --field-bg-focus: rgba(255, 255, 255, 0.08);
 

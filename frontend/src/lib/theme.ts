@@ -4,11 +4,11 @@
 
 export type Theme = 'light' | 'dark'
 
-// Light Amber is the app default (the bare :root in index.css), so its picker
-// entry is labelled "Default"; Dark Forest is the opt-in alternative.
-export const THEMES: { id: Theme; label: string; hint: string }[] = [
-  { id: 'light', label: 'Default', hint: 'Light Amber' },
-  { id: 'dark', label: 'Forest', hint: 'Dark Background' },
+// Two choices, plainly named. Light Amber is the app default (the bare :root
+// in index.css); Dark Crust is the opt-in alternative.
+export const THEMES: { id: Theme; label: string }[] = [
+  { id: 'light', label: 'Light' },
+  { id: 'dark', label: 'Dark' },
 ]
 
 // Anything not in this set (including retired themes like crimson/forest a user

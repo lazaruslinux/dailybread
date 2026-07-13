@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from 'react'
-import { ApiError, setVerseSettings } from '../lib/api'
+import { ApiError, setVerseSettings, updateMyProfile } from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
+import { applyTheme, type Theme } from '../lib/theme'
 import { AuthShell, Brand, Button, Field, FormError } from '../components/ui'
-import { VERSES_OPTIN_KEY, WelcomeTour } from '../components/WelcomeTour'
+import { THEME_CHOICE_KEY, VERSES_OPTIN_KEY, WelcomeTour } from '../components/WelcomeTour'
 
 // Shown to a fresh new-household account: they are signed in but have no family
 // yet. Naming their household founds it and makes them its parent + admin, and
@@ -43,6 +44,14 @@ export function CreateFamily() {
       if (sessionStorage.getItem(VERSES_OPTIN_KEY) === '1') {
         sessionStorage.removeItem(VERSES_OPTIN_KEY)
         setVerseSettings({ enabled: true }).catch(() => {})
+      }
+      // Same story for the tour's theme choice — save it onto the new account
+      // and keep it applied through the screen change.
+      const themeChoice = sessionStorage.getItem(THEME_CHOICE_KEY)
+      if (themeChoice === 'light' || themeChoice === 'dark') {
+        sessionStorage.removeItem(THEME_CHOICE_KEY)
+        applyTheme(themeChoice as Theme)
+        updateMyProfile({ theme: themeChoice as Theme }).catch(() => {})
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.')

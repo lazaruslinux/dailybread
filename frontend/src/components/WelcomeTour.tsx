@@ -3,6 +3,7 @@ import {
   CircleUser,
   HeartPulse,
   House,
+  Palette,
   ShoppingBasket,
   Trees,
   Utensils,
@@ -10,6 +11,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import * as api from '../lib/api'
+import { applyTheme, THEMES, type Theme } from '../lib/theme'
 import { BreadIcon } from './BreadIcon'
 import { AuthShell, Brand, Button } from './ui'
 
@@ -21,8 +23,25 @@ import { AuthShell, Brand, Button } from './ui'
 // founding), on replay it reads and saves the real setting directly.
 
 export const VERSES_OPTIN_KEY = 'db-verses-optin'
+// Signup has no account to save onto yet; the theme choice parks here and
+// CreateFamily applies it right after founding (same pattern as the verses opt-in).
+export const THEME_CHOICE_KEY = 'db-theme-choice'
 
-const TOUR: { title: string; Icon: LucideIcon; iconClass?: string; body: string; note?: string; versesChoice?: boolean }[] = [
+const TOUR: {
+  title: string
+  Icon: LucideIcon
+  iconClass?: string
+  body: string
+  note?: string
+  versesChoice?: boolean
+  themeChoice?: boolean
+}[] = [
+  {
+    title: 'Choose your app theme',
+    Icon: Palette,
+    body: '',
+    themeChoice: true,
+  },
   {
     title: 'Home',
     Icon: House,
@@ -81,8 +100,24 @@ export function WelcomeTour({
 }) {
   const [step, setStep] = useState(0)
   const [wantVerses, setWantVerses] = useState(false)
+  const [theme, setThemeChoice] = useState<Theme>(() =>
+    document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light',
+  )
   const last = step === TOUR.length - 1
   const replay = context === 'replay'
+
+  // Apply the pick live so they see it before moving on. On replay it saves to
+  // the account now; at signup it parks until CreateFamily has a family to save
+  // onto. A miss is harmless — the You page has the same choice.
+  function pickTheme(t: Theme) {
+    setThemeChoice(t)
+    applyTheme(t)
+    if (replay) {
+      api.updateMyProfile({ theme: t }).catch(() => {})
+    } else {
+      sessionStorage.setItem(THEME_CHOICE_KEY, t)
+    }
+  }
 
   // On replay the toggle is the live setting, not a parked wish.
   useEffect(() => {
@@ -116,9 +151,30 @@ export function WelcomeTour({
             })()}
             {TOUR[step].title}
           </h2>
-          <p className="text-sm leading-relaxed text-fg/60">{TOUR[step].body}</p>
+          {TOUR[step].body && (
+            <p className="text-sm leading-relaxed text-fg/60">{TOUR[step].body}</p>
+          )}
           {TOUR[step].note && (
             <p className="mt-2 text-xs italic leading-relaxed text-fg/40">{TOUR[step].note}</p>
+          )}
+          {TOUR[step].themeChoice && (
+            <div className="mt-1 grid grid-cols-2 gap-2">
+              {THEMES.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => pickTheme(t.id)}
+                  aria-pressed={theme === t.id}
+                  className={`rounded-xl border p-3 text-sm font-semibold transition-colors ${
+                    theme === t.id
+                      ? 'border-accent-bright/60 bg-accent-bright/15 text-fg/90'
+                      : 'border-fg/10 bg-fg/5 text-fg/70 hover:bg-fg/10'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
           )}
           {TOUR[step].versesChoice && (
             <button

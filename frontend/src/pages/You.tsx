@@ -31,7 +31,7 @@ import { Profile } from './Profile'
 // Little preview swatch per theme so the choice reads at a glance.
 const SWATCH: Record<Theme, string> = {
   light: 'bg-[linear-gradient(135deg,#f7f4ee,#b45309)]',
-  dark: 'bg-[linear-gradient(135deg,#3bb977,#08090a)]',
+  dark: 'bg-[linear-gradient(135deg,#eab04e,#0b0906)]',
 }
 
 function ThemePicker({ userId, stored }: { userId: number; stored: Theme | null }) {
@@ -65,10 +65,7 @@ function ThemePicker({ userId, stored }: { userId: number; stored: Theme | null 
             }`}
           >
             <span className={`h-8 w-8 shrink-0 rounded-full border border-fg/15 ${SWATCH[t.id]}`} />
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-semibold text-fg/90">{t.label}</span>
-              <span className="block truncate text-[11px] text-fg/45">{t.hint}</span>
-            </span>
+            <span className="min-w-0 truncate text-sm font-semibold text-fg/90">{t.label}</span>
           </button>
         ))}
       </div>
