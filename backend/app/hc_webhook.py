@@ -73,35 +73,54 @@ def _sum_by_day(points, when_key, qty_key, tz) -> dict[dt.date, float]:
     return by_day
 
 
+def _hourly(points, when_key, qty_key, tz, combine) -> dict[tuple[dt.date, int], float]:
+    """Bucket points to (day, hour); sum cumulative metrics, average rates."""
+    buckets: dict[tuple[dt.date, int], list[float]] = {}
+    for p in points:
+        when = _local(p.get(when_key), tz)
+        qty = _num(p.get(qty_key))
+        if when is None or qty is None:
+            continue
+        buckets.setdefault((when.date(), when.hour), []).append(qty)
+    return {
+        k: (sum(v) if combine == "sum" else sum(v) / len(v)) for k, v in buckets.items()
+    }
+
+
 def import_payload(
-    db: Session, user: User, payload: dict, upsert_daily, import_workout_row
+    db: Session, user: User, payload: dict, upsert_daily, import_workout_row, upsert_intraday
 ) -> tuple[int, int, set[dt.date]]:
     """Absorb one HC Webhook payload. Returns (metric-days touched, workouts
     touched, workout days) — the same accounting the Apple path reports.
 
-    upsert_daily and import_workout_row are the fitness router's own helpers,
-    passed in so both dialects share one idempotent write path."""
+    upsert_daily, import_workout_row, and upsert_intraday are the fitness
+    router's own helpers, passed in so both dialects share one write path."""
     family = db.get(Family, user.family_id)
     tz = family.timezone if family else None
     days = 0
 
-    for day, total in _sum_by_day(_points(payload, "steps"), "start_time", "count", tz).items():
-        upsert_daily(db, user, day, "steps", total, "count")
-        days += 1
-    for day, total in _sum_by_day(
-        _points(payload, "active_calories"), "start_time", "calories", tz
-    ).items():
-        upsert_daily(db, user, day, "active_kcal", total, "kcal")
-        days += 1
+    # (payload key, our metric, qty field, unit, combine) for the metrics that
+    # store both a daily total and an hourly breakdown for the time-of-day charts.
+    for key, metric, field, unit in (
+        ("steps", "steps", "count", "count"),
+        ("active_calories", "active_kcal", "calories", "kcal"),
+        # Provisional distance array, mirroring the workout session's
+        # distance_meters — harmless if the bridge omits it; confirm against a
+        # real Health Connect payload before relying on it.
+        ("distance", "distance", "distance_meters", "m"),
+    ):
+        pts = _points(payload, key)
+        for day, total in _sum_by_day(pts, "start_time", field, tz).items():
+            upsert_daily(db, user, day, metric, total, unit)
+            days += 1
+        for (day, hour), total in _hourly(pts, "start_time", field, tz, "sum").items():
+            upsert_intraday(db, user, day, hour, metric, total, unit)
 
-    # Daily distance in meters. Provisional key/field, mirroring the workout
-    # session's distance_meters — absent today; harmless if the bridge omits it,
-    # confirm against a real Health Connect payload before relying on it.
-    for day, total in _sum_by_day(
-        _points(payload, "distance"), "start_time", "distance_meters", tz
+    # All-day heart rate (if present) feeds the time-of-day HR line, hourly avg.
+    for (day, hour), avg in _hourly(
+        _points(payload, "heart_rate"), "time", "bpm", tz, "avg"
     ).items():
-        upsert_daily(db, user, day, "distance", total, "m")
-        days += 1
+        upsert_intraday(db, user, day, hour, "hr", avg, "count/min")
 
     # Resting HR arrives as point readings; the day's value is their average.
     hr_by_day: dict[dt.date, list[float]] = {}

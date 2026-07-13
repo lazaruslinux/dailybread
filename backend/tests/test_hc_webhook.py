@@ -95,6 +95,29 @@ def test_hc_daily_distance_lands_in_meters(owner):
     assert body["today"]["distance"] == 4000
 
 
+def test_hc_intraday_steps_bucketed(owner):
+    token = _mint(owner)
+    _send(owner, token, _payload())  # two step buckets summing to 8000
+    intra = owner.get(f"/me/fitness/intraday?date={TODAY.isoformat()}").json()
+    vals = [v for v in intra["steps"] if v is not None]
+    assert sum(vals) == 8000
+
+
+def test_hc_intraday_heart_rate(owner):
+    token = _mint(owner)
+    payload = {
+        "app_version": "1.4.0",
+        "heart_rate": [
+            {"bpm": 72, "time": _utc(TODAY, 12)},
+            {"bpm": 88, "time": _utc(TODAY, 12, 30)},
+        ],
+    }
+    assert _send(owner, token, payload).status_code == 200
+    intra = owner.get(f"/me/fitness/intraday?date={TODAY.isoformat()}").json()
+    vals = [v for v in intra["hr"] if v is not None]
+    assert vals == [80]  # (72 + 88) / 2 in the one shared hour bucket
+
+
 def test_hc_weight_and_body_fat_join_the_weight_log(owner):
     token = _mint(owner)
     _send(owner, token, _payload())

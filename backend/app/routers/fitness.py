@@ -30,6 +30,7 @@ from app.models import (
     Completion,
     Family,
     FitnessDaily,
+    FitnessIntraday,
     IngestToken,
     Item,
     ItemKind,
@@ -43,6 +44,7 @@ from app.schemas import (
     FitnessGoalsIn,
     FitnessGoalsOut,
     FitnessHistoryOut,
+    FitnessIntradayOut,
     FitnessOut,
     FitnessWeekDayOut,
     IngestResultOut,
@@ -76,6 +78,12 @@ BODYFAT_METRIC = "body_fat_percentage"
 # normalized to meters as the "distance" daily metric. Confirm this exporter key
 # against a real HAE payload before relying on it in the wild.
 DISTANCE_METRIC = "walking_running_distance"
+# All-day heart rate (distinct from resting_heart_rate) feeds only the
+# time-of-day HR line; there's no daily rollup, so it lives outside METRIC_MAP.
+HEARTRATE_METRIC = "heart_rate"
+# Which stored metrics also get an hourly breakdown for the time-of-day charts,
+# and how points landing in the same hour combine.
+INTRADAY_COMBINE = {"steps": "sum", "active_kcal": "sum", "distance": "sum", "hr": "avg"}
 
 # One shared bucket for bad tokens, same reasoning as signup invites: the
 # tokens are long random secrets, so every wrong guess is a fresh key and
@@ -173,6 +181,53 @@ def _upsert_daily(
     row.unit = unit
 
 
+def _upsert_intraday(
+    db: Session, user: User, day: dt.date, hour: int, metric: str, value: float, unit: str
+) -> None:
+    row = db.scalar(
+        select(FitnessIntraday).where(
+            FitnessIntraday.user_id == user.id,
+            FitnessIntraday.date_for == day,
+            FitnessIntraday.metric == metric,
+            FitnessIntraday.hour == hour,
+        )
+    )
+    if row is None:
+        row = FitnessIntraday(
+            family_id=user.family_id,
+            user_id=user.id,
+            date_for=day,
+            metric=metric,
+            hour=hour,
+        )
+        db.add(row)
+    row.value = round(value, 2)
+    row.unit = unit
+
+
+def _clean_points(points) -> list[tuple[dt.datetime, float]]:
+    """The (when, qty) pairs of a metric's data array, the junk dropped."""
+    out: list[tuple[dt.datetime, float]] = []
+    for point in points if isinstance(points, list) else []:
+        when = _parse_when(point.get("date")) if isinstance(point, dict) else None
+        qty = _qty(point.get("qty")) if isinstance(point, dict) else None
+        if when is not None and qty is not None:
+            out.append((when, qty))
+    return out
+
+
+def _store_intraday(db, user, metric, combine, unit, points_wq) -> None:
+    """Bucket (when, qty) points to the hour and upsert the time-of-day rows.
+    A single-daily-point exporter simply files everything under that point's
+    hour — honest, if coarse, until the export sends finer samples."""
+    by_hour: dict[tuple[dt.date, int], list[float]] = defaultdict(list)
+    for when, qty in points_wq:
+        by_hour[(when.date(), when.hour)].append(qty)
+    for (day, hour), vals in by_hour.items():
+        value = sum(vals) if combine == "sum" else sum(vals) / len(vals)
+        _upsert_intraday(db, user, day, hour, metric, value, unit)
+
+
 def _import_metrics(db: Session, user: User, metrics) -> int:
     touched = 0
     # Body fat rides on the day's weight entry, so its points wait until every
@@ -195,36 +250,41 @@ def _import_metrics(db: Session, user: User, metrics) -> int:
         if name == DISTANCE_METRIC:
             touched += _import_distance(db, user, points, unit)
             continue
+        if name == HEARTRATE_METRIC:
+            # No daily rollup; the all-day HR line reads from intraday only.
+            _store_intraday(db, user, "hr", "avg", unit or "count/min", _clean_points(points))
+            continue
         if name not in METRIC_MAP:
             continue  # metrics we don't track yet are silently fine
         metric, combine = METRIC_MAP[name]
+        wq = _clean_points(points)
         by_day: dict[dt.date, list[float]] = defaultdict(list)
-        for point in points:
-            when = _parse_when(point.get("date")) if isinstance(point, dict) else None
-            qty = _qty(point.get("qty")) if isinstance(point, dict) else None
-            if when is None or qty is None:
-                continue
+        for when, qty in wq:
             by_day[when.date()].append(qty)
         for day, values in by_day.items():
             value = sum(values) if combine == "sum" else sum(values) / len(values)
             _upsert_daily(db, user, day, metric, value, unit)
             touched += 1
+        if metric in INTRADAY_COMBINE:
+            _store_intraday(db, user, metric, combine, unit, wq)
     return touched + _import_body_fat(db, user, bodyfat_points)
 
 
 def _import_distance(db: Session, user: User, points, unit: str) -> int:
-    """Daily walking + running distance, normalized to meters. The exporter
-    carries one unit for the whole metric (mi or km), so we sum the day's
-    points and convert once."""
+    """Daily and hourly walking + running distance, normalized to meters. The
+    exporter carries one unit for the whole metric (mi or km), so we sum each
+    bucket's native points and convert once."""
+    wq = _clean_points(points)
     by_day: dict[dt.date, float] = defaultdict(float)
-    for point in points if isinstance(points, list) else []:
-        when = _parse_when(point.get("date")) if isinstance(point, dict) else None
-        qty = _qty(point.get("qty")) if isinstance(point, dict) else None
-        if when is None or qty is None:
-            continue
+    for when, qty in wq:
         by_day[when.date()] += qty
     for day, native_total in by_day.items():
         _upsert_daily(db, user, day, "distance", _meters(native_total, unit), "m")
+    by_hour: dict[tuple[dt.date, int], float] = defaultdict(float)
+    for when, qty in wq:
+        by_hour[(when.date(), when.hour)] += qty
+    for (day, hour), native in by_hour.items():
+        _upsert_intraday(db, user, day, hour, "distance", _meters(native, unit), "m")
     return len(by_day)
 
 
@@ -472,7 +532,7 @@ def ingest_health(
         # The Android dialect (HC Webhook / Health Connect); same token, same
         # idempotent writes, times converted onto the family's clock.
         days, workouts, workout_days = hc_webhook.import_payload(
-            db, user, payload, _upsert_daily, _upsert_workout
+            db, user, payload, _upsert_daily, _upsert_workout, _upsert_intraday
         )
     else:
         data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
@@ -645,6 +705,36 @@ def my_fitness_history(
     computes its own averages and bests from the raw days."""
     today = date or dt.date.today()
     return FitnessHistoryOut(days=_days_out(db, user, today - dt.timedelta(days=29), today))
+
+
+@router.get("/me/fitness/intraday", response_model=FitnessIntradayOut)
+def my_fitness_intraday(
+    date: dt.date | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_adult),
+):
+    """One day's metrics bucketed to the hour, for the time-of-day charts.
+    Each series is 24 slots (12AM..11PM), None where nothing landed."""
+    day = date or dt.date.today()
+    rows = db.scalars(
+        select(FitnessIntraday).where(
+            FitnessIntraday.user_id == user.id, FitnessIntraday.date_for == day
+        )
+    ).all()
+
+    def series(metric: str) -> list[float | None]:
+        out: list[float | None] = [None] * 24
+        for r in rows:
+            if r.metric == metric and 0 <= r.hour < 24:
+                out[r.hour] = r.value
+        return out
+
+    return FitnessIntradayOut(
+        steps=series("steps"),
+        active_kcal=series("active_kcal"),
+        distance=series("distance"),
+        hr=series("hr"),
+    )
 
 
 @router.patch("/me/fitness/goals", response_model=FitnessGoalsOut)

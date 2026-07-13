@@ -1348,6 +1348,18 @@ class FitnessHistoryOut(BaseModel):
     days: list[FitnessWeekDayOut]
 
 
+class FitnessIntradayOut(BaseModel):
+    """One day's metrics bucketed to the hour for the time-of-day charts: each
+    list has 24 slots (index 0 = 12AM ... 23 = 11PM), None where no data landed
+    in that hour. Steps/energy/distance are hourly totals; hr is the hourly
+    average heart rate."""
+
+    steps: list[float | None]
+    active_kcal: list[float | None]
+    distance: list[float | None]
+    hr: list[float | None]
+
+
 class FitnessOut(BaseModel):
     connected: bool
     last_sync: dt.datetime | None

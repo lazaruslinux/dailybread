@@ -111,6 +111,33 @@ const METRICS: MetricDef[] = [
   },
 ]
 
+// Resting HR lives in its own long card (HRCard), so the 2-col grid is the
+// other four; the resting def is still used by the HR detail's 30-day trend.
+const GRID_METRICS = METRICS.filter((m) => m.key !== 'resting_hr')
+const RESTING_DEF = METRICS.find((m) => m.key === 'resting_hr') as MetricDef
+
+// A blank day for the hour charts before (or without) intraday data.
+const EMPTY_HOURS: (number | null)[] = Array(24).fill(null)
+
+// The hourly series for the metrics that get a time-of-day chart. Undefined —
+// so the card falls back to the week view — for other metrics, before intraday
+// loads, or on a day the exporter sent only daily totals (an all-null series).
+function hourlyFor(
+  def: MetricDef,
+  intraday: api.FitnessIntraday | null,
+): (number | null)[] | undefined {
+  if (!intraday) return undefined
+  const series =
+    def.key === 'steps'
+      ? intraday.steps
+      : def.key === 'active_kcal'
+        ? intraday.active_kcal
+        : def.key === 'distance'
+          ? intraday.distance
+          : undefined
+  return series && series.some((v) => v != null) ? series : undefined
+}
+
 const DAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] // Date.getDay(), Monday-shifted
 
 function fmtNumber(value: number | null): string {
@@ -423,15 +450,109 @@ function MiniBars({
   )
 }
 
+// A few labelled anchors under the 24-bar time-of-day chart; 12AM start.
+const HOUR_TICKS: Record<number, string> = { 0: '12a', 6: '6a', 12: '12p', 18: '6p' }
+
+function hourLabel(h: number): string {
+  const ampm = h < 12 ? 'AM' : 'PM'
+  return `${h % 12 === 0 ? 12 : h % 12} ${ampm}`
+}
+
+// The day by time of day: 24 hourly bars, midnight on the left. Same bar
+// language as MiniBars, a different x-axis.
+function HourBars({
+  hours,
+  colorVar,
+  unit,
+  fmt,
+}: {
+  hours: (number | null)[]
+  colorVar: string
+  unit: string
+  fmt?: (v: number | null) => string
+}) {
+  const max = Math.max(...hours.map((v) => v ?? 0), 1)
+  return (
+    <div className="mt-3 flex items-end justify-between gap-px" style={{ height: 44 }}>
+      {hours.map((v, h) => (
+        <div key={h} className="flex flex-1 flex-col items-center gap-1">
+          <div
+            className="w-full rounded-[2px]"
+            style={{
+              height: v ? Math.max(4, Math.round((v / max) * 34)) : 3,
+              background: v
+                ? `var(${colorVar})`
+                : 'color-mix(in srgb, var(--fg) 10%, transparent)',
+            }}
+            title={
+              v
+                ? `${fmt ? fmt(v) : Math.round(v).toLocaleString()} ${unit} · ${hourLabel(h)}`
+                : hourLabel(h)
+            }
+          />
+          <span className="h-2 text-[8px] font-semibold leading-none text-fg/35">
+            {HOUR_TICKS[h] ?? ''}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// The week at a glance with today spotlit: the "today vs the week" view a
+// metric card opens into.
+function WeekStrip({
+  week,
+  def,
+}: {
+  week: api.FitnessWeekDay[]
+  def: MetricDef
+}) {
+  const vals = week.map((d) => d[def.key])
+  const max = Math.max(...vals.map((v) => v ?? 0), 1)
+  return (
+    <div className="flex items-end gap-1.5" style={{ height: 72 }}>
+      {week.map((d, i) => {
+        const v = vals[i]
+        const isToday = i === week.length - 1
+        const h = v ? Math.max(6, Math.round((v / max) * 60)) : 4
+        const letter = DAY_LETTERS[(new Date(d.date_for + 'T00:00:00').getDay() + 6) % 7]
+        return (
+          <div key={d.date_for} className="flex flex-1 flex-col items-center gap-1">
+            <div
+              className="w-full rounded-[3px]"
+              style={{
+                height: h,
+                background: v
+                  ? `var(${def.colorVar})`
+                  : 'color-mix(in srgb, var(--fg) 10%, transparent)',
+                opacity: v && !isToday ? 0.5 : 1,
+              }}
+            />
+            <span
+              className={`text-[10px] font-semibold ${isToday ? 'text-fg/70' : 'text-fg/35'}`}
+            >
+              {letter}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function MetricCard({
   def,
   value,
   week,
+  hourly,
   onOpen,
 }: {
   def: MetricDef
   value: number | null
   week: api.FitnessWeekDay[]
+  // When present, the front chart shows today by time of day; otherwise the week.
+  hourly?: (number | null)[]
   onOpen: () => void
 }) {
   const { icon: Icon, label, colorVar, unit } = def
@@ -446,12 +567,16 @@ function MetricCard({
         {(def.fmt ?? fmtNumber)(value)}
         {unit && <span className="ml-1 text-sm font-semibold">{unit}</span>}
       </p>
-      <MiniBars
-        week={week}
-        pick={(d) => d[def.key]}
-        colorVar={colorVar}
-        unit={unit ?? label.toLowerCase()}
-      />
+      {hourly ? (
+        <HourBars hours={hourly} colorVar={colorVar} unit={unit ?? label.toLowerCase()} fmt={def.fmt} />
+      ) : (
+        <MiniBars
+          week={week}
+          pick={(d) => d[def.key]}
+          colorVar={colorVar}
+          unit={unit ?? label.toLowerCase()}
+        />
+      )}
     </button>
   )
 }
@@ -632,6 +757,7 @@ function GoalEditor({
 function MetricDetail({
   def,
   today,
+  week,
   history,
   goals,
   onGoals,
@@ -639,6 +765,7 @@ function MetricDetail({
 }: {
   def: MetricDef
   today: number | null
+  week: api.FitnessWeekDay[]
   history: api.FitnessWeekDay[] | null
   goals: api.FitnessGoals
   onGoals: (goals: api.FitnessGoals) => void
@@ -683,6 +810,11 @@ function MetricDetail({
         {fmtVal(today)}
         {def.unit && <span className="ml-1 text-base font-semibold">{def.unit}</span>}
       </p>
+
+      <div className="mt-4">
+        <p className="mb-2 text-xs text-fg/55">Today vs the week</p>
+        <WeekStrip week={week} def={def} />
+      </div>
 
       {history === null ? (
         <p className="mt-6 text-sm text-fg/40">Loading</p>
@@ -1127,6 +1259,145 @@ function WeightDetail({ health, onClose }: { health: api.Health; onClose: () => 
   )
 }
 
+// The day's heart rate as a line over 24 hours (nulls skipped). Its own y-range
+// so the wander is legible; the numbers live in the stats beneath it.
+function HourLine({
+  hours,
+  colorVar,
+  height = 40,
+}: {
+  hours: (number | null)[]
+  colorVar: string
+  height?: number
+}) {
+  const W = 240
+  const pts = hours
+    .map((v, i) => ({ i, v }))
+    .filter((p): p is { i: number; v: number } => p.v != null)
+  if (pts.length < 2) return null
+  const lo = Math.min(...pts.map((p) => p.v))
+  const hi = Math.max(...pts.map((p) => p.v))
+  const span = hi - lo || 1
+  const x = (i: number) => 3 + (i / 23) * (W - 6)
+  const y = (v: number) => 4 + (1 - (v - lo) / span) * (height - 8)
+  const path = pts.map((p, k) => `${k ? 'L' : 'M'}${x(p.i).toFixed(1)} ${y(p.v).toFixed(1)}`).join(' ')
+  return (
+    <svg viewBox={`0 0 ${W} ${height}`} className="w-full" aria-hidden>
+      <path
+        d={path}
+        fill="none"
+        stroke={`var(${colorVar})`}
+        strokeWidth={2}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+// Resting HR as its own long card (like weight), with the day's heart-rate line
+// to its right. Tapping opens the through-the-day view and the resting trend.
+function HRCard({
+  resting,
+  hours,
+  onOpen,
+}: {
+  resting: number | null
+  hours: (number | null)[]
+  onOpen: () => void
+}) {
+  const has = hours.some((v) => v != null)
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="glass relative flex items-center gap-3 p-4 text-left"
+    >
+      <div className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
+          <HeartPulse className="h-3.5 w-3.5" style={{ color: 'var(--fit-hr)' }} /> Resting HR
+        </span>
+        <p className="mt-1 text-[11px] text-fg/45">Today{has ? ' · through the day' : ''}</p>
+        <p className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fit-hr)' }}>
+          {resting != null ? fmtNumber(resting) : '–'}
+          <span className="ml-1 text-sm font-semibold">bpm</span>
+        </p>
+      </div>
+      {has && (
+        <div className="w-28 shrink-0">
+          <HourLine hours={hours} colorVar="--fit-hr" height={40} />
+        </div>
+      )}
+      <ChevronRight className="h-4 w-4 shrink-0 text-fg/30" />
+    </button>
+  )
+}
+
+function HRDetail({
+  def,
+  resting,
+  hours,
+  history,
+  onClose,
+}: {
+  def: MetricDef
+  resting: number | null
+  hours: (number | null)[]
+  history: api.FitnessWeekDay[] | null
+  onClose: () => void
+}) {
+  const vals = hours.filter((v): v is number => v != null)
+  const lo = vals.length ? Math.min(...vals) : null
+  const hi = vals.length ? Math.max(...vals) : null
+  const avg = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null
+  const restHistory = (history ?? []).filter((d) => d.resting_hr !== null)
+  return (
+    <Sheet onClose={onClose}>
+      <h3 className="mb-1 flex items-center gap-2 text-lg font-bold">
+        <HeartPulse className="h-5 w-5" style={{ color: 'var(--fit-hr)' }} /> Heart rate
+      </h3>
+      <p className="text-[11px] text-fg/45">Resting today</p>
+      <p className="text-3xl font-bold tracking-tight" style={{ color: 'var(--fit-hr)' }}>
+        {resting != null ? fmtNumber(resting) : '–'}
+        <span className="ml-1 text-base font-semibold">bpm</span>
+      </p>
+
+      <div className="mt-4 flex flex-col gap-5">
+        {vals.length >= 2 ? (
+          <div>
+            <p className="mb-2 text-xs text-fg/55">Through the day</p>
+            <HourLine hours={hours} colorVar="--fit-hr" height={120} />
+            <div className="mt-1 flex justify-between text-[10px] font-semibold text-fg/35">
+              <span>12a</span>
+              <span>6a</span>
+              <span>12p</span>
+              <span>6p</span>
+              <span>12a</span>
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-3">
+              <DetailStat label="Low" value={lo != null ? `${lo} bpm` : '–'} />
+              <DetailStat label="Average" value={avg != null ? `${avg} bpm` : '–'} />
+              <DetailStat label="High" value={hi != null ? `${hi} bpm` : '–'} />
+            </div>
+          </div>
+        ) : (
+          <p className="rounded-xl bg-fg/5 px-4 py-3 text-xs text-fg/50">
+            No by-the-hour heart rate yet. Add Heart Rate to the metrics your exporter sends and
+            the day's beats draw here.
+          </p>
+        )}
+
+        {restHistory.length > 0 && (
+          <div>
+            <p className="mb-2 text-xs text-fg/55">Resting · last 30 days</p>
+            <HistoryBars days={history ?? []} def={def} selected={null} onSelect={() => {}} />
+          </div>
+        )}
+      </div>
+    </Sheet>
+  )
+}
+
 // A running figure in the street-sign style; the icon set has walkers and
 // bikes but no runner, so this one is drawn to its 24px stroke grammar.
 function Runner({ className, style }: { className?: string; style?: CSSProperties }) {
@@ -1352,13 +1623,18 @@ export function Fitness() {
   const [weightOpen, setWeightOpen] = useState(false)
   const [weightRevealed, setWeightRevealed] = useState(false)
   const [workoutOpen, setWorkoutOpen] = useState<api.Workout | null>(null)
+  const [hrOpen, setHrOpen] = useState(false)
   const [showAllWorkouts, setShowAllWorkouts] = useState(false)
   const [history, setHistory] = useState<api.FitnessWeekDay[] | null>(null)
+  const [intraday, setIntraday] = useState<api.FitnessIntraday | null>(null)
 
   const refresh = useCallback(async () => {
     // The weight log rides along for the trend card; if it can't load, the
     // card just doesn't appear — the rings are the tab's real job.
     api.getHealthProfile().then(setHealth).catch(() => {})
+    // Today's hour-by-hour buckets for the time-of-day charts; if it can't
+    // load, the cards fall back to the week view.
+    api.getFitnessIntraday(api.localDate()).then(setIntraday).catch(() => setIntraday(null))
     try {
       setData(await api.getFitness(api.localDate()))
     } catch (err) {
@@ -1366,16 +1642,23 @@ export function Fitness() {
     }
   }, [])
 
-  // The 30-day window is one cheap fetch shared by all four detail views;
-  // grab it the first time any card opens.
-  function openDetail(def: MetricDef) {
-    setDetail(def)
+  // The 30-day window is one cheap fetch shared by every detail view; grab it
+  // the first time any card opens.
+  function loadHistory() {
     if (history === null) {
       api
         .getFitnessHistory(api.localDate())
         .then((h) => setHistory(h.days))
         .catch(() => setHistory([]))
     }
+  }
+  function openDetail(def: MetricDef) {
+    setDetail(def)
+    loadHistory()
+  }
+  function openHR() {
+    setHrOpen(true)
+    loadHistory()
   }
 
   useEffect(() => {
@@ -1458,16 +1741,23 @@ export function Fitness() {
           </div>
 
           <div className="grid grid-cols-2 gap-2">
-            {METRICS.map((def) => (
+            {GRID_METRICS.map((def) => (
               <MetricCard
                 key={def.key}
                 def={def}
                 value={data.today[def.key]}
                 week={data.week}
+                hourly={hourlyFor(def, intraday)}
                 onOpen={() => openDetail(def)}
               />
             ))}
           </div>
+
+          <HRCard
+            resting={data.today.resting_hr}
+            hours={intraday?.hr ?? EMPTY_HOURS}
+            onOpen={openHR}
+          />
 
           {health !== null && weighSeries(health.weights).length > 0 && (
             <WeightCard
@@ -1570,10 +1860,20 @@ export function Fitness() {
           <MetricDetail
             def={detail}
             today={data.today[detail.key]}
+            week={data.week}
             history={history}
             goals={data.goals}
             onGoals={(goals) => setData((d) => (d ? { ...d, goals } : d))}
             onClose={() => setDetail(null)}
+          />
+        )}
+        {hrOpen && (
+          <HRDetail
+            def={RESTING_DEF}
+            resting={data.today.resting_hr}
+            hours={intraday?.hr ?? EMPTY_HOURS}
+            history={history}
+            onClose={() => setHrOpen(false)}
           />
         )}
         {weightOpen && health !== null && (

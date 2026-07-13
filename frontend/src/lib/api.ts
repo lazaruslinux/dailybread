@@ -458,6 +458,19 @@ export const revokeIngestToken = () =>
 export const getFitnessHistory = (date: string) =>
   request<{ days: FitnessWeekDay[] }>(`/me/fitness/history?date=${date}`)
 
+// One day's metrics bucketed to the hour (24 slots, 12AM..11PM) for the
+// time-of-day charts. steps/active_kcal/distance are hourly totals; hr is the
+// hourly average heart rate. Null where no data landed in that hour.
+export interface FitnessIntraday {
+  steps: (number | null)[]
+  active_kcal: (number | null)[]
+  distance: (number | null)[]
+  hr: (number | null)[]
+}
+
+export const getFitnessIntraday = (date: string) =>
+  request<FitnessIntraday>(`/me/fitness/intraday?date=${date}`)
+
 // Partial update; an explicit null puts that goal back on the default.
 export const updateFitnessGoals = (goals: Partial<Record<keyof FitnessGoals, number | null>>) =>
   request<FitnessGoals>('/me/fitness/goals', { method: 'PATCH', body: JSON.stringify(goals) })

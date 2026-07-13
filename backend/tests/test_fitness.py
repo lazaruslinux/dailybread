@@ -198,6 +198,67 @@ def test_distance_is_none_when_not_sent(owner):
     assert body["today"]["distance"] is None
 
 
+# ---- intraday (time-of-day) buckets ----------------------------------------------
+
+
+def test_intraday_buckets_metrics_by_hour(owner):
+    token = _mint(owner)
+    # _payload: steps at 09:00 (4200) + 18:00 (3800); active 512.5 at 20:00.
+    _send(owner, token, _payload())
+    intra = owner.get("/me/fitness/intraday", params={"date": TODAY.isoformat()}).json()
+    assert len(intra["steps"]) == 24
+    assert intra["steps"][9] == 4200
+    assert intra["steps"][18] == 3800
+    assert intra["steps"][0] is None
+    assert intra["active_kcal"][20] == 512.5
+    # exercise minutes and resting HR are daily-only, never in the intraday set
+    assert "exercise_minutes" not in intra
+
+
+def test_intraday_distance_by_hour(owner):
+    token = _mint(owner)
+    _send(owner, token, _distance_payload(qty=4.0, units="mi"))  # 2.0 mi at 09:00 + 18:00
+    intra = owner.get("/me/fitness/intraday", params={"date": TODAY.isoformat()}).json()
+    assert abs(intra["distance"][9] - 2.0 * 1609.344) < 1.0
+    assert abs(intra["distance"][18] - 2.0 * 1609.344) < 1.0
+
+
+def test_intraday_heart_rate_is_hourly_average(owner):
+    token = _mint(owner)
+    payload = {"data": {"metrics": [{
+        "name": "heart_rate", "units": "count/min",
+        "data": [
+            {"date": _stamp(TODAY, "08:15:00"), "qty": 70},
+            {"date": _stamp(TODAY, "08:45:00"), "qty": 80},
+            {"date": _stamp(TODAY, "13:00:00"), "qty": 110},
+        ],
+    }]}}
+    assert _send(owner, token, payload).status_code == 200
+    intra = owner.get("/me/fitness/intraday", params={"date": TODAY.isoformat()}).json()
+    assert intra["hr"][8] == 75  # (70 + 80) / 2
+    assert intra["hr"][13] == 110
+    assert intra["hr"][0] is None
+
+
+def test_intraday_resend_never_doubles(owner):
+    token = _mint(owner)
+    _send(owner, token, _payload())
+    _send(owner, token, _payload())
+    intra = owner.get("/me/fitness/intraday", params={"date": TODAY.isoformat()}).json()
+    assert intra["steps"][9] == 4200  # upserted, not summed again
+
+
+def test_intraday_is_self_only(owner, parent):
+    token = _mint(owner)
+    _send(owner, token, _payload())
+    intra = parent.get("/me/fitness/intraday").json()
+    assert all(v is None for v in intra["steps"])
+
+
+def test_minors_cannot_touch_intraday(child):
+    assert child.get("/me/fitness/intraday").status_code == 403
+
+
 def test_resending_a_window_never_duplicates(owner):
     token = _mint(owner)
     assert _send(owner, token, _payload()).status_code == 200

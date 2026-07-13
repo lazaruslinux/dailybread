@@ -1067,6 +1067,27 @@ class FitnessDaily(Base):
     unit: Mapped[str] = mapped_column(String(20))
 
 
+class FitnessIntraday(Base):
+    """The same imported numbers as FitnessDaily but bucketed to the hour, for
+    the time-of-day charts (steps, active_kcal, distance, hr). Only the metrics
+    that read well hourly live here; re-imports upsert per (member, day, metric,
+    hour). Self-only, like the diary."""
+
+    __tablename__ = "fitness_intraday"
+    __table_args__ = (UniqueConstraint("user_id", "date_for", "metric", "hour"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    date_for: Mapped[dt.date] = mapped_column(Date, index=True)
+    metric: Mapped[str] = mapped_column(String(30))
+    hour: Mapped[int] = mapped_column(Integer)  # 0-23, member-local wall clock
+    value: Mapped[float] = mapped_column(Float)
+    unit: Mapped[str] = mapped_column(String(20))
+
+
 class Workout(Base):
     """One imported workout. Times are the phone's wall clock, like every
     other time in the app. external_id is the exporter's stable id, so a

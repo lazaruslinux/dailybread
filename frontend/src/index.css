@@ -81,27 +81,30 @@
   --danger-border: rgba(190, 18, 60, 0.28);
 }
 
-/* ---- Dark Forest: near-black with forest greens, white ink ----------------- */
+/* ---- Dark Crust: warm espresso ground with golden bread accents, white ink -
+   Matches the light theme's baker warmth instead of the old forest green: the
+   background is a dark toasted-crust brown (never cool grey/black) and the
+   accents are amber/honey, the same bread family as Light Amber. */
 :root[data-theme='dark'] {
   --fg: #ffffff;
 
-  --bg-base: #08090a;
-  /* Toned down 2026-07-10: the glow should be felt, not seen. */
-  --aurora-1: rgba(22, 101, 52, 0.22);
-  --aurora-2: rgba(6, 30, 20, 0);
-  --aurora-3: rgba(20, 83, 45, 0.21);
+  --bg-base: #15100a; /* dark toasted crust, warm near-black */
+  /* A low amber hearth-glow, felt not seen. */
+  --aurora-1: rgba(180, 120, 40, 0.20);
+  --aurora-2: rgba(60, 40, 18, 0);
+  --aurora-3: rgba(146, 100, 30, 0.18);
 
-  --glass-bg: rgba(255, 255, 255, 0.045);
+  --glass-bg: rgba(255, 255, 255, 0.05);
   --glass-border: rgba(255, 255, 255, 0.1);
-  --surface: #17181b; /* opaque elevated surface, reads above the near-black base */
+  --surface: #201810; /* opaque elevated surface, warm brown above the base */
   --field-bg: rgba(255, 255, 255, 0.05);
   --field-bg-focus: rgba(255, 255, 255, 0.08);
 
-  --accent: #166534;
-  --accent-strong: #14532d;
-  /* A calm jade (7:1 on the sheet surface), not the old neon green-400 —
-     links and highlights should sit in the forest, not glow out of it. */
-  --accent-bright: #3bb977;
+  --accent: #b45309; /* amber-700 solid fills; white text stays readable on it */
+  --accent-strong: #92400e; /* amber-800 gradient partner */
+  /* Honey gold for links and highlights — bright on the crust, warm, the
+     bread family's answer to the old jade. */
+  --accent-bright: #eab04e;
   --gold: #fcd34d;
 
   --tier-roll: #fbbf24;
