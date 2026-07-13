@@ -52,6 +52,9 @@ export default defineConfig({
   preview: {
     // `vite preview` serves the built app (with its real service worker, which
     // the dev server doesn't run) - used to exercise PWA/push flows locally.
+    // Extra hostnames a review device may use to reach the preview (comma-
+    // separated) stay out of the repo: pass PREVIEW_ALLOWED_HOSTS in the env.
+    allowedHosts: process.env.PREVIEW_ALLOWED_HOSTS?.split(',') ?? [],
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8000',
