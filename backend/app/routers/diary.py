@@ -1,7 +1,7 @@
 import datetime as dt
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -28,6 +28,7 @@ from app.schemas import (
     DiaryDayOut,
     DiaryEntryIn,
     DiaryLockOut,
+    DiaryWorkoutOut,
     DiaryEntryOut,
     DiaryEntryUpdate,
     RecipeMacros,
@@ -200,23 +201,27 @@ def get_day(
     ).all()
     burned = round(sum(w.kcal for w in workouts), 1)
 
-    # Opted-in members earn from watch WORKOUTS: the sum of the day's imported
-    # workout calories — never the all-day active total, which would double-
-    # count the baseline movement the calorie target's activity level already
-    # covers. The budget then uses the LARGER of that and the manual log,
-    # never the sum (a manually logged run is the same run the watch tracked).
+    # The day's synced workouts always ride along for display (read-only
+    # cards in the exercise list). Opted-in members also earn their calories:
+    # each workout's own active energy — never the all-day active total,
+    # which would double-count the baseline movement the calorie target's
+    # activity level already covers — ADDS to the manual log's burn. Manual
+    # entries are for what the watch didn't track, so the two sum.
+    day_start = dt.datetime.combine(date, dt.time.min)
+    synced = db.scalars(
+        select(Workout)
+        .where(
+            Workout.user_id == user.id,
+            Workout.started_at >= day_start,
+            Workout.started_at < day_start + dt.timedelta(days=1),
+        )
+        .order_by(Workout.started_at)
+    ).all()
     watch_kcal = None
     if user.count_watch_kcal:
-        day_start = dt.datetime.combine(date, dt.time.min)
-        watch_kcal = db.scalar(
-            select(func.sum(Workout.kcal)).where(
-                Workout.user_id == user.id,
-                Workout.started_at >= day_start,
-                Workout.started_at < day_start + dt.timedelta(days=1),
-            )
-        )
+        watch_kcal = sum(w.kcal for w in synced if w.kcal)
         watch_kcal = round(watch_kcal, 1) if watch_kcal else None
-    earned = max(burned, watch_kcal or 0.0)
+    earned = round(burned + (watch_kcal or 0.0), 1)
 
     return DiaryDayOut(
         date=date,
@@ -225,6 +230,16 @@ def get_day(
         watch_kcal=watch_kcal,
         entries=[DiaryEntryOut.model_validate(e) for e in entries],
         exercise=[_exercise_out(w) for w in workouts],
+        workouts=[
+            DiaryWorkoutOut(
+                activity=w.activity,
+                started_at=w.started_at,
+                duration_s=w.duration_s,
+                kcal=w.kcal,
+                source=w.source,
+            )
+            for w in synced
+        ],
         burned=earned,
         locked=_locked(db, user.id, date),
     )

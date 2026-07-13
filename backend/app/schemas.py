@@ -840,7 +840,7 @@ class ExerciseIn(BaseModel):
     latest weigh-in; the client never supplies calories."""
 
     date_for: dt.date
-    activity: Literal["running", "walking"]  # keys of app.health.EXERCISES
+    activity: Literal["running", "walking", "weightlifting"]  # keys of app.health.EXERCISES
     effort: ExerciseEffort
     minutes: float = Field(gt=0, le=1440)
     time_of_day: dt.time | None = None
@@ -864,6 +864,17 @@ class ExerciseOut(BaseModel):
     kcal: float
 
 
+class DiaryWorkoutOut(BaseModel):
+    """A synced workout shown read-only in the day's exercise list. Display
+    only: it has no id to edit and the client offers no taps on it."""
+
+    activity: str
+    started_at: dt.datetime
+    duration_s: float | None
+    kcal: float | None
+    source: str  # 'apple' | 'android' - names the health app it came from
+
+
 class DiaryDayOut(BaseModel):
     """One member's diary for one day: their targets, what the day's entries
     total so far, and the entries themselves (the client groups by slot).
@@ -878,6 +889,9 @@ class DiaryDayOut(BaseModel):
     watch_kcal: float | None = None
     entries: list[DiaryEntryOut]
     exercise: list[ExerciseOut] = []
+    # The day's synced workouts, always present for display; whether their
+    # calories count toward the budget is the watch_kcal opt-in above.
+    workouts: list[DiaryWorkoutOut] = []
     burned: float = 0.0
     # The day is locked in: entries refuse changes until unlocked.
     locked: bool = False

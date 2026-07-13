@@ -41,6 +41,17 @@ EXERCISES: dict[str, dict] = {
             ExerciseEffort.vigorous: 5.0,
         },
     },
+    # Compendium codes: light workout 3.0 (02130), multiple exercises at
+    # 8-15 reps 3.5 (02054), powerlifting/bodybuilding vigorous effort 6.0
+    # (02050). Rest between sets is why lifting reads lower than running.
+    "weightlifting": {
+        "label": "Weightlifting",
+        "mets": {
+            ExerciseEffort.light: 3.0,
+            ExerciseEffort.moderate: 3.5,
+            ExerciseEffort.vigorous: 6.0,
+        },
+    },
 }
 
 

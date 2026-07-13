@@ -1140,6 +1140,16 @@ export interface NutritionTargets {
   fat_g: number
 }
 
+// A synced workout shown read-only in the day's exercise list; no id, no
+// edits - it belongs to the health data, not the diary.
+export interface DiaryWorkout {
+  activity: string
+  started_at: string
+  duration_s: number | null
+  kcal: number | null
+  source: 'apple' | 'android'
+}
+
 export interface DiaryDay {
   date: string
   targets: NutritionTargets
@@ -1148,6 +1158,7 @@ export interface DiaryDay {
   watch_kcal: number | null
   entries: DiaryEntry[]
   exercise: ExerciseEntry[]
+  workouts: DiaryWorkout[]
   burned: number
   // The day is locked in: entries refuse changes until unlocked.
   locked: boolean
@@ -1285,7 +1296,7 @@ export const logMemberWeight = (
 
 // ---- exercise log ----------------------------------------------------------------
 
-export type ExerciseActivity = 'running' | 'walking'
+export type ExerciseActivity = 'running' | 'walking' | 'weightlifting'
 export type ExerciseEffort = 'light' | 'moderate' | 'vigorous'
 
 export interface ExerciseEntry {

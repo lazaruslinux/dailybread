@@ -467,9 +467,9 @@ def test_two_workouts_on_a_day_both_count(owner):
     assert day["watch_kcal"] == 470.0  # 320 + 150
 
 
-def test_watch_and_manual_log_never_sum(owner):
-    """The budget takes the larger of the two: a manually logged run is the
-    same run the watch tracked, so summing would count it twice."""
+def test_watch_and_manual_log_sum(owner):
+    """Synced workouts and manual entries ADD together: the synced cards show
+    what the watch tracked, so a manual entry is for something it didn't."""
     owner.put("/me/fitness/watch-kcal", json={"enabled": True})
     owner.put("/me/health/weight", json={"date_for": TODAY.isoformat(), "weight_kg": 90.0})
     res = owner.post(
@@ -481,8 +481,22 @@ def test_watch_and_manual_log_never_sum(owner):
     token = _mint(owner)
     _send(owner, token, _payload())  # the watch workout says 320
     day = owner.get(f"/diary?date={TODAY.isoformat()}").json()
-    assert day["burned"] == max(manual, 320.0)
-    assert day["targets"]["exercise_kcal"] == max(manual, 320.0)
+    assert day["burned"] == round(manual + 320.0, 1)
+    assert day["targets"]["exercise_kcal"] == round(manual + 320.0, 1)
+
+
+def test_synced_workouts_ride_along_in_the_diary(owner):
+    """The day view carries the synced workouts for display even without the
+    calorie opt-in; opting in is what makes their kcal count."""
+    token = _mint(owner)
+    _send(owner, token, _payload())
+    day = owner.get(f"/diary?date={TODAY.isoformat()}").json()
+    assert len(day["workouts"]) == 1
+    w = day["workouts"][0]
+    assert w["activity"] == "Outdoor Run"
+    assert w["kcal"] == 320.0
+    assert w["source"] == "apple"
+    assert day["burned"] == 0  # displayed, not counted, until the opt-in
 
 
 def test_watch_kcal_toggle_is_adults_only(child):

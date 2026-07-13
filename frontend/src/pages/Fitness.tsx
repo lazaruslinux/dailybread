@@ -111,12 +111,10 @@ const METRICS: MetricDef[] = [
   },
 ]
 
-// All five metrics share the 2-col grid; resting HR opens the through-the-day
-// HR detail instead of the standard one (see the sheet stack below).
+// All five metrics share the 2-col grid; resting HR is the static one - no
+// chart on its card, and its detail is plain 7/30-day averages (one reading
+// a day is too sparse to be worth graphing).
 const GRID_METRICS = METRICS
-
-// A blank day for the hour charts before (or without) intraday data.
-const EMPTY_HOURS: (number | null)[] = Array(24).fill(null)
 
 // The hourly series for the metrics that get a time-of-day chart. Undefined —
 // so the card falls back to the week view — for other metrics, before intraday
@@ -568,6 +566,7 @@ function MetricCard({
   value,
   week,
   hourly,
+  staticNote,
   onOpen,
 }: {
   def: MetricDef
@@ -575,6 +574,8 @@ function MetricCard({
   week: api.FitnessWeekDay[]
   // When present, the front chart shows today by time of day; otherwise the week.
   hourly?: (number | null)[]
+  // A static card carries no chart at all - just this line under the value.
+  staticNote?: string
   onOpen: () => void
 }) {
   const { icon: Icon, label, colorVar, unit } = def
@@ -589,7 +590,9 @@ function MetricCard({
         {(def.fmt ?? fmtNumber)(value)}
         {unit && <span className="ml-1 text-sm font-semibold">{unit}</span>}
       </p>
-      {hourly ? (
+      {staticNote ? (
+        <p className="mt-2 text-[11px] text-fg/45">{staticNote}</p>
+      ) : hourly ? (
         <HourBars hours={hourly} colorVar={colorVar} unit={unit ?? label.toLowerCase()} fmt={def.fmt} />
       ) : (
         <MiniBars
@@ -1300,103 +1303,51 @@ function WeightDetail({ health, onClose }: { health: api.Health; onClose: () => 
   )
 }
 
-// The day's heart rate as a line over 24 hours (nulls skipped). Its own y-range
-// so the wander is legible; the numbers live in the stats beneath it.
-function HourLine({
-  hours,
-  colorVar,
-  height = 40,
-}: {
-  hours: (number | null)[]
-  colorVar: string
-  height?: number
-}) {
-  const W = 240
-  const pts = hours
-    .map((v, i) => ({ i, v }))
-    .filter((p): p is { i: number; v: number } => p.v != null)
-  if (pts.length < 2) return null
-  const lo = Math.min(...pts.map((p) => p.v))
-  const hi = Math.max(...pts.map((p) => p.v))
-  const span = hi - lo || 1
-  const x = (i: number) => 3 + (i / 23) * (W - 6)
-  const y = (v: number) => 4 + (1 - (v - lo) / span) * (height - 8)
-  const path = pts.map((p, k) => `${k ? 'L' : 'M'}${x(p.i).toFixed(1)} ${y(p.v).toFixed(1)}`).join(' ')
-  return (
-    <svg viewBox={`0 0 ${W} ${height}`} className="w-full" aria-hidden>
-      <path
-        d={path}
-        fill="none"
-        stroke={`var(${colorVar})`}
-        strokeWidth={2}
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
-    </svg>
-  )
-}
-
+// Resting HR gets numbers, not charts: today's reading and the 7- and
+// 30-day averages from the daily history the watch already syncs.
 function HRDetail({
-  def,
   resting,
-  hours,
   history,
+  source,
   onClose,
 }: {
-  def: MetricDef
   resting: number | null
-  hours: (number | null)[]
   history: api.FitnessWeekDay[] | null
+  source: string
   onClose: () => void
 }) {
-  const vals = hours.filter((v): v is number => v != null)
-  const lo = vals.length ? Math.min(...vals) : null
-  const hi = vals.length ? Math.max(...vals) : null
-  const avg = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null
-  const restHistory = (history ?? []).filter((d) => d.resting_hr !== null)
+  const avgOf = (days: api.FitnessWeekDay[]): string => {
+    const vals = days
+      .map((d) => d.resting_hr)
+      .filter((v): v is number => v != null)
+    if (vals.length === 0) return '–'
+    return `${Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)} bpm`
+  }
+  const month = history ?? []
+  const lows = month.map((d) => d.resting_hr).filter((v): v is number => v != null)
   return (
     <Sheet onClose={onClose}>
       <h3 className="mb-1 flex items-center gap-2 text-lg font-bold">
-        <HeartPulse className="h-5 w-5" style={{ color: 'var(--fit-hr)' }} /> Heart rate
+        <HeartPulse className="h-5 w-5" style={{ color: 'var(--fit-hr)' }} /> Resting heart rate
       </h3>
-      <p className="text-[11px] text-fg/45">Resting today</p>
+      <p className="text-[11px] text-fg/45">Today</p>
       <p className="text-3xl font-bold tracking-tight" style={{ color: 'var(--fit-hr)' }}>
         {resting != null ? fmtNumber(resting) : '–'}
         <span className="ml-1 text-base font-semibold">bpm</span>
       </p>
 
-      <div className="mt-4 flex flex-col gap-5">
-        {vals.length >= 2 ? (
-          <div>
-            <p className="mb-2 text-xs text-fg/55">Through the day</p>
-            <HourLine hours={hours} colorVar="--fit-hr" height={120} />
-            <div className="mt-1 flex justify-between text-[10px] font-semibold text-fg/35">
-              <span>12a</span>
-              <span>6a</span>
-              <span>12p</span>
-              <span>6p</span>
-              <span>12a</span>
-            </div>
-            <div className="mt-3 grid grid-cols-3 gap-3">
-              <DetailStat label="Low" value={lo != null ? `${lo} bpm` : '–'} />
-              <DetailStat label="Average" value={avg != null ? `${avg} bpm` : '–'} />
-              <DetailStat label="High" value={hi != null ? `${hi} bpm` : '–'} />
-            </div>
-          </div>
-        ) : (
-          <p className="rounded-xl bg-fg/5 px-4 py-3 text-xs text-fg/50">
-            No by-the-hour heart rate yet. Add Heart Rate to the metrics your exporter sends and
-            the day's beats draw here.
-          </p>
-        )}
-
-        {restHistory.length > 0 && (
-          <div>
-            <p className="mb-2 text-xs text-fg/55">Resting · last 30 days</p>
-            <HistoryBars days={history ?? []} def={def} selected={null} onSelect={() => {}} />
-          </div>
-        )}
+      <div className="mt-4 grid grid-cols-3 gap-3">
+        <DetailStat label="7-day average" value={avgOf(month.slice(-7))} />
+        <DetailStat label="30-day average" value={avgOf(month)} />
+        <DetailStat
+          label="Lowest · 30 days"
+          value={lows.length ? `${Math.round(Math.min(...lows))} bpm` : '–'}
+        />
       </div>
+      <p className="mt-4 text-xs text-fg/45">
+        One reading a day, synced from {source}. A gently falling trend usually means fitness
+        is improving.
+      </p>
     </Sheet>
   )
 }
@@ -1691,6 +1642,17 @@ export function Fitness() {
     data.workouts.length > 0 ||
     data.week.some((d) => d.steps !== null)
 
+  // Where the health data comes from, for the static resting HR card. A
+  // synced workout says for sure; failing that, the phone in hand is almost
+  // certainly the phone that syncs.
+  const syncPlatform = data.workouts.find((w) => w.source)?.source ?? detectPlatform()
+  const syncSourceName =
+    syncPlatform === 'android'
+      ? 'Health Connect'
+      : syncPlatform === 'apple'
+        ? 'Apple Health'
+        : 'your phone'
+
   return (
     <div className="flex flex-col gap-4">
       {!data.connected && !hasAnything && (
@@ -1751,6 +1713,7 @@ export function Fitness() {
                 value={data.today[def.key]}
                 week={data.week}
                 hourly={hourlyFor(def, intraday)}
+                staticNote={def.key === 'resting_hr' ? `Synced from ${syncSourceName}` : undefined}
                 onOpen={() => openDetail(def)}
               />
             ))}
@@ -1826,7 +1789,9 @@ export function Fitness() {
               >
                 <span className="flex min-w-0 items-center gap-3">
                   <Watch className="h-4 w-4 shrink-0 text-fg/55" />
-                  <span className="text-sm text-fg/80">Watch workouts raise my food budget</span>
+                  <span className="text-sm text-fg/80">
+                    Add workout calories to daily calorie target
+                  </span>
                 </span>
                 <span
                   className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${
@@ -1840,13 +1805,10 @@ export function Fitness() {
                   />
                 </span>
               </button>
-              {data.count_watch_kcal && (
-                <p className="mt-2 text-xs text-fg/45">
-                  Each synced workout's own calories are added to that day's diary, never the
-                  all-day active total. If you also log exercise by hand, the larger of the two
-                  counts, not both.
-                </p>
-              )}
+              <p className="mt-2 text-xs text-fg/45">
+                Each workout synced from the health data on your Apple or Android phone will add
+                the calories burned to your daily calorie target. This is recommended.
+              </p>
             </div>
           )}
         </>
@@ -1855,10 +1817,9 @@ export function Fitness() {
       <AnimatePresence>
         {detail && detail.key === 'resting_hr' && (
           <HRDetail
-            def={detail}
             resting={data.today.resting_hr}
-            hours={intraday?.hr ?? EMPTY_HOURS}
             history={history}
+            source={syncSourceName}
             onClose={() => setDetail(null)}
           />
         )}

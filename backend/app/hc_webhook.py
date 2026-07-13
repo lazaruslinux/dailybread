@@ -152,7 +152,17 @@ def import_payload(
             started_at=started,
             ended_at=_local(p.get("end_time"), tz),
             duration_s=duration,
-            kcal=_num(p.get("calories")),  # absent today; harmless if it appears
+            # No real HC payload has carried per-session energy yet; try the
+            # plausible spellings and take the first that parses as a number,
+            # so one malformed key can't shadow a good one.
+            kcal=next(
+                (
+                    n
+                    for k in ("calories", "active_calories", "energy_kcal", "kcal")
+                    if (n := _num(p.get(k))) is not None
+                ),
+                None,
+            ),
             distance_m=_num(p.get("distance_meters")),
             avg_hr=_num(p.get("avg_heart_rate")),
             route=None,

@@ -53,6 +53,15 @@ def test_walking_uses_walking_mets(owner):
     assert res.json()["kcal"] == 175.0
 
 
+def test_weightlifting_uses_lifting_mets(owner):
+    # Compendium: general lifting is 3.5 moderate and 6.0 vigorous
+    # (powerlifting/bodybuilding effort). 60 min at 100 kg -> 350 / 600.
+    setup_profile(owner, weight_kg=100.0)
+    assert log_run(owner, minutes=60, activity="weightlifting").json()["kcal"] == 350.0
+    res = log_run(owner, minutes=60, activity="weightlifting", effort="vigorous")
+    assert res.json()["kcal"] == 600.0
+
+
 def test_logging_exercise_needs_a_weigh_in(owner):
     owner.put("/me/health/profile", json=PROFILE)  # profile but no weight
     res = log_run(owner)

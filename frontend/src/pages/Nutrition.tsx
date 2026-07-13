@@ -3,12 +3,14 @@ import {
   BookOpen,
   ChevronLeft,
   ChevronRight,
+  Dumbbell,
   Lock,
   Flame,
   Footprints,
   Plus,
   SlidersHorizontal,
   Trash2,
+  Watch,
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
@@ -777,6 +779,7 @@ const EXERCISE_META: {
 }[] = [
   { id: 'running', label: 'Running', mets: { light: 4.8, moderate: 6.3, vigorous: 9.8 } },
   { id: 'walking', label: 'Walking', mets: { light: 2.8, moderate: 3.5, vigorous: 5.0 } },
+  { id: 'weightlifting', label: 'Weightlifting', mets: { light: 3.0, moderate: 3.5, vigorous: 6.0 } },
 ]
 
 const EFFORTS: { id: api.ExerciseEffort; label: string; hint: string }[] = [
@@ -867,7 +870,7 @@ function ExerciseSheet({
       <div className="mb-4 flex items-center justify-between">
         <h2 className="flex items-center gap-2 text-lg font-bold">
           <Footprints className="h-5 w-5 text-accent-bright" />
-          {creating ? 'Log exercise' : entry.label}
+          {creating ? 'Add manual exercise' : entry.label}
         </h2>
         <button onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-fg/50 hover:bg-fg/10 hover:text-fg">
           <X className="h-5 w-5" />
@@ -967,44 +970,84 @@ function ExerciseSheet({
   )
 }
 
+// A synced workout's line under Exercise. Deliberately not a button: these
+// cards belong to the health data and are display-only here - no taps, no
+// edits, no delete. The kcal chip only shows when the opt-in counts it.
+function SyncedWorkoutRow({ workout, counted }: { workout: api.DiaryWorkout; counted: boolean }) {
+  const started = new Date(workout.started_at)
+  const when = fmtTime(`${started.getHours()}:${started.getMinutes()}`)
+  const sub = [
+    when,
+    workout.duration_s ? `${Math.round(workout.duration_s / 60)} min` : null,
+    `Synced from ${workout.source === 'android' ? 'Health Connect' : 'Apple Health'}`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  return (
+    <div className="-mx-1.5 flex items-center justify-between gap-3 rounded-lg px-1.5 py-2">
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5 truncate text-sm font-medium">
+          <Watch className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+          {workout.activity}
+        </span>
+        <span className="block truncate text-xs text-fg/45">{sub}</span>
+      </span>
+      {counted && workout.kcal != null && workout.kcal > 0 && (
+        <span className="shrink-0 text-sm font-semibold text-emerald-500">
+          +{Math.round(workout.kcal)}
+          <span className="ml-1 text-[10px] font-normal opacity-70">kcal</span>
+        </span>
+      )}
+    </div>
+  )
+}
+
 function ExerciseCard({
   exercise,
+  workouts,
+  watchCounted,
   burned,
   onAdd,
   onEdit,
 }: {
   exercise: api.ExerciseEntry[]
+  workouts: api.DiaryWorkout[]
+  // Whether the member's opt-in is counting synced calories today.
+  watchCounted: boolean
   burned: number
   onAdd: () => void
   onEdit: (e: api.ExerciseEntry) => void
 }) {
+  const empty = exercise.length === 0 && workouts.length === 0
   return (
     <section className="glass p-4" data-exercise>
-      <div className="mb-1 flex items-center justify-between">
-        <div className="flex items-baseline gap-2">
-          <h3 className="font-semibold text-fg/90">Exercise</h3>
-          {burned > 0 && (
-            <span className="text-xs font-semibold text-emerald-500">+{Math.round(burned)} kcal earned from workouts</span>
-          )}
-        </div>
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-fg/90">Exercise</h3>
         <button
           onClick={onAdd}
-          aria-label="Log exercise"
-          className="rounded-lg p-1.5 text-accent-bright transition-colors hover:bg-accent-bright/15"
+          className="-my-1.5 flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/15"
         >
-          <Plus className="h-4.5 w-4.5" strokeWidth={2.5} />
+          <Plus className="h-3.5 w-3.5" strokeWidth={2.5} /> Add manual exercise
         </button>
       </div>
+      {burned > 0 && (
+        <p className="mb-1 text-xs font-semibold text-emerald-500">
+          +{Math.round(burned)} kcal earned from workouts
+        </p>
+      )}
 
-      {exercise.length === 0 ? (
+      {empty ? (
         <button
           onClick={onAdd}
           className="mt-1 w-full rounded-xl border border-dashed border-fg/20 px-3 py-2.5 text-left text-sm text-fg/40 transition-colors hover:border-accent-bright/40 hover:text-fg/60"
         >
-          + Log a run or a walk
+          + Add manual exercise
         </button>
       ) : (
         <div className="flex flex-col">
+          {workouts.map((w, i) => (
+            <SyncedWorkoutRow key={`${w.started_at}-${i}`} workout={w} counted={watchCounted} />
+          ))}
           {exercise.map((e) => {
             const sub = [fmtTime(e.time_of_day), `${trim(e.minutes)} min`, EFFORT_LABEL[e.effort]]
               .filter(Boolean)
@@ -1017,7 +1060,11 @@ function ExerciseCard({
               >
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5 truncate text-sm font-medium">
-                    <Footprints className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                    {e.activity === 'weightlifting' ? (
+                      <Dumbbell className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                    ) : (
+                      <Footprints className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                    )}
                     {e.label}
                   </span>
                   {sub && <span className="block truncate text-xs text-fg/45">{sub}</span>}
@@ -1294,6 +1341,8 @@ function NutritionTab() {
           ))}
           <ExerciseCard
             exercise={day.exercise}
+            workouts={day.workouts}
+            watchCounted={day.watch_kcal !== null}
             burned={day.burned}
             onAdd={() => setExercising({ entry: null })}
             onEdit={(e) => setExercising({ entry: e })}
