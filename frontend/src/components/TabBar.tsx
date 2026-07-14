@@ -17,14 +17,18 @@ const TABS: { id: Tab; label: string; Icon: LucideIcon }[] = [
 // Floating bottom navigation. Thumb-reachable, always visible, one tap to
 // anywhere. The pb-safe padding keeps it above the iPhone home indicator.
 // `tabs` narrows the set for accounts that don't get every area (kid mode).
+// `dot` marks one tab with an attention dot (unread Inbox lives under You);
+// it hides while that tab is active — the page's own badge takes over.
 export function TabBar({
   active,
   onChange,
   tabs,
+  dot,
 }: {
   active: Tab
   onChange: (tab: Tab) => void
   tabs?: Tab[]
+  dot?: Tab
 }) {
   const visible = tabs ? TABS.filter(({ id }) => tabs.includes(id)) : TABS
   return (
@@ -56,10 +60,15 @@ export function TabBar({
                     transition={{ type: 'spring', stiffness: 400, damping: 32 }}
                   />
                 )}
-                <Icon
-                  className={`relative h-5 w-5 ${isActive ? 'text-accent-bright' : 'text-fg/45'}`}
-                  strokeWidth={2}
-                />
+                <span className="relative">
+                  <Icon
+                    className={`h-5 w-5 ${isActive ? 'text-accent-bright' : 'text-fg/45'}`}
+                    strokeWidth={2}
+                  />
+                  {dot === id && !isActive && (
+                    <span className="absolute -top-0.5 -right-1 h-2 w-2 rounded-full bg-rose-400" />
+                  )}
+                </span>
                 <span
                   className={`relative text-[10px] font-semibold ${
                     isActive ? 'text-fg' : 'text-fg/45'

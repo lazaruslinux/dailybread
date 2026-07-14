@@ -562,10 +562,8 @@ def _push_new_workouts(db: Session, user: User, day: dt.date, seen_before: set[i
     this very sync CREATED, only today's (catch-up syncs of past days stay
     silent), only 15+ minutes. Insert-only detection means a re-sent window
     never re-pings. A push failure never fails the sync."""
-    from app import push
+    from app import inbox, push
 
-    if not push.enabled():
-        return
     try:
         fresh = [
             w
@@ -579,20 +577,38 @@ def _push_new_workouts(db: Session, user: User, day: dt.date, seen_before: set[i
         if not fresh:
             return
         first_name = user.display_name.split()[0]
-        adults = db.scalars(
-            select(User).where(User.family_id == user.family_id, User.id != user.id)
-        ).all()
-        for workout in fresh:
-            payload = {
+        adults = [
+            m
+            for m in db.scalars(
+                select(User).where(User.family_id == user.family_id, User.id != user.id)
+            )
+            if not m.is_minor
+        ]
+        payloads = [
+            {
                 "title": f"{first_name} completed a workout",
                 "body": f"{workout.activity} · {round((workout.duration_s or 0) / 60)} min",
                 "tag": f"workout-{workout.id}",
                 "url": "/",
             }
+            for workout in fresh
+        ]
+        # Inbox first, committed before the push leg, and regardless of
+        # whether push is configured — history is not an interruption.
+        for payload in payloads:
             for member in adults:
-                if not member.is_minor and push.wants(member, "workouts"):
-                    push.send_to_user(db, member.id, payload)
+                inbox.record(
+                    db, member.id, member.family_id, "workout",
+                    payload["title"], payload["body"],
+                )
+        db.commit()
+        if push.enabled():
+            for payload in payloads:
+                for member in adults:
+                    if push.wants(member, "workouts"):
+                        push.send_to_user(db, member.id, payload)
     except Exception:
+        db.rollback()
         log.exception("workout push failed (the sync itself landed)")
 
 

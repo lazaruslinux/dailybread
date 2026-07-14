@@ -109,10 +109,8 @@ def _push_dinner_lock(db: Session, parent: User, meal: Meal, recipe: Recipe | No
     the family hears about (votes stay quiet). Clearing the meal (unlock)
     says nothing either."""
     try:
-        from app import push
+        from app import inbox, push
 
-        if not push.enabled():
-            return
         what = recipe.name if recipe is not None else (meal.custom_title or "")
         body = what
         if meal.time_of_day is not None:
@@ -125,13 +123,24 @@ def _push_dinner_lock(db: Session, parent: User, meal: Meal, recipe: Recipe | No
             "tag": f"dinner-lock-{meal.date_for.isoformat()}",
             "url": "/",
         }
-        for member in db.scalars(
-            select(User).where(User.family_id == parent.family_id, User.id != parent.id)
-        ):
-            if not member.is_minor and push.wants(member, "family"):
-                push.send_to_user(db, member.id, payload)
+        members = [
+            m
+            for m in db.scalars(
+                select(User).where(User.family_id == parent.family_id, User.id != parent.id)
+            )
+            if not m.is_minor
+        ]
+        # Inbox first, committed before the push leg: history survives a
+        # failed nudge, and neither depends on push being configured.
+        for member in members:
+            inbox.record(db, member.id, member.family_id, "dinner", payload["title"], body)
+        db.commit()
+        if push.enabled():
+            for member in members:
+                if push.wants(member, "family"):
+                    push.send_to_user(db, member.id, payload)
     except Exception:
-        pass  # the plan is saved; a failed nudge is not worth a 500
+        db.rollback()  # the plan is saved; a failed nudge is not worth a 500
 
 
 @router.put("/time", response_model=MealOut)

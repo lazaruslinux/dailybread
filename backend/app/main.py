@@ -16,6 +16,7 @@ from app.routers import (
     foods,
     grocery,
     health,
+    inbox,
     items,
     meals,
     push,
@@ -68,6 +69,7 @@ async def block_cross_site_writes(request: Request, call_next):
 app.include_router(auth.router)
 app.include_router(diary.router)
 app.include_router(health.router)
+app.include_router(inbox.router)
 app.include_router(families.router)
 app.include_router(fitness.router)
 app.include_router(grocery.router)

@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   HeartPulse,
+  Inbox,
   KeyRound,
   LogOut,
   Map,
@@ -26,6 +27,7 @@ import { HealthSettings } from '../components/Health'
 import { WelcomeTour } from '../components/WelcomeTour'
 import { ChangePasswordSheet } from './Password'
 import { BreadcrumbsPage } from './Breadcrumbs'
+import { InboxPage } from './Inbox'
 import { Profile } from './Profile'
 
 // Little preview swatch per theme so the choice reads at a glance.
@@ -147,9 +149,10 @@ function VersePrefsCard() {
 // The settings that moved one level down: set-and-forget things open as
 // subpages, so the daily ritual (profile, mood, status, journal) stays one
 // scroll at the top level.
-type SubPage = 'crumbs' | 'notifications' | 'appearance' | 'health' | 'verses' | 'villages'
+type SubPage = 'inbox' | 'crumbs' | 'notifications' | 'appearance' | 'health' | 'verses' | 'villages'
 
 const SUB_META: Record<SubPage, { label: string; hint: string }> = {
+  inbox: { label: 'Inbox', hint: 'Crumbs you earned and family activity' },
   crumbs: { label: 'Breadcrumbs & Levels', hint: 'How the family earns and levels up' },
   notifications: { label: 'Notifications', hint: 'What rings this device' },
   appearance: { label: 'Appearance', hint: 'Light and dark' },
@@ -163,11 +166,13 @@ function SettingsRow({
   page,
   onOpen,
   iconClass = 'text-fg/55',
+  badge = 0,
 }: {
   Icon: LucideIcon
   page: SubPage
   onOpen: (page: SubPage) => void
   iconClass?: string
+  badge?: number
 }) {
   return (
     <button
@@ -179,6 +184,13 @@ function SettingsRow({
         <span className="block font-semibold text-fg/80">{SUB_META[page].label}</span>
         <span className="block truncate text-xs text-fg/40">{SUB_META[page].hint}</span>
       </span>
+      {badge > 0 && (
+        // Solid, not the tinted-chip pattern: the count must read at a glance
+        // on both themes, and rose-on-rose washes out in light mode.
+        <span className="shrink-0 rounded-full bg-rose-500/90 px-2 py-0.5 text-xs font-bold text-white">
+          {badge}
+        </span>
+      )}
       <ChevronRight className="h-4 w-4 shrink-0 text-fg/30" />
     </button>
   )
@@ -186,7 +198,15 @@ function SettingsRow({
 
 // The You tab: your own profile (bio + mood) and daily journal up top, then
 // the settings list. Admin entry lives here too.
-export function You({ onOpenAdmin }: { onOpenAdmin: () => void }) {
+export function You({
+  onOpenAdmin,
+  inboxUnread = 0,
+  onInboxRead,
+}: {
+  onOpenAdmin: () => void
+  inboxUnread?: number
+  onInboxRead?: () => void
+}) {
   const { user, logout } = useAuth()
   const [changingPassword, setChangingPassword] = useState(false)
   const [sub, setSub] = useState<SubPage | null>(null)
@@ -218,6 +238,7 @@ export function You({ onOpenAdmin }: { onOpenAdmin: () => void }) {
           <ChevronLeft className="h-4 w-4" /> You
         </button>
         <h2 className="-mt-2 text-xl font-bold tracking-tight">{SUB_META[sub].label}</h2>
+        {sub === 'inbox' && <InboxPage onAllRead={onInboxRead} />}
         {sub === 'crumbs' && <BreadcrumbsPage />}
         {sub === 'notifications' && <NotificationsCard />}
         {sub === 'appearance' && <ThemePicker userId={user.id} stored={user.theme} />}
@@ -235,6 +256,7 @@ export function You({ onOpenAdmin }: { onOpenAdmin: () => void }) {
       <JournalCard />
 
       <div className="flex flex-col gap-2">
+        <SettingsRow Icon={Inbox} page="inbox" onOpen={setSub} badge={inboxUnread} />
         <SettingsRow Icon={BreadIcon as unknown as LucideIcon} page="crumbs" onOpen={setSub} />
         {/* Minors get no notifications (the server sends them none, so the
             page would be empty), no health area, and no village roster; the

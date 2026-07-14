@@ -297,6 +297,23 @@ class FeedOut(BaseModel):
     next7: list[FeedItemOut]
 
 
+class InboxEntryOut(BaseModel):
+    """One line of the You tab's Inbox: what happened, phrased for the reader."""
+
+    id: int
+    kind: str  # crumb/board/dinner/workout/pending/approved — picks the row icon
+    title: str
+    body: str
+    read: bool
+    created_at: dt.datetime
+
+    model_config = {"from_attributes": True}
+
+
+class InboxUnreadOut(BaseModel):
+    count: int
+
+
 class PendingApprovalOut(BaseModel):
     """One check-off waiting on a parent, for the "Waiting on you" list. Item
     and kid ride along so the row renders without extra fetches, and marks

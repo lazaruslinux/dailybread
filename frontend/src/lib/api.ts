@@ -972,6 +972,23 @@ export interface Crumbs {
 
 export const getMyCrumbs = () => request<Crumbs>('/me/crumbs')
 
+// ---- inbox (notification history) --------------------------------------------------
+
+export interface InboxEntry {
+  id: number
+  kind: string // crumb/board/dinner/workout/pending/approved — picks the row icon
+  title: string
+  body: string
+  read: boolean
+  created_at: string
+}
+
+export const getInbox = () => request<InboxEntry[]>('/me/inbox')
+
+export const getInboxUnread = () => request<{ count: number }>('/me/inbox/unread')
+
+export const markInboxRead = () => request<void>('/me/inbox/read', { method: 'POST' })
+
 export const getFamily = () => request<FamilyMember[]>(`/users?date=${localDate()}`)
 
 // The day's calorie lock-in: the first lock of a date pays +2 breadcrumbs;

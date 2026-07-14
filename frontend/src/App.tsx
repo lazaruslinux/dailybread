@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronLeft } from 'lucide-react'
 import { Suspense, lazy, useEffect, useState } from 'react'
 import { useAuth } from './auth/AuthContext'
+import { useInboxUnread } from './hooks/useInboxUnread'
 import { applyTheme, getTheme } from './lib/theme'
 import { BreadIcon } from './components/BreadIcon'
 import { DailyGreeting } from './components/Greeting'
@@ -80,6 +81,9 @@ function AppShell() {
   const { user } = useAuth()
   const [tab, setTab] = useState<Tab>('home')
   const [overlay, setOverlay] = useState<Overlay>(null)
+  // One poller owns the unread count; the tab-bar dot and the You row badge
+  // read the same number, and opening the Inbox zeroes both at once.
+  const { count: inboxUnread, zero: zeroInbox } = useInboxUnread()
   // Kid mode: minors get Home / Kitchen / You — no nutrition or fitness area.
   // The server 403s those APIs regardless; this keeps the door out of sight too.
   const isMinor = user?.is_minor ?? false
@@ -171,7 +175,13 @@ function AppShell() {
             {!overlay && tab === 'nutrition' && !isMinor && <Nutrition />}
             {!overlay && tab === 'fitness' && !isMinor && <Fitness />}
             {!overlay && tab === 'kitchen' && <Kitchen />}
-            {!overlay && tab === 'you' && <You onOpenAdmin={() => setOverlay({ name: 'admin' })} />}
+            {!overlay && tab === 'you' && (
+              <You
+                onOpenAdmin={() => setOverlay({ name: 'admin' })}
+                inboxUnread={inboxUnread}
+                onInboxRead={zeroInbox}
+              />
+            )}
           </Suspense>
         </motion.div>
       </AnimatePresence>
@@ -179,7 +189,12 @@ function AppShell() {
       <footer className="mt-10 text-center text-xs text-fg/30">dailybread v0.0.1</footer>
 
       <DailyGreeting />
-      <TabBar active={tab} onChange={switchTab} tabs={tabs} />
+      <TabBar
+        active={tab}
+        onChange={switchTab}
+        tabs={tabs}
+        dot={inboxUnread > 0 ? 'you' : undefined}
+      />
     </div>
   )
 }

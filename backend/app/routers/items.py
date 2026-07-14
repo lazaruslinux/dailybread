@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app import crumbs, push, recurrence
+from app import crumbs, inbox, push, recurrence
 from app.db import get_db
 from app.deps import require_family, require_parent
 from app.models import (
@@ -856,17 +856,13 @@ def _schedule_text(item: Item) -> str:
     return base
 
 
-def _board_change_recipients(db: Session, item: Item, actor: User) -> list[int]:
-    """Adults who can see the card, minus whoever made the change."""
-    from app.push import _recipients, enabled, wants
+def _board_change_recipients(db: Session, item: Item, actor: User) -> list[User]:
+    """Adults who can see the card, minus whoever made the change. Push
+    config and prefs deliberately don't filter here — the same audience gets
+    the Inbox line whether or not anything rings their phone."""
+    from app.push import _recipients
 
-    if not enabled():
-        return []
-    return [
-        p.id
-        for p in _recipients(db, item)
-        if not p.is_minor and p.id != actor.id and wants(p, "family")
-    ]
+    return [p for p in _recipients(db, item) if not p.is_minor and p.id != actor.id]
 
 
 # How each kind reads in a sentence: "Alex added a task: Take out the trash".
@@ -880,7 +876,7 @@ _KIND_PHRASE = {
 
 def _push_board_change(
     db: Session,
-    recipient_ids: list[int],
+    recipients: list[User],
     actor_first: str,
     verb: str,
     kind: ItemKind,
@@ -890,18 +886,30 @@ def _push_board_change(
     """One family push per board action, phrased like a person: the verb, the
     kind, and the card's name right in the title. Routines never push here —
     they're the board's daily heartbeat, not news (kid routines still reach
-    parents through Kid Tasks)."""
-    if kind == ItemKind.routine or not recipient_ids:
+    parents through Kid Tasks). Each recipient also gets an Inbox line first,
+    recorded and committed before the push leg so a push failure never loses
+    the history."""
+    if kind == ItemKind.routine or not recipients:
+        return
+    payload = {
+        "title": f"{actor_first} {verb} {_KIND_PHRASE[kind]}: {title}",
+        "body": body,
+        "tag": f"board-change-{title[:40]}",
+        "url": "/",
+    }
+    try:
+        for r in recipients:
+            inbox.record(db, r.id, r.family_id, "board", payload["title"], payload["body"])
+        db.commit()
+    except Exception:
+        db.rollback()
+        log.exception("board-change inbox write failed (the change itself is saved)")
+    if not push.enabled():
         return
     try:
-        payload = {
-            "title": f"{actor_first} {verb} {_KIND_PHRASE[kind]}: {title}",
-            "body": body,
-            "tag": f"board-change-{title[:40]}",
-            "url": "/",
-        }
-        for uid in recipient_ids:
-            push.send_to_user(db, uid, payload)
+        for r in recipients:
+            if push.wants(r, "family"):
+                push.send_to_user(db, r.id, payload)
     except Exception:
         log.exception("board-change push failed (the change itself is saved)")
 
@@ -912,24 +920,55 @@ def _notify_parents_of_pending(db: Session, item: Item, kid: User, date_for: dt.
     and the client's toggle is optimistic so nobody is watching the clock.
     (Not a BackgroundTask: get_db's session would close before it ran.) A
     push failure must never fail the check-off itself."""
+    first_name = kid.display_name.split()[0]
+    payload = {
+        "title": f"{first_name} finished: {item.title}",
+        "body": "Tap to review and approve",
+        "tag": f"approval-{item.id}-{kid.id}-{date_for.isoformat()}",
+        "url": "/",
+    }
+    parents = db.scalars(
+        select(User).where(User.family_id == kid.family_id, User.role == Role.parent)
+    ).all()
+    try:
+        for parent in parents:
+            inbox.record(
+                db, parent.id, parent.family_id, "pending",
+                payload["title"], "Waiting on your approval",
+            )
+        db.commit()
+    except Exception:
+        db.rollback()
+        log.exception("approval inbox write failed (check-off already saved)")
     if not push.enabled():
         return
     try:
-        first_name = kid.display_name.split()[0]
-        payload = {
-            "title": f"{first_name} finished: {item.title}",
-            "body": "Tap to review and approve",
-            "tag": f"approval-{item.id}-{kid.id}-{date_for.isoformat()}",
-            "url": "/",
-        }
-        parents = db.scalars(
-            select(User).where(User.family_id == kid.family_id, User.role == Role.parent)
-        ).all()
         for parent in parents:
             if push.wants(parent, "approvals"):
                 push.send_to_user(db, parent.id, payload)
     except Exception:
         log.exception("approval push failed (check-off already saved)")
+
+
+def _record_kid_payoff(
+    db: Session, kid: User, parent: User, verb: str, title: str, awarded: int
+) -> None:
+    """The kid-facing Inbox line for an official completion: who made it
+    official, which card, and the crumb if one was paid. Committed on its own
+    so a failure here never fails the completion."""
+    try:
+        inbox.record(
+            db,
+            kid.id,
+            kid.family_id,
+            "approved",
+            f"{parent.display_name.split()[0]} {verb}: {title}",
+            f"+{awarded} crumb" if awarded else "",
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        log.exception("payoff inbox write failed (completion already saved)")
 
 
 @router.post("/{item_id}/complete", response_model=FeedItemOut)
@@ -989,6 +1028,10 @@ def complete_item(
             # The crumb belongs to whoever DID the thing (the target), and
             # only once it's official — a pending kid tap earns on approval.
             awarded = crumbs.award_completion(db, target, item.id, date_for)
+            if awarded > 0:
+                # awarded > 0 only happens when a parent checked off FOR a
+                # kid; the kid's Inbox should still show their earn.
+                _record_kid_payoff(db, target, user, "checked off", item.title, awarded)
             # The family hears about it in the DOER's name; whoever tapped is
             # the one excluded from hearing their own news.
             _push_board_change(
@@ -1009,6 +1052,9 @@ def complete_item(
         doer = db.get(User, exists.user_id)
         if doer is not None:
             awarded = crumbs.award_completion(db, doer, item.id, exists.date_for)
+            # The payoff moment: the kid hears the approval by name even when
+            # the daily cap zeroes the crumb — being seen IS the reward.
+            _record_kid_payoff(db, doer, user, "approved", item.title, awarded)
             _push_board_change(
                 db,
                 _board_change_recipients(db, item, user),

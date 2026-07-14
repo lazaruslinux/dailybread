@@ -1158,6 +1158,29 @@ class CrumbLedger(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class InboxEntry(Base):
+    """One line of a member's notification history — the Inbox in the You tab.
+    Rows are written at the same moments the app would push (board changes,
+    dinner lock-ins, workouts, approvals) plus crumb earns, but independently
+    of push: prefs and VAPID config gate interruptions, never history. Each
+    recipient gets their own row; read is flipped in bulk when they open the
+    page. Retention is capped per member on insert, so the table stays small
+    without a sweeper."""
+
+    __tablename__ = "inbox_entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(12))  # crumb/board/dinner/workout/pending/approved
+    title: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(String(200), default="")
+    read: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class VerseCheck(Base):
     """One member's check on one of the day's three verses. A day with all
     three checked counts toward that member's reading streak. Self-owned like

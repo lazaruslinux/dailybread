@@ -19,6 +19,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app import inbox
 from app.models import CrumbLedger, User
 
 LOGIN_CRUMBS = 1
@@ -33,6 +34,14 @@ WORKOUT_MIN_SECONDS = 15 * 60
 
 # Verse-streak milestones: hitting N days pays once, ever ("vstreak:<n>").
 STREAK_MILESTONES = {7: 5, 30: 15, 100: 50}
+
+# How each earn reads in the Inbox (kinds absent here don't write a line).
+_INBOX_TITLES = {
+    "verses": "You read the daily verses",
+    "diary": "You locked in your day",
+    "workout": "You finished a workout",
+    "bonus": "Reading streak bonus",
+}
 
 # Crumbs to go from level L to L+1. Ramping: quick early levels, a long
 # honest arc (level 10 ~ six weeks of real use, level 40 ~ a year and a half).
@@ -83,6 +92,19 @@ def award(
             source_key=source_key,
         )
     )
+    # The earn's Inbox line rides the same commit as the ledger row, so a
+    # lost race discards both together. "login" is skipped (a daily +1 tells
+    # nobody anything) and "complete" is skipped because the item title isn't
+    # in scope here — the approval path writes a richer entry itself.
+    if kind in _INBOX_TITLES:
+        inbox.record(
+            db,
+            user.id,
+            user.family_id,
+            "crumb",
+            f"+{amount} crumb" + ("s" if amount != 1 else ""),
+            _INBOX_TITLES[kind],
+        )
     try:
         db.commit()
         return amount
