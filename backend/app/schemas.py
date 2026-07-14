@@ -266,6 +266,9 @@ class FeedItemOut(BaseModel):
     # Set on a materialized village-event copy: the card is organizer-managed
     # (no local edit) and the detail sheet swaps in event attribution + RSVP.
     village_event_id: int | None = None
+    # True for ANY card involved in a village event (a copy, or the
+    # organizer's own shared source): drives the gold SHARED flag on the board.
+    village_shared: bool = False
     repeat: RepeatOut | None  # anything recurring (routines, repeating appointments)
     # Routines only: this routine checks itself off from a synced workout.
     workout_auto_complete: bool = False

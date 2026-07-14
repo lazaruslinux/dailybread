@@ -134,6 +134,12 @@ export function ItemCard({
   const showPerPerson = perPerson !== null && (perPerson.length > 1 || !showCheckbox)
   const doneCount = perPerson?.filter((p) => p.completed).length ?? 0
 
+  // A card involved in a village event (the organizer's shared source or a
+  // landed copy) wears the village colors: a gold border and a filled gold
+  // flag across the top, so cross-family plans read differently from the
+  // family's own at a glance.
+  const shared = Boolean(item.village_shared)
+
   return (
     <motion.div
       layout
@@ -143,8 +149,16 @@ export function ItemCard({
       transition={{ delay: index * 0.05, type: 'spring', stiffness: 300, damping: 26 }}
       whileTap={{ scale: 0.97 }}
       onClick={onOpen}
-      className="glass flex cursor-pointer touch-pan-y select-none items-center gap-3 p-3.5"
+      className={`glass cursor-pointer touch-pan-y select-none overflow-hidden ${
+        shared ? 'flex flex-col border border-gold/60 !p-0' : 'flex items-center gap-3 p-3.5'
+      }`}
     >
+      {shared && (
+        <span className="block w-full shrink-0 bg-gold px-4 py-1 text-center text-[10px] font-bold uppercase tracking-[0.14em] text-black/75">
+          Shared {item.kind === 'appointment' ? 'appointment' : 'activity'}
+        </span>
+      )}
+      <div className={shared ? 'flex w-full items-center gap-3 p-3.5' : 'contents'}>
       {showCheckbox ? (
         // Generous tap target around a modest circle; stops propagation so
         // checking off never also opens the detail sheet underneath.
@@ -310,6 +324,7 @@ export function ItemCard({
           <Pencil className="h-4 w-4" strokeWidth={2} />
         </button>
       )}
+      </div>
     </motion.div>
   )
 }

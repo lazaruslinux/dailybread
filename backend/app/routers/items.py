@@ -16,6 +16,7 @@ from app.models import (
     RepeatType,
     Role,
     User,
+    VillageEvent,
     Visibility,
 )
 from app.schemas import (
@@ -293,9 +294,11 @@ def _feed_item(
     pending: bool = False,
     pending_by: int | None = None,
     cancelled: bool = False,
+    village_shared: bool = False,
 ) -> FeedItemOut:
     return FeedItemOut(
         id=item.id,
+        village_shared=village_shared or item.village_event_id is not None,
         owner_id=item.owner_id,
         kind=item.kind,
         title=item.title,
@@ -349,8 +352,23 @@ def _completions_by_item(db: Session, items: list[Item]) -> dict[int, Completion
     return rows
 
 
+def _village_shared_ids(db: Session, items: list[Item]) -> set[int]:
+    """Which of these items are offered to a village, in ONE query — the
+    source of the board's gold SHARED flag (copies flag themselves via
+    village_event_id)."""
+    ids = [i.id for i in items if i.kind in (ItemKind.activity, ItemKind.appointment)]
+    if not ids:
+        return set()
+    return set(db.scalars(select(VillageEvent.item_id).where(VillageEvent.item_id.in_(ids))))
+
+
 def _build_feed_item(
-    db: Session, item: Item, user: User, date: dt.date, completions: CompletionRows
+    db: Session,
+    item: Item,
+    user: User,
+    date: dt.date,
+    completions: CompletionRows,
+    village_shared: bool | None = None,
 ) -> FeedItemOut:
     """Assemble one card's completion state for the requesting member, from
     the item's prefetched completion rows (see _completions_by_item).
@@ -359,7 +377,18 @@ def _build_feed_item(
     and the requesting member's own state (or, if they're not a participant,
     whether every participant is done) becomes the card's headline state.
     Other kinds carry a single shared check.
+
+    village_shared marks the card for the gold SHARED flag: copies carry it
+    on the row itself; an organizer's source needs a VillageEvent lookup —
+    the feed/calendar pass a batched answer, single-card responses let the
+    None default pay one small query.
     """
+    if village_shared is None:
+        village_shared = item.village_event_id is not None or (
+            item.kind in (ItemKind.activity, ItemKind.appointment)
+            and db.scalar(select(VillageEvent.id).where(VillageEvent.item_id == item.id))
+            is not None
+        )
     if item.kind != ItemKind.routine:
         # A dated card is a one-shot: done once, regardless of which day the
         # check landed on. Tasks are reminders that can be ticked off ahead of
@@ -394,6 +423,7 @@ def _build_feed_item(
             pending=not done and not called_off and waiting is not None,
             pending_by=waiting if not done and not called_off else None,
             cancelled=called_off,
+            village_shared=village_shared,
         )
 
     participants = _routine_participants(db, item)
@@ -426,6 +456,7 @@ def _build_feed_item(
         assignee_completions=completions,
         pending=pending,
         pending_by=user.id if pending else None,
+        village_shared=village_shared,
     )
 
 
@@ -477,6 +508,7 @@ def feed(
     )
     visible = [item for item in items if _visible_to(item, user)]
     comps = _completions_by_item(db, visible)
+    shared = _village_shared_ids(db, visible)
 
     overdue: list[FeedItemOut] = []
     today: list[FeedItemOut] = []
@@ -488,13 +520,13 @@ def feed(
             # their scheduled days and are never "overdue" — a missed one isn't
             # carried forward, the next occurrence simply comes around.
             if _occurs(item, date_for):
-                today.append(_build_feed_item(db, item, user, date_for, comps[item.id]))
+                today.append(_build_feed_item(db, item, user, date_for, comps[item.id], item.id in shared))
             continue
 
         if item.date_for == date_for:
-            today.append(_build_feed_item(db, item, user, date_for, comps[item.id]))
+            today.append(_build_feed_item(db, item, user, date_for, comps[item.id], item.id in shared))
         elif item.date_for is None:
-            fi = _build_feed_item(db, item, user, date_for, comps[item.id])
+            fi = _build_feed_item(db, item, user, date_for, comps[item.id], item.id in shared)
             # An undated task finished on an earlier day is archived off the
             # board; finished today it stays put, crossed out, until midnight.
             # A pending mark from an earlier day archives too — the card is
@@ -511,12 +543,12 @@ def feed(
             # Once completed it leaves the board immediately: it wasn't done
             # today, so it doesn't belong in today's Done list — its record
             # lives on its own day in the calendar.
-            fi = _build_feed_item(db, item, user, date_for, comps[item.id])
+            fi = _build_feed_item(db, item, user, date_for, comps[item.id], item.id in shared)
             if fi.completed:
                 continue
             overdue.append(fi)
         else:  # date_for in (today, today + 7]
-            next7.append(_build_feed_item(db, item, user, date_for, comps[item.id]))
+            next7.append(_build_feed_item(db, item, user, date_for, comps[item.id], item.id in shared))
 
     # All-day events first, then timed cards in day order; untimed sink to the end.
     late = dt.time(23, 59)
@@ -596,13 +628,14 @@ def calendar(
     visible = [item for item in items if _visible_to(item, user)]
     # One completions fetch covers every card on every day of the range.
     comps = _completions_by_item(db, visible)
+    shared = _village_shared_ids(db, visible)
 
     late = dt.time(23, 59)
     days: list[CalendarDayOut] = []
     day = start
     while day <= end:
         on_day = [
-            _build_feed_item(db, item, user, day, comps[item.id])
+            _build_feed_item(db, item, user, day, comps[item.id], item.id in shared)
             for item in visible
             if (_occurs(item, day) if item.repeat_type is not None else item.date_for == day)
         ]

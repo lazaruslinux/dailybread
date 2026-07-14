@@ -180,6 +180,7 @@ function AppShell() {
                 onOpenAdmin={() => setOverlay({ name: 'admin' })}
                 inboxUnread={inboxUnread}
                 onInboxRead={zeroInbox}
+                onGoTo={switchTab}
               />
             )}
           </Suspense>

@@ -27,7 +27,7 @@ import { HealthSettings } from '../components/Health'
 import { WelcomeTour } from '../components/WelcomeTour'
 import { ChangePasswordSheet } from './Password'
 import { BreadcrumbsPage } from './Breadcrumbs'
-import { InboxPage } from './Inbox'
+import { InboxPage, inboxDestination } from './Inbox'
 import { Profile } from './Profile'
 
 // Little preview swatch per theme so the choice reads at a glance.
@@ -202,10 +202,13 @@ export function You({
   onOpenAdmin,
   inboxUnread = 0,
   onInboxRead,
+  onGoTo,
 }: {
   onOpenAdmin: () => void
   inboxUnread?: number
   onInboxRead?: () => void
+  // Inbox rows navigate: board/village news to Home, workouts to Health.
+  onGoTo?: (tab: 'home' | 'fitness') => void
 }) {
   const { user, logout } = useAuth()
   const [changingPassword, setChangingPassword] = useState(false)
@@ -238,7 +241,16 @@ export function You({
           <ChevronLeft className="h-4 w-4" /> You
         </button>
         <h2 className="-mt-2 text-xl font-bold tracking-tight">{SUB_META[sub].label}</h2>
-        {sub === 'inbox' && <InboxPage onAllRead={onInboxRead} />}
+        {sub === 'inbox' && (
+          <InboxPage
+            onAllRead={onInboxRead}
+            onGo={(kind) => {
+              const dest = inboxDestination(kind)
+              if (dest === 'crumbs') setSub('crumbs')
+              else onGoTo?.(dest)
+            }}
+          />
+        )}
         {sub === 'crumbs' && <BreadcrumbsPage />}
         {sub === 'notifications' && <NotificationsCard />}
         {sub === 'appearance' && <ThemePicker userId={user.id} stored={user.theme} />}

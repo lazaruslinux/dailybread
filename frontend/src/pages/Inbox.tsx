@@ -45,7 +45,22 @@ function ago(iso: string): string {
   return then.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-export function InboxPage({ onAllRead }: { onAllRead?: () => void }) {
+// Where a tapped entry leads, by kind: board and village news live on Home,
+// workouts on the Health tab, crumb earns in Breadcrumbs & Levels. The
+// caller (You) owns the actual navigation.
+export function inboxDestination(kind: string): 'home' | 'fitness' | 'crumbs' {
+  if (kind === 'crumb') return 'crumbs'
+  if (kind === 'workout') return 'fitness'
+  return 'home'
+}
+
+export function InboxPage({
+  onAllRead,
+  onGo,
+}: {
+  onAllRead?: () => void
+  onGo?: (kind: string) => void
+}) {
   const [entries, setEntries] = useState<api.InboxEntry[] | null>(null)
 
   useEffect(() => {
@@ -92,9 +107,11 @@ export function InboxPage({ onAllRead }: { onAllRead?: () => void }) {
         {entries.map((entry) => {
           const { Icon, tint } = KIND_ICON[entry.kind] ?? KIND_ICON.board
           return (
-            <div
+            <button
               key={entry.id}
-              className={`-mx-4 flex items-center gap-3 px-5 py-3 ${
+              type="button"
+              onClick={() => onGo?.(entry.kind)}
+              className={`-mx-4 flex w-[calc(100%+2rem)] items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-fg/5 active:bg-fg/10 ${
                 entry.read ? '' : 'bg-accent-bright/10'
               }`}
             >
@@ -117,7 +134,7 @@ export function InboxPage({ onAllRead }: { onAllRead?: () => void }) {
                 <span className="text-xs text-fg/40">{ago(entry.created_at)}</span>
                 {!entry.read && <span className="h-2 w-2 rounded-full bg-rose-400" />}
               </span>
-            </div>
+            </button>
           )
         })}
       </div>

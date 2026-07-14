@@ -162,6 +162,12 @@ def test_going_materializes_a_copy(village, owner, other):
     assert copy["location"] == "Riverside Park"
     assert copy["visibility"] == "family"
     assert copy["assignees"] == []
+    # the gold SHARED flag rides both sides: the copy and the source
+    assert copy["village_shared"] is True
+    assert feed_ids(owner)[item["id"]]["village_shared"] is True
+    # an unshared card stays unflagged
+    plain = make_event(owner, title="Just ours")
+    assert feed_ids(owner)[plain["id"]]["village_shared"] is False
     # the organizer's own board is untouched (no duplicate)
     assert ev["my_item_id"] not in feed_ids(owner)
 

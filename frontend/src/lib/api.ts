@@ -538,6 +538,9 @@ export interface FeedItem {
   location?: string | null // where it happens (activities/appointments)
   // Set on a materialized village-event copy: organizer-managed, no local edit.
   village_event_id?: number | null
+  // True for any card involved in a village event (copy OR the organizer's
+  // shared source): drives the gold SHARED flag on the board.
+  village_shared?: boolean
   repeat: Repeat | null // routines only
   // Routines only: this routine checks itself off from a synced workout.
   workout_auto_complete: boolean
