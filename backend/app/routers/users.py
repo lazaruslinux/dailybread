@@ -359,17 +359,20 @@ def _require_can_set_avatar(target: User, viewer: User) -> None:
 
 def _village_face(db: Session, user_id: int, viewer: User) -> User | None:
     """A member whose photo may cross the family wall: a PARENT in a shared
-    village (always), or a MINOR whose parents flipped village_avatar on.
+    village (always), or a MINOR whose family flipped share_kid_avatars on.
     The one cross-family crack, and it opens the avatar image alone —
     profiles, moods, boards, and unshared children stay sealed."""
+    from app.models import Family as _Family
     from app.models import Role as _Role
     from app.models import VillageFamily
 
     target = db.get(User, user_id)
     if target is None or target.family_id is None:
         return None
-    if target.role != _Role.parent and not target.village_avatar:
-        return None
+    if target.role != _Role.parent:
+        family = db.get(_Family, target.family_id)
+        if family is None or not family.share_kid_avatars:
+            return None
     mine = select(VillageFamily.village_id).where(
         VillageFamily.family_id == viewer.family_id
     )

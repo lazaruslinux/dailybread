@@ -262,7 +262,7 @@ def test_attendees_ship_shaped_by_the_kid_flag(village, owner, other, app):
     assert own_kid["user_id"] == kid_id and own_kid["name"] == "Kenny B"
 
     # Opting the kid in changes what crosses the wall.
-    assert other.put("/villages/kid-avatar", json={"user_id": kid_id, "shared": True}).status_code == 204
+    assert other.put("/villages/kid-avatars", json={"shared": True}).status_code == 204
     ev = next(e for e in events(owner) if e["event_id"] == out["event_id"])
     kid_row = next(a for a in ev["rsvps"][0]["attendees"] if a["is_minor"])
     assert kid_row["user_id"] == kid_id and kid_row["name"] == "Kenny"
@@ -270,15 +270,14 @@ def test_attendees_ship_shaped_by_the_kid_flag(village, owner, other, app):
 
 
 def test_kid_avatar_toggle_guards(village, owner, other, child):
-    kid_id = user_id(child)  # owner's family kid
-    # another family's kid 404s
-    assert other.put("/villages/kid-avatar", json={"user_id": kid_id, "shared": True}).status_code == 404
-    # a parent target 404s (flag is for minors)
-    assert owner.put("/villages/kid-avatar", json={"user_id": user_id(owner), "shared": True}).status_code == 404
-    # kids can't flip anything
-    assert child.put("/villages/kid-avatar", json={"user_id": kid_id, "shared": True}).status_code == 403
-    # own kid works
-    assert owner.put("/villages/kid-avatar", json={"user_id": kid_id, "shared": True}).status_code == 204
+    # kids can't flip the family switch
+    assert child.put("/villages/kid-avatars", json={"shared": True}).status_code == 403
+    # a parent flips their own household's switch
+    assert owner.put("/villages/kid-avatars", json={"shared": True}).status_code == 204
+    # and it's family-scoped: flipping OURS never opens the OTHER family's kids
+    # (the shaped-attendees test pins the cross-family payload)
+    assert owner.get("/families/me").json()["share_kid_avatars"] is True
+    assert other.get("/families/me").json()["share_kid_avatars"] is False
 
 
 def test_avatar_route_respects_the_kid_wall(village, owner, other, child, app, monkeypatch, tmp_path):
@@ -303,8 +302,8 @@ def test_avatar_route_respects_the_kid_wall(village, owner, other, child, app, m
 
     # cross-family: sealed by default
     assert other.get(f"/users/{kid_id}/avatar").status_code == 404
-    # opted in: crosses the village wall
-    assert owner.put("/villages/kid-avatar", json={"user_id": kid_id, "shared": True}).status_code == 204
+    # opted in (family-wide switch): crosses the village wall
+    assert owner.put("/villages/kid-avatars", json={"shared": True}).status_code == 204
     assert other.get(f"/users/{kid_id}/avatar").status_code == 200
     # own family always could
     assert owner.get(f"/users/{kid_id}/avatar").status_code == 200

@@ -752,14 +752,15 @@ def _get_event(db: Session, event_id: int, viewer_family: int) -> VillageEvent:
     return event
 
 
-def _attendee_out(member: User, viewer_family: int) -> AttendeeOut:
+def _attendee_out(member: User, viewer_family: int, kids_shared: bool) -> AttendeeOut:
     """How one attendee crosses the wall. Parents go whole (name + face); a
-    kid goes as a bare initial unless their family opted them in. The
-    viewer's own family always sees its own members in full — the picker
-    needs real faces."""
+    kid goes as a bare initial unless their FAMILY opted its kids in
+    (share_kid_avatars — one switch covers every kid). The viewer's own
+    family always sees its own members in full — the picker needs real
+    faces."""
     first = member.display_name.split()[0]
     own = member.family_id == viewer_family
-    if member.role == Role.parent or own or member.village_avatar:
+    if member.role == Role.parent or own or kids_shared:
         return AttendeeOut(
             user_id=member.id,
             name=member.display_name if (member.role == Role.parent or own) else first,
@@ -813,6 +814,21 @@ def _events_out(
     attendees_by_rsvp: dict[int, list[User]] = {}
     for rsvp_id, member in attendee_rows:
         attendees_by_rsvp.setdefault(rsvp_id, []).append(member)
+    # Which attendee families share their kids' faces (one query, one switch
+    # per family covering every kid).
+    attendee_family_ids = {m.family_id for _, m in attendee_rows if m.family_id}
+    kids_shared_by_family = (
+        {
+            fid: shared
+            for fid, shared in db.execute(
+                select(Family.id, Family.share_kid_avatars).where(
+                    Family.id.in_(attendee_family_ids)
+                )
+            )
+        }
+        if attendee_family_ids
+        else {}
+    )
 
     my_copy_by_event = {
         ve_id: item_id
@@ -869,7 +885,11 @@ def _events_out(
                     status=rsvp.status,
                     set_by=first_names.get(rsvp.set_by_id),
                     attendees=[
-                        _attendee_out(m, viewer.family_id)
+                        _attendee_out(
+                            m,
+                            viewer.family_id,
+                            kids_shared_by_family.get(m.family_id, False),
+                        )
                         for m in attendees_by_rsvp.get(rsvp.id, [])
                     ],
                 )
@@ -1096,17 +1116,16 @@ def unshare_event(
     )
 
 
-@router.put("/kid-avatar", status_code=status.HTTP_204_NO_CONTENT)
-def set_kid_avatar(
+@router.put("/kid-avatars", status_code=status.HTTP_204_NO_CONTENT)
+def set_kid_avatars(
     data: KidAvatarIn,
     db: Session = Depends(get_db),
     parent: User = Depends(require_parent),
 ):
-    """Parent-controlled: show this kid's photo (and first name) to the
-    family's villages. Off, the default, means other families only ever see
-    a first-initial circle."""
-    target = db.get(User, data.user_id)
-    if target is None or target.family_id != parent.family_id or not target.is_minor:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such kid")
-    target.village_avatar = data.shared
+    """Parent-controlled, one switch for the whole household: show OUR KIDS'
+    photos (and first names) to the family's villages — every kid, present
+    and future. Off, the default, means other families only ever see a
+    first-initial circle per kid."""
+    family = db.get(Family, parent.family_id)
+    family.share_kid_avatars = data.shared
     db.commit()

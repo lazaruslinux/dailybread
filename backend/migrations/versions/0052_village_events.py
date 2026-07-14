@@ -5,8 +5,8 @@ village_events points at the organizer's own Item (the VillageRecipe pattern);
 village_event_rsvps holds one changeable answer per (event, family); the
 attendee rows name who from that family is coming. items.village_event_id
 marks a MATERIALIZED COPY on an attendee family's board — ondelete CASCADE so
-a dead event takes its copies with it. users.village_avatar is the parent-
-controlled "show this kid's photo to our villages" opt-in; items.location is
+a dead event takes its copies with it. families.share_kid_avatars is the
+parent-controlled "show our kids' photos to our villages" opt-in; items.location is
 a general-purpose place field.
 
 Revision ID: 0052
@@ -107,8 +107,8 @@ def upgrade() -> None:
     )
 
     op.add_column(
-        "users",
-        sa.Column("village_avatar", sa.Boolean(), nullable=False, server_default=sa.false()),
+        "families",
+        sa.Column("share_kid_avatars", sa.Boolean(), nullable=False, server_default=sa.false()),
     )
     op.add_column("items", sa.Column("location", sa.String(length=120), nullable=True))
     op.add_column(
@@ -127,7 +127,7 @@ def downgrade() -> None:
     op.drop_index("ix_items_village_event_id", table_name="items")
     op.drop_column("items", "village_event_id")
     op.drop_column("items", "location")
-    op.drop_column("users", "village_avatar")
+    op.drop_column("families", "share_kid_avatars")
     op.drop_index("ix_village_event_attendees_rsvp_id", table_name="village_event_attendees")
     op.drop_table("village_event_attendees")
     op.drop_index("ix_village_event_rsvps_family_id", table_name="village_event_rsvps")

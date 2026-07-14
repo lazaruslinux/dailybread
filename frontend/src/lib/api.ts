@@ -350,6 +350,8 @@ export interface Family {
   name: string
   // IANA zone driving reminders and digests; null = the server's own clock.
   timezone: string | null
+  // Family-wide: whether the kids' photos/names cross to villages.
+  share_kid_avatars?: boolean
 }
 
 // The zone this browser lives in, sent by the signup wizards so a family's
@@ -1526,8 +1528,8 @@ export const setRsvp = (eventId: number, status: RsvpStatus, attendeeIds: number
 export const clearRsvp = (eventId: number) =>
   request<void>(`/villages/events/${eventId}/rsvp`, { method: 'DELETE' })
 
-export const setKidAvatar = (userId: number, shared: boolean) =>
-  request<void>('/villages/kid-avatar', {
+export const setKidAvatarSharing = (shared: boolean) =>
+  request<void>('/villages/kid-avatars', {
     method: 'PUT',
-    body: JSON.stringify({ user_id: userId, shared }),
+    body: JSON.stringify({ shared }),
   })

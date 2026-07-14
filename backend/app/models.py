@@ -46,6 +46,14 @@ class Family(Base):
     # (see app.clock), which is right whenever everyone lives where the
     # server does.
     timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Parent-controlled, family-wide: show OUR KIDS' photos (and first names)
+    # to the family's villages — event attendee lists and the avatar route's
+    # village crack. Off (the default) means other families only ever see a
+    # bare first-initial circle per kid, no name, no photo. One switch for
+    # all kids, present and future; parents' faces always cross the wall.
+    share_kid_avatars: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
@@ -297,14 +305,6 @@ class User(Base):
     # to village members. Replaced share_verse_streak when streak numbers
     # folded into the breadcrumb economy; family always sees the level.
     share_level: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default="false"
-    )
-    # Parent-controlled, meaningful on MINORS: show this kid's photo (and
-    # first name) to the family's villages — on event attendee lists and the
-    # avatar route's village crack. Off (the default) means other families see
-    # only a bare first-initial circle, no name, no photo, ever. Parents'
-    # faces already cross the wall; this flag is ignored for them.
-    village_avatar: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
     # Opt-in: the watch's WORKOUT calories raise the day's food budget — only

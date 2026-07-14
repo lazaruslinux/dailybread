@@ -60,9 +60,6 @@ class UserOut(BaseModel):
     village_presence: bool = False
     # Whether this member shares their level/crumbs with villages.
     share_level: bool = False
-    # Minors only: whether the parents show this kid's photo/name to villages.
-    village_avatar: bool = False
-
     # Let Pydantic read attributes off a SQLAlchemy User object directly.
     model_config = {"from_attributes": True}
 
@@ -111,6 +108,8 @@ class FamilyOut(BaseModel):
     id: int
     name: str
     timezone: str | None
+    # Family-wide: whether the kids' photos/names cross to villages.
+    share_kid_avatars: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -1293,14 +1292,13 @@ class RsvpIn(BaseModel):
 
 
 class KidAvatarIn(BaseModel):
-    user_id: int
     shared: bool
 
 
 class AttendeeOut(BaseModel):
     """One attending member AS THE VIEWER MAY SEE THEM. Parents cross the
     wall with full name and face. A kid crosses only as a bare initial unless
-    their family opted them in (village_avatar) — for unshared kids user_id
+    their family opted its kids in (share_kid_avatars) — for unshared kids user_id
     and name are None and no avatar exists to fetch. A family always gets
     full detail of its own members."""
 
