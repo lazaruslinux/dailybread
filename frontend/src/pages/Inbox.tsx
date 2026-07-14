@@ -4,6 +4,9 @@ import {
   CalendarCheck,
   Dumbbell,
   Hourglass,
+  Mailbox,
+  Trees,
+  Users,
   Utensils,
   type LucideIcon,
 } from 'lucide-react'
@@ -23,6 +26,9 @@ const KIND_ICON: Record<string, { Icon: LucideIcon; tint: string }> = {
   workout: { Icon: Dumbbell, tint: 'text-fg/60' },
   pending: { Icon: Hourglass, tint: 'text-amber-400' },
   approved: { Icon: BadgeCheck, tint: 'text-gold' },
+  invite: { Icon: Mailbox, tint: 'text-accent-bright' },
+  rsvp: { Icon: Users, tint: 'text-fg/60' },
+  village: { Icon: Trees, tint: 'text-accent-bright' },
 }
 
 // "Just now" through short dates: enough to place a row without a timestamp

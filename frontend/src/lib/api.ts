@@ -85,6 +85,8 @@ export interface User {
   village_presence: boolean
   // Sharing level/crumbs with villages?
   share_level: boolean
+  // Minors only: parents opted this kid's photo/name into the villages.
+  village_avatar?: boolean
 }
 
 export interface SetupState {
@@ -533,6 +535,9 @@ export interface FeedItem {
   end_time: string | null // end / "To", "HH:MM:SS"
   all_day: boolean // all-day appointment
   date_for: string | null // "YYYY-MM-DD"
+  location?: string | null // where it happens (activities/appointments)
+  // Set on a materialized village-event copy: organizer-managed, no local edit.
+  village_event_id?: number | null
   repeat: Repeat | null // routines only
   // Routines only: this routine checks itself off from a synced workout.
   workout_auto_complete: boolean
@@ -589,6 +594,7 @@ export interface ItemPayload {
   repeat?: RepeatInput | null // required for routines, ignored otherwise
   // Routines only: a synced workout checks the routine off for that member.
   workout_auto_complete?: boolean
+  location?: string | null
   shared_to_feed?: boolean
 }
 
@@ -1448,3 +1454,77 @@ export const leaveVillage = (villageId: number) =>
 // Founding family only: dissolves the village for everyone.
 export const deleteVillage = (villageId: number) =>
   request<void>(`/villages/${villageId}`, { method: 'DELETE' })
+
+// ---- village events ------------------------------------------------------------
+
+export type RsvpStatus = 'going' | 'maybe' | 'cant'
+
+// One attending member AS THE SERVER LETS THIS FAMILY SEE THEM: parents whole,
+// kids as a bare initial unless their family opted them in (then user_id and
+// name arrive and an avatar may be fetched). Own-family members always whole.
+export interface EventAttendee {
+  user_id: number | null
+  name: string | null
+  initial: string
+  is_minor: boolean
+  avatar: boolean
+  avatar_updated_at: string | null
+}
+
+export interface VillageEventRsvp {
+  family_id: number
+  family_name: string
+  status: RsvpStatus
+  set_by: string | null
+  attendees: EventAttendee[]
+}
+
+export interface VillageEvent {
+  event_id: number
+  village_id: number
+  village_name: string
+  item_id: number
+  my_item_id: number | null // this family's board copy, when going
+  is_own: boolean
+  organizer_family_id: number
+  organizer_family_name: string
+  shared_by: string | null
+  kind: ItemKind
+  title: string
+  notes: string
+  location: string | null
+  date_for: string
+  time_of_day: string | null // already on this family's clock
+  end_time: string | null
+  all_day: boolean
+  cancelled: boolean
+  my_rsvp: RsvpStatus | null
+  rsvps: VillageEventRsvp[]
+  created_at: string
+}
+
+export const villageEvents = () => request<VillageEvent[]>('/villages/events')
+
+export const shareEvent = (villageId: number, itemId: number) =>
+  request<VillageEvent>(`/villages/${villageId}/events`, {
+    method: 'POST',
+    body: JSON.stringify({ item_id: itemId }),
+  })
+
+export const unshareEvent = (eventId: number) =>
+  request<void>(`/villages/events/${eventId}`, { method: 'DELETE' })
+
+export const setRsvp = (eventId: number, status: RsvpStatus, attendeeIds: number[]) =>
+  request<VillageEvent>(`/villages/events/${eventId}/rsvp`, {
+    method: 'PUT',
+    body: JSON.stringify({ status, attendee_ids: attendeeIds }),
+  })
+
+export const clearRsvp = (eventId: number) =>
+  request<void>(`/villages/events/${eventId}/rsvp`, { method: 'DELETE' })
+
+export const setKidAvatar = (userId: number, shared: boolean) =>
+  request<void>('/villages/kid-avatar', {
+    method: 'PUT',
+    body: JSON.stringify({ user_id: userId, shared }),
+  })

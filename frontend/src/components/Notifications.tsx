@@ -89,6 +89,16 @@ const PREF_GROUPS: {
     ],
   },
   {
+    name: 'Village',
+    rows: [
+      {
+        kind: 'village',
+        label: 'Village Events',
+        hint: 'Invites, RSVPs, and changes from linked families',
+      },
+    ],
+  },
+  {
     name: 'Health & habits',
     rows: [
       {

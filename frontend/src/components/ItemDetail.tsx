@@ -1,7 +1,14 @@
 import { motion } from 'framer-motion'
-import { Ban, Check, Flame, Hourglass, Pencil, Trash2, Undo2, X } from 'lucide-react'
+import { Ban, Check, Flame, Hourglass, MapPin, Pencil, Trash2, Undo2, X } from 'lucide-react'
 import { useState } from 'react'
-import { avatarUrl, type FamilyMember, type FeedItem, type Repeat, type User } from '../lib/api'
+import {
+  avatarUrl,
+  type FamilyMember,
+  type FeedItem,
+  type Repeat,
+  type User,
+  type VillageEvent,
+} from '../lib/api'
 import { formatTime } from '../lib/moods'
 import { Avatar } from './Avatar'
 import { KIND_STYLE } from './ItemCard'
@@ -54,6 +61,9 @@ export function ItemDetail({
   onDelete,
   onCancel,
   onClose,
+  villageEvent,
+  onChangeRsvp,
+  onShareVillage,
 }: {
   item: FeedItem
   canCheck: boolean
@@ -67,6 +77,14 @@ export function ItemDetail({
   // pretending it was done.
   onCancel?: () => Promise<void>
   onClose: () => void
+  // Set when this card is a materialized village-event copy: the matched
+  // event carries the organizer and RSVP picture; the card itself is
+  // organizer-managed (Home passes no edit/delete/cancel handlers).
+  villageEvent?: VillageEvent | null
+  onChangeRsvp?: () => void
+  // Set when this card could be offered to a village (parent, own dated
+  // activity/appointment, non-recurring). Home decides; this just renders.
+  onShareVillage?: () => void
 }) {
   const { Icon, tint, label: kindLabel } = KIND_STYLE[item.kind]
   const label = item.cancelled ? `${kindLabel} · Cancelled` : kindLabel
@@ -190,7 +208,40 @@ export function ItemDetail({
               {formatDate(item.date_for)}
             </div>
           )}
+          {item.location && (
+            <div className="flex items-center gap-2">
+              <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-fg/40">
+                Where
+              </span>
+              <a
+                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.location)}`}
+                target="_blank"
+                rel="noopener"
+                className="flex min-h-11 items-center gap-1 py-1 font-semibold text-accent-bright underline decoration-accent-bright/40 underline-offset-2"
+              >
+                <MapPin className="h-3.5 w-3.5 shrink-0" /> {item.location}
+              </a>
+            </div>
+          )}
+          {villageEvent && (
+            <div className="flex items-center gap-2">
+              <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-fg/40">
+                From
+              </span>
+              {villageEvent.organizer_family_name} · {villageEvent.village_name}
+            </div>
+          )}
         </div>
+
+        {villageEvent && onChangeRsvp && (
+          <button
+            type="button"
+            onClick={onChangeRsvp}
+            className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 text-sm font-semibold text-fg/80 transition-colors hover:bg-fg/10"
+          >
+            {villageEvent.is_own ? "See who's going" : "See who's going · Change RSVP"}
+          </button>
+        )}
 
         {isRoutine && item.assignee_completions && (
           <div className="mt-6">
@@ -337,6 +388,16 @@ export function ItemDetail({
           {onEdit && !item.cancelled && (
             <Button type="button" variant="ghost" onClick={onEdit} className="flex items-center justify-center gap-1.5">
               <Pencil className="h-4 w-4" /> Edit card
+            </Button>
+          )}
+          {onShareVillage && !item.cancelled && (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={onShareVillage}
+              className="flex items-center justify-center gap-1.5"
+            >
+              Share with the village
             </Button>
           )}
           {onCancel && (

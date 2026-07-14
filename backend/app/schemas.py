@@ -15,6 +15,7 @@ from app.models import (
     MoodLevel,
     RepeatType,
     Role,
+    RsvpStatus,
     Sex,
     TargetMode,
     Visibility,
@@ -59,6 +60,8 @@ class UserOut(BaseModel):
     village_presence: bool = False
     # Whether this member shares their level/crumbs with villages.
     share_level: bool = False
+    # Minors only: whether the parents show this kid's photo/name to villages.
+    village_avatar: bool = False
 
     # Let Pydantic read attributes off a SQLAlchemy User object directly.
     model_config = {"from_attributes": True}
@@ -202,6 +205,8 @@ class ItemIn(BaseModel):
     repeat: RepeatIn | None = None  # required for routines, forbidden otherwise
     # Routines only: a synced workout checks this routine off for that member.
     workout_auto_complete: bool = False
+    # Where it happens, free text. Offered on activities and appointments.
+    location: str | None = Field(default=None, max_length=120)
     # Future cross-household feed (Phase E). None follows the kind default.
     shared_to_feed: bool | None = None
 
@@ -224,6 +229,7 @@ class ItemUpdate(BaseModel):
     date_for: dt.date | None = None
     repeat: RepeatIn | None = None
     workout_auto_complete: bool | None = None
+    location: str | None = Field(default=None, max_length=120)
     shared_to_feed: bool | None = None
 
 
@@ -255,6 +261,11 @@ class FeedItemOut(BaseModel):
     end_time: dt.time | None  # end / "To"
     all_day: bool
     date_for: dt.date | None
+    # Where it happens (activities/appointments mostly; free text).
+    location: str | None = None
+    # Set on a materialized village-event copy: the card is organizer-managed
+    # (no local edit) and the detail sheet swaps in event attribution + RSVP.
+    village_event_id: int | None = None
     repeat: RepeatOut | None  # anything recurring (routines, repeating appointments)
     # Routines only: this routine checks itself off from a synced workout.
     workout_auto_complete: bool = False
@@ -1262,6 +1273,75 @@ class VillageCreatedOut(VillageOut):
 class VillageInviteOut(BaseModel):
     invite_code: str
     invite_expires_at: dt.datetime
+
+
+# ---- village events -------------------------------------------------------------
+
+
+class ShareEventIn(BaseModel):
+    item_id: int
+
+
+class RsvpIn(BaseModel):
+    status: RsvpStatus
+    # Who from the answering family is coming. Required non-empty for going;
+    # ignored (and cleared) for maybe/can't.
+    attendee_ids: list[int] = Field(default_factory=list)
+
+
+class KidAvatarIn(BaseModel):
+    user_id: int
+    shared: bool
+
+
+class AttendeeOut(BaseModel):
+    """One attending member AS THE VIEWER MAY SEE THEM. Parents cross the
+    wall with full name and face. A kid crosses only as a bare initial unless
+    their family opted them in (village_avatar) — for unshared kids user_id
+    and name are None and no avatar exists to fetch. A family always gets
+    full detail of its own members."""
+
+    user_id: int | None
+    name: str | None
+    initial: str
+    is_minor: bool
+    avatar: bool  # the client may build an avatar URL (user_id present too)
+    avatar_updated_at: dt.datetime | None = None
+
+
+class VillageEventRsvpOut(BaseModel):
+    family_id: int
+    family_name: str
+    status: RsvpStatus
+    set_by: str | None  # first name of the parent who answered
+    attendees: list[AttendeeOut] = Field(default_factory=list)
+
+
+class VillageEventOut(BaseModel):
+    """One shared event as the viewer's family sees it: schedule already on
+    the viewer's clock, RSVP list shaped by each kid's privacy flag."""
+
+    event_id: int
+    village_id: int
+    village_name: str
+    item_id: int  # the organizer's source card (organizer family only edits)
+    my_item_id: int | None  # the viewer family's materialized copy, when going
+    is_own: bool
+    organizer_family_id: int
+    organizer_family_name: str
+    shared_by: str | None
+    kind: ItemKind
+    title: str
+    notes: str
+    location: str | None
+    date_for: dt.date
+    time_of_day: dt.time | None
+    end_time: dt.time | None
+    all_day: bool
+    cancelled: bool
+    my_rsvp: RsvpStatus | None
+    rsvps: list[VillageEventRsvpOut]
+    created_at: dt.datetime
 
 
 # ---- web push -----------------------------------------------------------------

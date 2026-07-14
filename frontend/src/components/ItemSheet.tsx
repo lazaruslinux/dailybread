@@ -95,6 +95,7 @@ export function ItemSheet({
   const [endTime, setEndTime] = useState(item?.end_time?.slice(0, 5) ?? '')
   const [allDay, setAllDay] = useState(item?.all_day ?? false)
   const [date, setDate] = useState(item?.date_for ?? defaultDate ?? '')
+  const [location, setLocation] = useState(item?.location ?? '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -147,6 +148,7 @@ export function ItemSheet({
       date_for: recurs ? null : date || null,
       repeat,
       workout_auto_complete: isRoutine ? workoutAuto : false,
+      location: isEvent ? location.trim() || null : null,
     }
     try {
       if (creating) await api.createItem(payload)
@@ -454,6 +456,14 @@ export function ItemSheet({
               {!allDayAppt && Boolean(time) && Boolean(endTime) && endTime <= time && (
                 <p className="text-danger text-xs">End time must be after the start.</p>
               )}
+              <Field
+                label="Where (optional)"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                onClear={() => setLocation('')}
+                maxLength={120}
+                placeholder="Riverside Park"
+              />
             </div>
           )}
 

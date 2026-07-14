@@ -16,38 +16,53 @@ same 404, and guesses are throttled like failed logins, so probing reveals
 nothing about which villages exist.
 """
 import datetime as dt
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app import throttle
+from app import inbox, push, throttle, village_events
+from app.clock import family_now, shift_schedule
 from app.invitecodes import hash_code, mint_code, normalize, pretty, still_valid
 from app.db import get_db
 from app.deps import require_admin, require_adult, require_family, require_parent
 from app.models import (
+    Completion,
     Family,
     Food,
     FoodServing,
     FoodSource,
+    Item,
+    ItemKind,
     Recipe,
     RecipeIngredient,
     Role,
+    RsvpStatus,
     User,
     Village,
+    VillageEvent,
+    VillageEventAttendee,
+    VillageEventRsvp,
     VillageFamily,
     VillageRecipe,
 )
 from app.schemas import (
     FOOD_NUTRIENTS,
+    AttendeeOut,
+    KidAvatarIn,
     MoodOut,
     RecipeOut,
+    RsvpIn,
+    ShareEventIn,
     SharedIngredientOut,
     SharedRecipeDetailOut,
     SharedRecipeOut,
     ShareRecipeIn,
     VillageCheckOut,
     VillageCreatedOut,
+    VillageEventOut,
+    VillageEventRsvpOut,
     VillageFamilyOut,
     VillageIn,
     VillageInviteOut,
@@ -55,6 +70,8 @@ from app.schemas import (
     VillageOut,
     VillageParentOut,
 )
+
+log = logging.getLogger("dailybread.villages")
 
 router = APIRouter(prefix="/villages", tags=["villages"])
 
@@ -328,8 +345,23 @@ def delete_village(
         raise HTTPException(
             status.HTTP_403_FORBIDDEN, "Only the founding family can delete the village"
         )
-    db.delete(village)  # memberships and shelf rows cascade away
+    # Shared events die with the village; the going families' board copies
+    # must go EXPLICITLY (SQLite tests run without the use_alter FK), and
+    # their adults hear why. Collect before anything disappears.
+    event_ids = list(
+        db.scalars(select(VillageEvent.id).where(VillageEvent.village_id == village.id))
+    )
+    recipients = [
+        u for u in village_events.going_adults(db, event_ids)
+        if u.family_id != admin.family_id
+    ]
+    village_events.delete_copies(db, event_ids)
+    db.delete(village)  # memberships, shelf rows, and event rows cascade away
     db.commit()
+    _notify_village(
+        db, recipients, "village", f"{village.name} was closed",
+        "Its shared events came off your board", f"village-gone-{village_id}",
+    )
 
 
 @router.delete("/{village_id}/membership", status_code=status.HTTP_204_NO_CONTENT)
@@ -342,6 +374,49 @@ def leave_village(
     copies in other kitchens are independent rows and survive). The last
     family out turns off the lights — the village row is deleted."""
     village = _member_village(db, village_id, admin.family_id)
+    # Hosted events go with the leaving family (their going guests hear why);
+    # the family's own RSVPs and board copies of OTHERS' events go too.
+    hosted_ids = list(
+        db.scalars(
+            select(VillageEvent.id).where(
+                VillageEvent.village_id == village.id,
+                VillageEvent.family_id == admin.family_id,
+            )
+        )
+    )
+    recipients = [
+        u for u in village_events.going_adults(db, hosted_ids)
+        if u.family_id != admin.family_id
+    ]
+    hosted_titles = ", ".join(
+        db.scalars(
+            select(Item.title)
+            .join(VillageEvent, VillageEvent.item_id == Item.id)
+            .where(VillageEvent.id.in_(hosted_ids))
+        )
+    ) if hosted_ids else ""
+    village_events.delete_copies(db, hosted_ids)
+    for event in db.scalars(
+        select(VillageEvent).where(VillageEvent.id.in_(hosted_ids))
+    ):
+        db.delete(event)
+    all_event_ids = list(
+        db.scalars(select(VillageEvent.id).where(VillageEvent.village_id == village.id))
+    )
+    if all_event_ids:
+        db.execute(
+            delete(VillageEventRsvp).where(
+                VillageEventRsvp.event_id.in_(all_event_ids),
+                VillageEventRsvp.family_id == admin.family_id,
+            )
+        )
+        for copy in db.scalars(
+            select(Item).where(
+                Item.village_event_id.in_(all_event_ids),
+                Item.family_id == admin.family_id,
+            )
+        ):
+            db.delete(copy)
     db.execute(
         delete(VillageRecipe).where(
             VillageRecipe.village_id == village.id,
@@ -362,6 +437,11 @@ def leave_village(
     if remaining == 0:
         db.delete(village)
     db.commit()
+    if recipients:
+        _notify_village(
+            db, recipients, "village", f"Called off: {hosted_titles}",
+            "The organizer's family left the village", f"village-left-{village_id}",
+        )
 
 
 # ---- the recipe shelf ---------------------------------------------------------------
@@ -617,3 +697,416 @@ def save_a_copy(
     db.commit()
     db.refresh(copy)
     return _serialize(copy)
+
+
+# ---- village events -------------------------------------------------------------
+# An activity or appointment offered to the village. The event row is a
+# pointer at the organizer's own card; a family that answers "going" gets an
+# independent copy on its board (app/village_events.py). Every read goes
+# through the same membership gate as the shelf — an outsider 404s.
+
+
+def _notify_village(db: Session, users: list[User], kind: str, title: str, body: str, tag: str) -> None:
+    """Inbox lines first (always), committed on their own, then the push leg
+    gated per-user by the "village" pref. The _push_board_change shape."""
+    if not users:
+        return
+    try:
+        for u in users:
+            inbox.record(db, u.id, u.family_id, kind, title, body)
+        db.commit()
+    except Exception:
+        db.rollback()
+        log.exception("village inbox write failed (the change itself is saved)")
+    if not push.enabled():
+        return
+    try:
+        payload = {"title": title, "body": body, "tag": tag, "url": "/"}
+        for u in users:
+            if push.wants(u, "village"):
+                push.send_to_user(db, u.id, payload)
+    except Exception:
+        log.exception("village push failed (the change itself is saved)")
+
+
+def _village_adults(db: Session, village_id: int, exclude_family: int | None = None) -> list[User]:
+    """Parents across the village's member families (adults == parents; kid
+    mode follows the role)."""
+    q = (
+        select(User)
+        .join(VillageFamily, VillageFamily.family_id == User.family_id)
+        .where(VillageFamily.village_id == village_id, User.role == Role.parent)
+    )
+    if exclude_family is not None:
+        q = q.where(User.family_id != exclude_family)
+    return list(db.scalars(q))
+
+
+def _get_event(db: Session, event_id: int, viewer_family: int) -> VillageEvent:
+    """An event in one of the viewer's villages; anything else 404s."""
+    event = db.get(VillageEvent, event_id)
+    if event is None or event.village_id not in set(
+        db.scalars(_my_village_ids(db, viewer_family))
+    ):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such event")
+    return event
+
+
+def _attendee_out(member: User, viewer_family: int) -> AttendeeOut:
+    """How one attendee crosses the wall. Parents go whole (name + face); a
+    kid goes as a bare initial unless their family opted them in. The
+    viewer's own family always sees its own members in full — the picker
+    needs real faces."""
+    first = member.display_name.split()[0]
+    own = member.family_id == viewer_family
+    if member.role == Role.parent or own or member.village_avatar:
+        return AttendeeOut(
+            user_id=member.id,
+            name=member.display_name if (member.role == Role.parent or own) else first,
+            initial=first[:1].upper(),
+            is_minor=member.is_minor,
+            avatar=True,
+            avatar_updated_at=member.avatar_updated_at,
+        )
+    return AttendeeOut(
+        user_id=None, name=None, initial=first[:1].upper(), is_minor=True, avatar=False
+    )
+
+
+def _events_out(
+    db: Session, viewer: User, only_event_ids: list[int] | None = None
+) -> list[VillageEventOut]:
+    """Every upcoming event across the viewer's villages (or just the given
+    ids), schedule on the viewer family's clock, attendee lists shaped by
+    each kid's privacy flag. A fixed handful of queries however many events."""
+    viewer_family = db.get(Family, viewer.family_id)
+    q = (
+        select(VillageEvent, Item, Village.name, Family)
+        .join(Item, VillageEvent.item_id == Item.id)
+        .join(Village, VillageEvent.village_id == Village.id)
+        .join(Family, VillageEvent.family_id == Family.id)
+        .where(VillageEvent.village_id.in_(_my_village_ids(db, viewer.family_id)))
+    )
+    if only_event_ids is not None:
+        q = q.where(VillageEvent.id.in_(only_event_ids))
+    rows = db.execute(q).all()
+    if not rows:
+        return []
+    event_ids = [e.id for e, _, _, _ in rows]
+    item_ids = [i.id for _, i, _, _ in rows]
+
+    rsvp_rows = db.execute(
+        select(VillageEventRsvp, Family.name)
+        .join(Family, VillageEventRsvp.family_id == Family.id)
+        .where(VillageEventRsvp.event_id.in_(event_ids))
+    ).all()
+    rsvp_ids = [r.id for r, _ in rsvp_rows]
+    attendee_rows = (
+        db.execute(
+            select(VillageEventAttendee.rsvp_id, User)
+            .join(User, VillageEventAttendee.user_id == User.id)
+            .where(VillageEventAttendee.rsvp_id.in_(rsvp_ids))
+        ).all()
+        if rsvp_ids
+        else []
+    )
+    attendees_by_rsvp: dict[int, list[User]] = {}
+    for rsvp_id, member in attendee_rows:
+        attendees_by_rsvp.setdefault(rsvp_id, []).append(member)
+
+    my_copy_by_event = {
+        ve_id: item_id
+        for ve_id, item_id in db.execute(
+            select(Item.village_event_id, Item.id).where(
+                Item.village_event_id.in_(event_ids),
+                Item.family_id == viewer.family_id,
+            )
+        )
+    }
+    cancelled_items = set(
+        db.scalars(
+            select(Completion.item_id).where(
+                Completion.item_id.in_(item_ids), Completion.cancelled.is_(True)
+            )
+        )
+    )
+    name_ids = {e.shared_by_id for e, _, _, _ in rows if e.shared_by_id} | {
+        r.set_by_id for r, _ in rsvp_rows if r.set_by_id
+    }
+    first_names = (
+        {
+            u.id: u.display_name.split()[0]
+            for u in db.scalars(select(User).where(User.id.in_(name_ids)))
+        }
+        if name_ids
+        else {}
+    )
+
+    out: list[VillageEventOut] = []
+    today_here = family_now(dt.datetime.now(), viewer_family.timezone).date()
+    for event, item, village_name, organizer_family in rows:
+        date_for, start, end = shift_schedule(
+            item.date_for,
+            item.time_of_day,
+            item.end_time,
+            item.all_day,
+            organizer_family.timezone,
+            viewer_family.timezone,
+        )
+        if only_event_ids is None and date_for < today_here:
+            continue
+        rsvps = []
+        my_rsvp = None
+        for rsvp, family_name in rsvp_rows:
+            if rsvp.event_id != event.id:
+                continue
+            if rsvp.family_id == viewer.family_id:
+                my_rsvp = rsvp.status
+            rsvps.append(
+                VillageEventRsvpOut(
+                    family_id=rsvp.family_id,
+                    family_name=family_name,
+                    status=rsvp.status,
+                    set_by=first_names.get(rsvp.set_by_id),
+                    attendees=[
+                        _attendee_out(m, viewer.family_id)
+                        for m in attendees_by_rsvp.get(rsvp.id, [])
+                    ],
+                )
+            )
+        out.append(
+            VillageEventOut(
+                event_id=event.id,
+                village_id=event.village_id,
+                village_name=village_name,
+                item_id=item.id,
+                my_item_id=my_copy_by_event.get(event.id),
+                is_own=event.family_id == viewer.family_id,
+                organizer_family_id=event.family_id,
+                organizer_family_name=organizer_family.name,
+                shared_by=first_names.get(event.shared_by_id),
+                kind=item.kind,
+                title=item.title,
+                notes=item.notes,
+                location=item.location,
+                date_for=date_for,
+                time_of_day=start,
+                end_time=end,
+                all_day=item.all_day,
+                cancelled=item.id in cancelled_items,
+                my_rsvp=my_rsvp,
+                rsvps=rsvps,
+                created_at=event.created_at,
+            )
+        )
+    out.sort(key=lambda e: (e.date_for, e.time_of_day is not None, e.time_of_day or dt.time.min, e.title))
+    return out
+
+
+@router.get("/events", response_model=list[VillageEventOut])
+def list_events(db: Session = Depends(get_db), user: User = Depends(require_adult)):
+    """Upcoming shared events across the member's villages. Adults only, the
+    roster rule: the RSVP lists carry other households' names."""
+    return _events_out(db, user)
+
+
+@router.post("/{village_id}/events", response_model=VillageEventOut, status_code=status.HTTP_201_CREATED)
+def share_event(
+    village_id: int,
+    data: ShareEventIn,
+    db: Session = Depends(get_db),
+    parent: User = Depends(require_parent),
+):
+    """Offer one of the family's own dated activities/appointments to a
+    village. The card itself stays the family's; the event row is a pointer."""
+    village = _member_village(db, village_id, parent.family_id)
+    item = db.scalar(
+        select(Item).where(Item.id == data.item_id, Item.family_id == parent.family_id)
+    )
+    if item is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such card")
+    if item.kind not in (ItemKind.activity, ItemKind.appointment):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Only activities and appointments can be shared"
+        )
+    if item.village_event_id is not None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "That card came from a village event")
+    if item.date_for is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Give it a date first")
+    if item.repeat_type is not None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Repeating cards can't be shared")
+    if db.scalar(
+        select(VillageEvent).where(
+            VillageEvent.village_id == village.id, VillageEvent.item_id == item.id
+        )
+    ):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Already shared with this village")
+
+    event = VillageEvent(
+        village_id=village.id,
+        item_id=item.id,
+        family_id=parent.family_id,
+        shared_by_id=parent.id,
+    )
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+
+    from app.routers.items import _schedule_text
+
+    _notify_village(
+        db,
+        _village_adults(db, village.id, exclude_family=parent.family_id),
+        "invite",
+        f"{parent.display_name.split()[0]} invited you: {item.title}",
+        _schedule_text(item) + (f" · {item.location}" if item.location else ""),
+        f"village-invite-{event.id}",
+    )
+    return _events_out(db, parent, [event.id])[0]
+
+
+@router.put("/events/{event_id}/rsvp", response_model=VillageEventOut)
+def set_rsvp(
+    event_id: int,
+    data: RsvpIn,
+    db: Session = Depends(get_db),
+    parent: User = Depends(require_parent),
+):
+    """The family's answer, set or changed by either parent. Going names who
+    is coming and lands the event on the family board; leaving going takes
+    it back off."""
+    event = _get_event(db, event_id, parent.family_id)
+    if event.family_id == parent.family_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "You're hosting this one")
+
+    members = {
+        u.id: u for u in db.scalars(select(User).where(User.family_id == parent.family_id))
+    }
+    attendee_ids = list(dict.fromkeys(data.attendee_ids))
+    if any(uid not in members for uid in attendee_ids):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Attendees must be your own family")
+    if data.status == RsvpStatus.going and not attendee_ids:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Pick who's going")
+
+    rsvp = db.scalar(
+        select(VillageEventRsvp).where(
+            VillageEventRsvp.event_id == event.id,
+            VillageEventRsvp.family_id == parent.family_id,
+        )
+    )
+    was_going = rsvp is not None and rsvp.status == RsvpStatus.going
+    if rsvp is None:
+        rsvp = VillageEventRsvp(
+            event_id=event.id,
+            family_id=parent.family_id,
+            status=data.status,
+            set_by_id=parent.id,
+        )
+        db.add(rsvp)
+    else:
+        rsvp.status = data.status
+        rsvp.set_by_id = parent.id
+        rsvp.updated_at = dt.datetime.now(dt.timezone.utc)
+    db.flush()  # the attendee rows need rsvp.id
+    db.execute(
+        delete(VillageEventAttendee).where(VillageEventAttendee.rsvp_id == rsvp.id)
+    )
+    if data.status == RsvpStatus.going:
+        for uid in attendee_ids:
+            db.add(VillageEventAttendee(rsvp_id=rsvp.id, user_id=uid))
+
+    src = db.get(Item, event.item_id)
+    if data.status == RsvpStatus.going and not was_going:
+        organizer_tz = db.scalar(select(Family.timezone).where(Family.id == event.family_id))
+        village_events.materialize(
+            db, event, src, organizer_tz, db.get(Family, parent.family_id), parent
+        )
+    elif was_going and data.status != RsvpStatus.going:
+        village_events.delete_copies_for_family(db, event.id, parent.family_id)
+    db.commit()
+
+    labels = {RsvpStatus.going: "Going", RsvpStatus.maybe: "Maybe", RsvpStatus.cant: "Can't make it"}
+    label = labels[data.status]
+    if data.status == RsvpStatus.going:
+        label = f"Going · {len(attendee_ids)}"
+    family_name = db.scalar(select(Family.name).where(Family.id == parent.family_id))
+    _notify_village(
+        db,
+        [u for u in db.scalars(select(User).where(User.family_id == event.family_id, User.role == Role.parent))],
+        "rsvp",
+        f"{family_name}: {label}",
+        src.title,
+        f"village-rsvp-{event.id}-{parent.family_id}",
+    )
+    return _events_out(db, parent, [event.id])[0]
+
+
+@router.delete("/events/{event_id}/rsvp", status_code=status.HTTP_204_NO_CONTENT)
+def clear_rsvp(
+    event_id: int,
+    db: Session = Depends(get_db),
+    parent: User = Depends(require_parent),
+):
+    """Withdraw the family's answer entirely (back to un-answered)."""
+    event = _get_event(db, event_id, parent.family_id)
+    rsvp = db.scalar(
+        select(VillageEventRsvp).where(
+            VillageEventRsvp.event_id == event.id,
+            VillageEventRsvp.family_id == parent.family_id,
+        )
+    )
+    if rsvp is None:
+        return
+    was_going = rsvp.status == RsvpStatus.going
+    db.delete(rsvp)  # attendee rows cascade
+    if was_going:
+        village_events.delete_copies_for_family(db, event.id, parent.family_id)
+    db.commit()
+    src = db.get(Item, event.item_id)
+    family_name = db.scalar(select(Family.name).where(Family.id == parent.family_id))
+    _notify_village(
+        db,
+        [u for u in db.scalars(select(User).where(User.family_id == event.family_id, User.role == Role.parent))],
+        "rsvp",
+        f"{family_name} withdrew their RSVP",
+        src.title if src else "",
+        f"village-rsvp-{event.id}-{parent.family_id}",
+    )
+
+
+@router.delete("/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
+def unshare_event(
+    event_id: int,
+    db: Session = Depends(get_db),
+    parent: User = Depends(require_parent),
+):
+    """The organizer takes the event back off the village. Copies leave the
+    going families' boards, with a note about why."""
+    event = _get_event(db, event_id, parent.family_id)
+    if event.family_id != parent.family_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such event")
+    title = db.scalar(select(Item.title).where(Item.id == event.item_id)) or ""
+    recipients = village_events.going_adults(db, [event.id])
+    village_events.delete_copies(db, [event.id])
+    db.delete(event)  # RSVPs and attendee rows cascade
+    db.commit()
+    _notify_village(
+        db, recipients, "village", f"Called off: {title}",
+        "The organizer took it off the village", f"village-off-{event_id}",
+    )
+
+
+@router.put("/kid-avatar", status_code=status.HTTP_204_NO_CONTENT)
+def set_kid_avatar(
+    data: KidAvatarIn,
+    db: Session = Depends(get_db),
+    parent: User = Depends(require_parent),
+):
+    """Parent-controlled: show this kid's photo (and first name) to the
+    family's villages. Off, the default, means other families only ever see
+    a first-initial circle."""
+    target = db.get(User, data.user_id)
+    if target is None or target.family_id != parent.family_id or not target.is_minor:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such kid")
+    target.village_avatar = data.shared
+    db.commit()

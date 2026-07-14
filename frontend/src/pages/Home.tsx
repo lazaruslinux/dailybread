@@ -15,6 +15,7 @@ import { ItemDetail } from '../components/ItemDetail'
 import { ItemSheet } from '../components/ItemSheet'
 import { TonightCard } from '../components/Meals'
 import { VerseCard } from '../components/VerseCard'
+import { ShareEventSheet, VillageEventSheet, VillageStrip } from '../components/VillageEvents'
 import { FormError } from '../components/ui'
 
 // One toggle in the parent's "show cards for" filter row.
@@ -207,6 +208,11 @@ export function Home({
   const [familyName, setFamilyName] = useState<string | null>(null)
   // Kid mode: the family's check-offs waiting on a parent. Parents only.
   const [approvals, setApprovals] = useState<api.PendingApproval[]>([])
+  // Village events: the invite strip + the RSVP sheets. Parents only — kids
+  // never see the strip; a landed copy is just a normal card to them.
+  const [vEvents, setVEvents] = useState<api.VillageEvent[]>([])
+  const [eventSheet, setEventSheet] = useState<api.VillageEvent | null>(null)
+  const [shareSheet, setShareSheet] = useState<api.FeedItem | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [sheet, setSheet] = useState<{ open: boolean; item: api.FeedItem | null }>({ open: false, item: null })
   // checkable rides along so the detail sheet knows whether to offer "Mark done".
@@ -265,6 +271,7 @@ export function Home({
     if (isParent) {
       // Separate so a hiccup here never blanks the board.
       api.getPendingApprovals().then(setApprovals).catch(() => {})
+      api.villageEvents().then(setVEvents).catch(() => {})
     }
   }, [isParent])
 
@@ -637,6 +644,8 @@ export function Home({
         />
       )}
 
+      {isParent && <VillageStrip events={vEvents} onOpen={setEventSheet} />}
+
       <TonightCard onOpenKitchen={onOpenKitchen} />
 
       {/* The board's control bar: List/Timeline swap the view in place (enclosed
@@ -940,30 +949,85 @@ export function Home({
       </AnimatePresence>
 
       <AnimatePresence>
-        {detail && (
-          <ItemDetail
-            item={detail.item}
-            canCheck={detail.checkable}
-            family={family}
-            me={user}
-            onToggle={() => toggle(detail.item)}
-            onToggleFor={(userId, done) => toggleFor(detail.item, userId, done)}
-            onEdit={isParent ? () => openEditor(detail.item) : undefined}
-            onDelete={isParent ? () => deleteFromDetail(detail.item) : undefined}
-            onCancel={
-              isParent && (detail.item.kind === 'appointment' || detail.item.kind === 'activity')
-                ? async () => {
-                    const call = detail.item.cancelled ? api.uncancelItem : api.cancelItem
-                    await call(detail.item.id, api.localDate())
-                    setDetail(null)
-                    refresh()
-                  }
-                : undefined
-            }
-            onClose={() => setDetail(null)}
-          />
-        )}
+        {detail && (() => {
+          // A materialized village-event copy is organizer-managed: no edit,
+          // delete, or cancel here — the RSVP is the family's lever. The
+          // organizer's own source card matches by item_id instead, so they
+          // get the same who's-going picture (their sheet hides RSVP buttons).
+          const managed = detail.item.village_event_id != null
+          const matchedEvent = managed
+            ? vEvents.find((e) => e.my_item_id === detail.item.id) ?? null
+            : vEvents.find((e) => e.is_own && e.item_id === detail.item.id) ?? null
+          const shareable =
+            isParent &&
+            !managed &&
+            (detail.item.kind === 'appointment' || detail.item.kind === 'activity') &&
+            Boolean(detail.item.date_for) &&
+            !detail.item.repeat
+          return (
+            <ItemDetail
+              item={detail.item}
+              canCheck={detail.checkable}
+              family={family}
+              me={user}
+              onToggle={() => toggle(detail.item)}
+              onToggleFor={(userId, done) => toggleFor(detail.item, userId, done)}
+              onEdit={isParent && !managed ? () => openEditor(detail.item) : undefined}
+              onDelete={isParent && !managed ? () => deleteFromDetail(detail.item) : undefined}
+              onCancel={
+                isParent &&
+                !managed &&
+                (detail.item.kind === 'appointment' || detail.item.kind === 'activity')
+                  ? async () => {
+                      const call = detail.item.cancelled ? api.uncancelItem : api.cancelItem
+                      await call(detail.item.id, api.localDate())
+                      setDetail(null)
+                      refresh()
+                    }
+                  : undefined
+              }
+              villageEvent={matchedEvent}
+              onChangeRsvp={
+                matchedEvent
+                  ? () => {
+                      setDetail(null)
+                      setEventSheet(matchedEvent)
+                    }
+                  : undefined
+              }
+              onShareVillage={
+                shareable
+                  ? () => {
+                      const item = detail.item
+                      setDetail(null)
+                      setShareSheet(item)
+                    }
+                  : undefined
+              }
+              onClose={() => setDetail(null)}
+            />
+          )
+        })()}
       </AnimatePresence>
+
+      {eventSheet && (
+        <VillageEventSheet
+          event={eventSheet}
+          family={family}
+          onClose={() => setEventSheet(null)}
+          onChanged={refresh}
+        />
+      )}
+      {shareSheet && (
+        <ShareEventSheet
+          item={shareSheet}
+          onClose={() => setShareSheet(null)}
+          onShared={() => {
+            setShareSheet(null)
+            refresh()
+          }}
+        />
+      )}
 
       <AnimatePresence>
         {sheet.open && (

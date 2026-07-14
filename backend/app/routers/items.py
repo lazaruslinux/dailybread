@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app import crumbs, inbox, push, recurrence
+from app import crumbs, inbox, push, recurrence, village_events
 from app.db import get_db
 from app.deps import require_family, require_parent
 from app.models import (
@@ -79,6 +79,14 @@ def _require_visible(item: Item, user: User) -> None:
     # exist, the same way cross-family ids do.
     if not _visible_to(item, user):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such item")
+
+
+def _require_unmanaged(item: Item) -> None:
+    """A materialized village-event copy is the ORGANIZER's to edit, cancel,
+    or remove; the attendee family's way out is changing their RSVP.
+    Completions are deliberately not gated — attending is checkable."""
+    if item.village_event_id is not None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Managed by the organizer")
 
 
 def _routine_participants(db: Session, item: Item) -> list[User]:
@@ -299,6 +307,8 @@ def _feed_item(
         end_time=item.end_time,
         all_day=item.all_day,
         date_for=item.date_for,
+        location=item.location,
+        village_event_id=item.village_event_id,
         repeat=_repeat_out(item),
         workout_auto_complete=item.workout_auto_complete,
         completed=completed,
@@ -636,6 +646,7 @@ def create_item(
         repeat_anchor=ranchor,
         repeat_month_day=rmonthday,
         workout_auto_complete=data.workout_auto_complete,
+        location=data.location,
     )
     _validate_item(item)
     db.add(item)
@@ -662,8 +673,10 @@ def update_item(
 ):
     item = _get_item(db, item_id, parent.family_id)
     _require_visible(item, parent)
+    _require_unmanaged(item)
     fields = data.model_fields_set  # only touch keys the client actually sent
     before_schedule = tuple(getattr(item, f) for f in _SCHEDULE_FIELDS)
+    before_location = item.location
 
     if "assignee_ids" in fields:
         item.assignees = _resolve_assignees(db, data.assignee_ids or [], parent.family_id)
@@ -704,10 +717,21 @@ def update_item(
         ) = _resolve_repeat(data.repeat)
     if "workout_auto_complete" in fields and data.workout_auto_complete is not None:
         item.workout_auto_complete = data.workout_auto_complete
+    if "location" in fields:
+        item.location = data.location
     if "shared_to_feed" in fields and data.shared_to_feed is not None:
         item.shared_to_feed = data.shared_to_feed
 
     _validate_item(item)
+    # A card offered to a village must stay a shareable shape (dated,
+    # non-repeating): every member family's list and board copies depend on
+    # that date. Reshaping it is a 400 until it's unshared.
+    if (item.repeat_type is not None or item.date_for is None) and village_events.events_on(
+        db, item
+    ):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Unshare it from the village first"
+        )
     rescheduled = tuple(getattr(item, f) for f in _SCHEDULE_FIELDS) != before_schedule
     if rescheduled:
         # A rescheduled card reminds afresh on its new schedule. Its old
@@ -727,6 +751,23 @@ def update_item(
             item.title,
             f"Now {_schedule_text(item)}",
         )
+    # A shared source card drags its village copies along: every copy is
+    # rewritten from the source (schedules reconverted onto each family's
+    # clock), and the going families hear about it only when the WHEN or
+    # WHERE moved — a typo fix in the title syncs silently.
+    try:
+        recipients = village_events.sync_copies(db, item, rescheduled)
+        if recipients:
+            db.commit()
+            if rescheduled or ("location" in fields and item.location != before_location):
+                _notify_event_change(
+                    db, recipients, item,
+                    f"Updated: {item.title}",
+                    _schedule_text(item) + (f" · {item.location}" if item.location else ""),
+                )
+    except Exception:
+        db.rollback()
+        log.exception("village copy sync failed (the edit itself is saved)")
     return _build_feed_item(
         db, item, parent, dt.date.today(), _completions_by_item(db, [item])[item.id]
     )
@@ -740,11 +781,20 @@ def delete_item(
 ):
     item = _get_item(db, item_id, parent.family_id)
     _require_visible(item, parent)
+    _require_unmanaged(item)
     title, kind = item.title, item.kind
     recipients = _board_change_recipients(db, item, parent)
-    db.delete(item)  # completions cascade away with it
+    # A shared source takes its village events and every family's copy with
+    # it. Collect the going families first — the rows are gone after commit.
+    events = village_events.events_on(db, item)
+    going = village_events.going_adults(db, [e.id for e in events]) if events else []
+    if events:
+        village_events.delete_copies(db, [e.id for e in events])
+    db.delete(item)  # completions cascade away with it; village_events rows too
     db.commit()
     _push_board_change(db, recipients, parent.display_name.split()[0], "removed", kind, title)
+    if going:
+        _notify_event_change(db, going, item, f"Called off: {title}", "The organizer removed it")
 
 
 # ---- cancelling (appointments and activities) -----------------------------------
@@ -774,6 +824,7 @@ def cancel_item(
     _check_complete_date(date_for)
     item = _get_item(db, item_id, parent.family_id)
     _require_visible(item, parent)
+    _require_unmanaged(item)
     if item.kind not in _CANCELLABLE:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "Only appointments and activities can be cancelled"
@@ -787,6 +838,7 @@ def cancel_item(
         )
     )
     db.commit()
+    _mirror_called_off(db, item, cancelled=True)
     _push_board_change(
         db,
         _board_change_recipients(db, item, parent),
@@ -811,11 +863,13 @@ def uncancel_item(
     _check_complete_date(date_for)
     item = _get_item(db, item_id, parent.family_id)
     _require_visible(item, parent)
+    _require_unmanaged(item)
     rows = [r for r in db.scalars(_cancel_slot(item, date_for)) if r.cancelled]
     for row in rows:
         db.delete(row)
     if rows:
         db.commit()
+        _mirror_called_off(db, item, cancelled=False)
     return _build_feed_item(
         db, item, parent, date_for, _completions_by_item(db, [item])[item.id]
     )
@@ -948,6 +1002,74 @@ def _notify_parents_of_pending(db: Session, item: Item, kid: User, date_for: dt.
                 push.send_to_user(db, parent.id, payload)
     except Exception:
         log.exception("approval push failed (check-off already saved)")
+
+
+def _mirror_called_off(db: Session, src: Item, cancelled: bool) -> None:
+    """A shared source's cancel/uncancel echoes onto every going family's
+    copy: the strikethrough is the app's own language for "called off", and a
+    silently vanishing card would read like the invite never happened. The
+    mirrored mark carries user_id=None — the organizer's id must never cross
+    the family wall. Runs after the source's own commit; never 500s it."""
+    try:
+        events = village_events.events_on(db, src)
+        if not events:
+            return
+        copies = village_events.copies_of(db, [e.id for e in events])
+        for copy in copies:
+            # Cancel replaces any done mark (the source-side semantics);
+            # uncancel removes only the mirrored strikethrough.
+            existing = [
+                r
+                for r in db.scalars(
+                    select(Completion).where(Completion.item_id == copy.id)
+                )
+                if cancelled or r.cancelled
+            ]
+            for row in existing:
+                db.delete(row)
+            if cancelled:
+                db.flush()
+                db.add(
+                    Completion(
+                        item_id=copy.id,
+                        user_id=None,
+                        date_for=copy.date_for or src.date_for,
+                        cancelled=True,
+                    )
+                )
+        db.commit()
+        recipients = village_events.going_adults(db, [e.id for e in events])
+        _notify_event_change(
+            db, recipients, src,
+            (f"Called off: {src.title}" if cancelled else f"Back on: {src.title}"),
+            _schedule_text(src),
+        )
+    except Exception:
+        db.rollback()
+        log.exception("village cancel mirror failed (the change itself is saved)")
+
+
+def _notify_event_change(
+    db: Session, recipients: list, item: Item, title: str, body: str = ""
+) -> None:
+    """The going families hear a shared event moved, was called off, or is
+    back on. Inbox always; push behind the "village" pref."""
+    try:
+        for r in recipients:
+            inbox.record(db, r.id, r.family_id, "village", title, body)
+        db.commit()
+    except Exception:
+        db.rollback()
+        log.exception("village-change inbox write failed (the change is saved)")
+    if not push.enabled():
+        return
+    try:
+        payload = {"title": title, "body": body, "tag": f"village-item-{item.id}", "url": "/"}
+        for r in recipients:
+            if push.wants(r, "village"):
+                push.send_to_user(db, r.id, payload)
+    except Exception:
+        log.exception("village-change push failed (the change is saved)")
 
 
 def _record_kid_payoff(

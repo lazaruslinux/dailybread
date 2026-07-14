@@ -9,12 +9,15 @@ import {
   checkVillageCode,
   createVillage,
   deleteVillage,
+  getFamily,
   getMe,
   joinVillage,
   leaveVillage,
   listVillages,
   regenerateInvite,
+  setKidAvatar,
   updateMyProfile,
+  type FamilyMember,
   type Village,
   type VillageParent,
 } from '../lib/api'
@@ -297,6 +300,71 @@ function LevelShareToggle({ onChanged }: { onChanged: () => void }) {
   )
 }
 
+// Parent-controlled, one switch per kid: show that kid's photo and first
+// name on village event attendee lists (and open their photo through the
+// avatar wall). Off — the default — means other families only ever see a
+// bare first-initial circle, no name.
+function KidAvatarToggles() {
+  const [kids, setKids] = useState<FamilyMember[]>([])
+  const [busy, setBusy] = useState<number | null>(null)
+
+  useEffect(() => {
+    getFamily()
+      .then((members) => setKids(members.filter((m) => m.is_minor)))
+      .catch(() => {})
+  }, [])
+
+  async function flip(kid: FamilyMember) {
+    const next = !kid.village_avatar
+    setKids((prev) => prev.map((k) => (k.id === kid.id ? { ...k, village_avatar: next } : k)))
+    setBusy(kid.id)
+    try {
+      await setKidAvatar(kid.id, next)
+    } catch {
+      setKids((prev) => prev.map((k) => (k.id === kid.id ? { ...k, village_avatar: !next } : k)))
+    }
+    setBusy(null)
+  }
+
+  if (kids.length === 0) return null
+  return (
+    <div className="flex flex-col gap-2">
+      {kids.map((kid) => {
+        const first = kid.display_name.split(' ')[0]
+        const on = Boolean(kid.village_avatar)
+        return (
+          <button
+            key={kid.id}
+            type="button"
+            role="switch"
+            aria-checked={on}
+            disabled={busy === kid.id}
+            onClick={() => flip(kid)}
+            className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left"
+          >
+            <span className="min-w-0 pr-2">
+              <span className="block text-sm font-semibold text-fg/85">
+                Show {first}'s photo to your Villages
+              </span>
+              <span className="block text-xs text-fg/45">
+                Off, other families only see "{first[0]?.toUpperCase()}" on event RSVPs
+              </span>
+            </span>
+            <span
+              className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${on ? 'bg-accent' : 'bg-fg/15'}`}
+            >
+              <span
+                className={`absolute top-0.5 h-5 w-5 rounded-full bg-fg transition-all ${on ? 'left-[1.125rem]' : 'left-0.5'}`}
+              />
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+
 function PresenceToggle({ initial, onChanged }: { initial: boolean; onChanged: () => void }) {
   const [on, setOn] = useState(initial)
   const [busy, setBusy] = useState(false)
@@ -479,6 +547,7 @@ export function VillagesCard() {
           <>
             <PresenceToggle initial={user.village_presence} onChanged={refresh} />
             <LevelShareToggle onChanged={refresh} />
+            {user.role === 'parent' && <KidAvatarToggles />}
           </>
         )}
 

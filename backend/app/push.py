@@ -55,6 +55,9 @@ PREF_KINDS = frozenset(
         "approvals",  # a kid's check-off awaiting a parent (Kid Tasks)
         "sync",  # health sync went quiet (Health Sync Timeout)
         "verse",  # verse streak about to end (Streak Reminders)
+        "village",  # anything crossing the family wall: event invites, RSVPs,
+        # changes, call-offs — a separate consent surface from "family",
+        # which only ever means your own household's board.
     }
 )
 

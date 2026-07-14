@@ -146,6 +146,82 @@ class VillageRecipe(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class RsvpStatus(str, enum.Enum):
+    going = "going"
+    maybe = "maybe"
+    cant = "cant"
+
+
+class VillageEvent(Base):
+    """One activity/appointment shared onto a village. A pointer at the
+    organizer's own Item (the VillageRecipe pattern) — attendee families never
+    read that row directly; RSVPing "going" MATERIALIZES an independent Item
+    copy on their board (items.village_event_id marks those copies).
+    family_id is the organizer denormalized at share time."""
+
+    __tablename__ = "village_events"
+    __table_args__ = (
+        UniqueConstraint("village_id", "item_id", name="uq_village_event"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    village_id: Mapped[int] = mapped_column(
+        ForeignKey("villages.id", ondelete="CASCADE"), index=True
+    )
+    item_id: Mapped[int] = mapped_column(
+        ForeignKey("items.id", ondelete="CASCADE"), index=True
+    )
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
+    shared_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class VillageEventRsvp(Base):
+    """One family's changeable answer to a village event: either parent may
+    set or overwrite it (the DinnerVote upsert, but family-grained). The
+    organizer's family never has a row — hosting is implicit."""
+
+    __tablename__ = "village_event_rsvps"
+    __table_args__ = (
+        UniqueConstraint("event_id", "family_id", name="uq_event_rsvp_family"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(
+        ForeignKey("village_events.id", ondelete="CASCADE"), index=True
+    )
+    family_id: Mapped[int] = mapped_column(
+        ForeignKey("families.id", ondelete="CASCADE"), index=True
+    )
+    status: Mapped[RsvpStatus] = mapped_column(SAEnum(RsvpStatus, name="rsvp_status"))
+    set_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class VillageEventAttendee(Base):
+    """Who from an RSVPed family is coming — village-facing headcount only,
+    never assignees on any card. Tracked for "going" answers; replaced whole
+    on every RSVP write. How a member RENDERS across the wall is decided at
+    read time (parents by name+face; kids only by initial unless their
+    village_avatar flag is on)."""
+
+    __tablename__ = "village_event_attendees"
+    __table_args__ = (
+        UniqueConstraint("rsvp_id", "user_id", name="uq_event_attendee"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    rsvp_id: Mapped[int] = mapped_column(
+        ForeignKey("village_event_rsvps.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -221,6 +297,14 @@ class User(Base):
     # to village members. Replaced share_verse_streak when streak numbers
     # folded into the breadcrumb economy; family always sees the level.
     share_level: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    # Parent-controlled, meaningful on MINORS: show this kid's photo (and
+    # first name) to the family's villages — on event attendee lists and the
+    # avatar route's village crack. Off (the default) means other families see
+    # only a bare first-initial circle, no name, no photo, ever. Parents'
+    # faces already cross the wall; this flag is ignored for them.
+    village_avatar: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
     # Opt-in: the watch's WORKOUT calories raise the day's food budget — only
@@ -354,6 +438,23 @@ class Item(Base):
     all_day: Mapped[bool] = mapped_column(Boolean, default=False)
     # Which day (tasks and events). Routines leave this NULL and use recurrence.
     date_for: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+
+    # Where it happens, free text ("Riverside Park"). Any kind may carry one;
+    # the UI offers it on activities and appointments.
+    location: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Set ONLY on a materialized copy of a village event living on an attendee
+    # family's board: locks the card against local edit (the organizer manages
+    # it; changing the RSVP is how it leaves) and dies with the event (CASCADE).
+    # The organizer's own source card keeps this NULL. use_alter breaks the
+    # items<->village_events FK cycle at create_all time: Postgres gets the
+    # real constraint (CASCADE safety net); SQLite tests run without it, so
+    # every code path must delete copies EXPLICITLY — and the tests assert
+    # exactly that, which keeps the explicit paths honest.
+    village_event_id: Mapped[int | None] = mapped_column(
+        ForeignKey("village_events.id", ondelete="CASCADE", use_alter=True),
+        nullable=True,
+        index=True,
+    )
 
     # Routines only: a member's synced workout (any kind) checks off their own
     # slot on this routine for that day. Explicit per-routine opt-in — the
