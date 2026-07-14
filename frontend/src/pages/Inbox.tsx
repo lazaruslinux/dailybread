@@ -78,22 +78,31 @@ export function InboxPage({ onAllRead }: { onAllRead?: () => void }) {
   }
 
   return (
-    <div className="glass p-4">
-      <div className="flex flex-col gap-1">
+    <div className="glass overflow-hidden p-4">
+      {/* Hairline dividers, not per-row cards: an inbox is a list. Unread rows
+          get a warm accent wash bleeding to the card edges plus a full-contrast
+          title, so "new" reads at a glance on both themes. */}
+      <div className="flex flex-col divide-y divide-fg/10">
         {entries.map((entry) => {
           const { Icon, tint } = KIND_ICON[entry.kind] ?? KIND_ICON.board
           return (
             <div
               key={entry.id}
-              className={`flex items-center gap-3 rounded-xl px-1.5 py-2 ${
-                entry.read ? '' : 'bg-fg/5'
+              className={`-mx-4 flex items-center gap-3 px-5 py-3 ${
+                entry.read ? '' : 'bg-accent-bright/10'
               }`}
             >
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-fg/10">
                 <Icon className={`h-4.5 w-4.5 ${tint}`} strokeWidth={2} />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold text-fg/85">{entry.title}</span>
+                <span
+                  className={`block text-sm font-semibold ${
+                    entry.read ? 'text-fg/85' : 'text-fg'
+                  }`}
+                >
+                  {entry.title}
+                </span>
                 {entry.body && (
                   <span className="block text-xs leading-snug text-fg/45">{entry.body}</span>
                 )}
