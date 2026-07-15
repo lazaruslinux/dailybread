@@ -18,6 +18,7 @@ _TIMEOUT = 10.0
 # USDA foodNutrients are keyed by nutrientNumber. USDA reports sodium and
 # cholesterol in mg and the rest in g — the same units our columns use.
 _N_ENERGY_KCAL = "208"
+_N_ENERGY_KJ = "268"  # some entries carry only kilojoules; convert to rescue them
 _N_PROTEIN = "203"
 _N_FAT = "204"
 _N_CARBS = "205"
@@ -62,6 +63,18 @@ def _num(v) -> float | None:
         return round(float(v), 2)
     except (TypeError, ValueError):
         return None
+
+
+def _energy_kcal(kcal, kj) -> float | None:
+    """Calories for a food: the kcal reading when present, else the kilojoule
+    reading converted (1 kcal = 4.184 kJ, rounded to a tenth). Some USDA and
+    Open Food Facts entries only carry kJ; without this fallback they'd read as
+    calorie-less and get dropped from search for no good reason."""
+    direct = _num(kcal)
+    if direct is not None:
+        return direct
+    kj_num = _num(kj)
+    return round(kj_num / 4.184, 1) if kj_num is not None else None
 
 
 def _scale(v, mult: float) -> float | None:
@@ -179,7 +192,7 @@ def _usda_food_result(f: dict) -> FoodResult:
         source_id=str(f.get("fdcId")),
         name=_display((f.get("description") or "").strip()),
         brand=_display((f.get("brandName") or f.get("brandOwner") or "").strip()),
-        calories=_num(by_number.get(_N_ENERGY_KCAL)),
+        calories=_energy_kcal(by_number.get(_N_ENERGY_KCAL), by_number.get(_N_ENERGY_KJ)),
         protein_g=_num(by_number.get(_N_PROTEIN)),
         carbs_g=_num(by_number.get(_N_CARBS)),
         fat_g=_num(by_number.get(_N_FAT)),
@@ -226,8 +239,12 @@ def search_usda(query: str, api_key: str, limit: int = 25) -> list[FoodResult]:
     if r.status_code >= 400:
         raise FoodApiError("Food search failed.")
 
+    # Drop results with no calorie figure at all (after the kJ rescue) before
+    # the cut to `limit` — a food we can't calorie-count is noise in search.
+    # We over-fetch (pageSize=50) precisely to have spares to fill the gap.
     ranked = _rank_usda(query, r.json().get("foods", []))
-    return [_usda_food_result(f) for f in ranked[:limit]]
+    results = [r for r in map(_usda_food_result, ranked) if r.calories is not None]
+    return results[:limit]
 
 
 def _serving_fields(size, unit) -> dict:
@@ -311,7 +328,7 @@ def lookup_barcode_off(barcode: str) -> FoodResult | None:
         source_id=str(barcode),
         name=_display((p.get("product_name") or "Unknown product").strip()),
         brand=_display((p.get("brands") or "").split(",")[0].strip()),
-        calories=_num(nut.get("energy-kcal_100g")),
+        calories=_energy_kcal(nut.get("energy-kcal_100g"), nut.get("energy-kj_100g")),
         protein_g=_num(nut.get("proteins_100g")),
         carbs_g=_num(nut.get("carbohydrates_100g")),
         fat_g=_num(nut.get("fat_100g")),

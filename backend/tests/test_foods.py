@@ -453,6 +453,95 @@ def _fdc(description, data_type="Branded", brand="", gtin="", published="", fdc_
     }
 
 
+def _fdc_energy(fdc_id, description, nutrients):
+    """An FDC hit carrying specific (nutrientNumber, value) energy readings."""
+    return {
+        "fdcId": fdc_id,
+        "description": description,
+        "dataType": "Foundation",
+        "foodNutrients": [{"nutrientNumber": num, "value": val} for num, val in nutrients],
+    }
+
+
+def test_usda_kilojoule_energy_is_rescued():
+    # Only nutrient 268 (kJ) present: convert to kcal so the food isn't dropped.
+    hit = _fdc_energy(1, "Muesli", [("268", 1500)])
+    assert foods_api._usda_food_result(hit).calories == 358.5  # 1500 / 4.184
+    # kcal wins when both are present.
+    both = _fdc_energy(2, "Muesli", [("208", 360), ("268", 1500)])
+    assert foods_api._usda_food_result(both).calories == 360
+    # neither present: no calories.
+    assert foods_api._usda_food_result(_fdc_energy(3, "Water", [])).calories is None
+
+
+def test_search_drops_calorie_less_results(monkeypatch):
+    # A food with no energy at all is filtered out before the limit; a kJ-only
+    # food survives via the rescue.
+    payload = {
+        "foods": [
+            _fdc_energy(1, "Real Oats", [("208", 380)]),
+            _fdc_energy(2, "Kilojoule Oats", [("268", 1500)]),
+            _fdc_energy(3, "Mystery Oats", []),
+        ]
+    }
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return payload
+
+    monkeypatch.setattr(foods_api.httpx, "get", lambda *a, **k: FakeResponse())
+    results = foods_api.search_usda("oats", "test-key")
+    ids = {r.source_id for r in results}
+    assert ids == {"1", "2"}  # the calorie-less "3" is gone
+    kj = next(r for r in results if r.source_id == "2")
+    assert kj.calories == 358.5
+
+
+def test_off_kilojoule_energy_is_rescued(monkeypatch):
+    # An Open Food Facts product with only energy-kj_100g gains kcal.
+    payload = {
+        "status": 1,
+        "product": {
+            "product_name": "Euro Biscuits",
+            "brands": "Continental",
+            "nutriments": {"energy-kj_100g": 1800, "proteins_100g": 6},
+        },
+    }
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return payload
+
+    monkeypatch.setattr(foods_api.httpx, "get", lambda *a, **k: FakeResponse())
+    result = foods_api.lookup_barcode_off("5901234123457")
+    assert result is not None
+    assert result.calories == 430.2  # 1800 / 4.184
+
+
+def test_barcode_keeps_a_calorie_less_product(monkeypatch):
+    # A scan is a deliberate single product: return it even with no energy.
+    payload = {
+        "status": 1,
+        "product": {"product_name": "Sparkling Water", "brands": "Fizz", "nutriments": {}},
+    }
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return payload
+
+    monkeypatch.setattr(foods_api.httpx, "get", lambda *a, **k: FakeResponse())
+    result = foods_api.lookup_barcode_off("1234567890123")
+    assert result is not None
+    assert result.calories is None
+    assert result.name == "Sparkling Water"
+
+
 def test_search_ranking_dedupes_branded_by_gtin():
     # The same product listed twice (zero-padded EAN vs bare UPC); newest wins.
     old = _fdc("Instant Oats", brand="Quaker", gtin="030000012345", published="2020-01-01")
