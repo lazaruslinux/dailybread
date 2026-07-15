@@ -184,7 +184,7 @@ function WelcomeCrumb() {
         type="button"
         aria-label="Dismiss"
         onClick={() => setShow(false)}
-        className="-m-1.5 shrink-0 rounded-lg p-1.5 text-fg/40 hover:bg-fg/10 hover:text-fg/70"
+        className="-m-3.5 shrink-0 rounded-lg p-3.5 text-fg/40 hover:bg-fg/10 hover:text-fg/70"
       >
         <X className="h-4 w-4" strokeWidth={2.5} />
       </button>
@@ -787,7 +787,7 @@ export function Home({
               type="button"
               aria-label="Previous day"
               onClick={() => setTimelineDate(shiftDay(timelineDate ?? api.localDate(), -1))}
-              className="rounded-lg p-1 text-fg/45 transition-colors hover:bg-fg/10 hover:text-fg"
+              className="-m-2.5 rounded-lg p-3.5 text-fg/45 transition-colors hover:bg-fg/10 hover:text-fg"
             >
               <ChevronLeft className="h-4 w-4" strokeWidth={2.5} />
             </button>
@@ -805,7 +805,7 @@ export function Home({
               type="button"
               aria-label="Next day"
               onClick={() => setTimelineDate(shiftDay(timelineDate ?? api.localDate(), 1))}
-              className="rounded-lg p-1 text-fg/45 transition-colors hover:bg-fg/10 hover:text-fg"
+              className="-m-2.5 rounded-lg p-3.5 text-fg/45 transition-colors hover:bg-fg/10 hover:text-fg"
             >
               <ChevronRight className="h-4 w-4" strokeWidth={2.5} />
             </button>
@@ -814,7 +814,7 @@ export function Home({
               <button
                 type="button"
                 onClick={() => setTimelineDate(null)}
-                className="rounded-full border border-fg/10 bg-fg/5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-fg/60 transition-colors hover:bg-fg/10"
+                className="inline-flex min-h-11 items-center rounded-full border border-fg/10 bg-fg/5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-fg/60 transition-colors hover:bg-fg/10"
               >
                 Back to today
               </button>

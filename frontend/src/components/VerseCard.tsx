@@ -106,7 +106,7 @@ export function VerseCard() {
               type="button"
               aria-label="Fold the verses away"
               onClick={() => setCollapsed(true)}
-              className="rounded-lg p-1 text-fg/40 transition-colors hover:bg-fg/10 hover:text-fg/75"
+              className="-m-2.5 rounded-lg p-3.5 text-fg/40 transition-colors hover:bg-fg/10 hover:text-fg/75"
             >
               <ChevronUp className="h-4 w-4" strokeWidth={2.5} />
             </button>
@@ -115,7 +115,7 @@ export function VerseCard() {
             type="button"
             aria-label="Previous verse"
             onClick={() => setIdx((i) => (i - 1 + n) % n)}
-            className="rounded-lg p-1 text-fg/40 transition-colors hover:bg-fg/10 hover:text-fg/75"
+            className="-m-2.5 rounded-lg p-3.5 text-fg/40 transition-colors hover:bg-fg/10 hover:text-fg/75"
           >
             <ChevronLeft className="h-4 w-4" strokeWidth={2.5} />
           </button>
@@ -137,7 +137,7 @@ export function VerseCard() {
             type="button"
             aria-label="Next verse"
             onClick={() => setIdx((i) => (i + 1) % n)}
-            className="rounded-lg p-1 text-fg/40 transition-colors hover:bg-fg/10 hover:text-fg/75"
+            className="-m-2.5 rounded-lg p-3.5 text-fg/40 transition-colors hover:bg-fg/10 hover:text-fg/75"
           >
             <ChevronRight className="h-4 w-4" strokeWidth={2.5} />
           </button>

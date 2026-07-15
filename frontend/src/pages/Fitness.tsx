@@ -193,7 +193,7 @@ function CopyRow({ label, value }: { label: string; value: string }) {
           type="button"
           onClick={copy}
           aria-label={`Copy ${label.toLowerCase()}`}
-          className="shrink-0 rounded-full p-2 text-fg/50 transition-colors hover:bg-fg/10 hover:text-fg"
+          className="-m-1.5 shrink-0 rounded-full p-3.5 text-fg/50 transition-colors hover:bg-fg/10 hover:text-fg"
         >
           {copied ? <Check className="h-4 w-4 text-accent-bright" /> : <Copy className="h-4 w-4" />}
         </button>
@@ -1771,7 +1771,7 @@ export function Fitness() {
               <button
                 onClick={() => setDisconnecting(true)}
                 aria-label="Disconnect"
-                className="shrink-0 rounded-full p-1.5 text-fg/40 transition-colors hover:bg-red-500/15 hover:text-red-400"
+                className="-m-2 shrink-0 rounded-full p-3.5 text-fg/40 transition-colors hover:bg-red-500/15 hover:text-red-400"
               >
                 <Unplug className="h-4 w-4" />
               </button>

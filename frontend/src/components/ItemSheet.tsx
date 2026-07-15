@@ -204,7 +204,7 @@ export function ItemSheet({
           <button
             onClick={onClose}
             aria-label="Close"
-            className="rounded-lg p-1.5 text-fg/50 hover:bg-fg/10 hover:text-fg"
+            className="-m-3 rounded-lg p-3 text-fg/50 hover:bg-fg/10 hover:text-fg"
           >
             <X className="h-5 w-5" />
           </button>

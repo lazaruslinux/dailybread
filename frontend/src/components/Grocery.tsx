@@ -130,7 +130,7 @@ export function GroceryPanel() {
   const activeStore = lists.find((l) => l.id === active)
 
   const chip = (selected: boolean) =>
-    `flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold transition-colors ${
+    `flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold transition-colors ${
       selected ? 'bg-accent-bright/25 text-fg' : 'bg-fg/5 text-fg/55 hover:bg-fg/10'
     }`
 
@@ -178,7 +178,7 @@ export function GroceryPanel() {
               onClick={() => setMovingId((m) => (m === item.id ? null : item.id))}
               aria-label={`Move ${item.title}`}
               aria-expanded={movingId === item.id}
-              className={`shrink-0 rounded-lg p-2 transition-colors hover:bg-fg/10 ${
+              className={`-m-1.5 shrink-0 rounded-lg p-3.5 transition-colors hover:bg-fg/10 ${
                 movingId === item.id ? 'text-accent-bright' : 'text-fg/30 hover:text-fg/70'
               }`}
             >
@@ -191,7 +191,7 @@ export function GroceryPanel() {
               disabled={busy}
               onClick={() => run(() => api.deleteGrocery(item.id))}
               aria-label={`Delete ${item.title}`}
-              className="shrink-0 rounded-lg p-2 text-fg/30 transition-colors hover:bg-fg/10 hover:text-rose-300"
+              className="-m-1.5 shrink-0 rounded-lg p-3.5 text-fg/30 transition-colors hover:bg-fg/10 hover:text-rose-300"
             >
               <Trash2 className="h-4 w-4" />
             </button>
@@ -208,7 +208,7 @@ export function GroceryPanel() {
                 type="button"
                 disabled={busy}
                 onClick={() => moveItem(item.id, d.id)}
-                className="rounded-full bg-fg/5 px-2.5 py-1 text-xs font-semibold text-fg/70 transition-colors hover:bg-accent-bright/20 hover:text-fg"
+                className="inline-flex min-h-11 items-center rounded-full bg-fg/5 px-2.5 py-1 text-xs font-semibold text-fg/70 transition-colors hover:bg-accent-bright/20 hover:text-fg"
               >
                 {d.label}
               </button>
@@ -248,7 +248,7 @@ export function GroceryPanel() {
           <button
             type="button"
             onClick={() => setAddingStore(true)}
-            className="flex shrink-0 items-center gap-1 rounded-full border border-dashed border-fg/25 px-3 py-1.5 text-sm font-semibold text-fg/55 transition-colors hover:bg-fg/10"
+            className="flex min-h-11 shrink-0 items-center gap-1 rounded-full border border-dashed border-fg/25 px-3 py-1.5 text-sm font-semibold text-fg/55 transition-colors hover:bg-fg/10"
           >
             <Store className="h-3.5 w-3.5" /> Add store
           </button>
