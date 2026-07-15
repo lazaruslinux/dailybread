@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   BadgeCheck,
   CalendarCheck,
@@ -62,6 +62,41 @@ export function InboxPage({
   onGo?: (kind: string) => void
 }) {
   const [entries, setEntries] = useState<api.InboxEntry[] | null>(null)
+  // Two-tap clear: the first tap arms, the second empties. It disarms on blur
+  // or after a few seconds so a stray first tap never stays hot.
+  const [armed, setArmed] = useState(false)
+  const armedTimer = useRef<number | null>(null)
+
+  function disarm() {
+    setArmed(false)
+    if (armedTimer.current !== null) {
+      clearTimeout(armedTimer.current)
+      armedTimer.current = null
+    }
+  }
+
+  async function handleClear() {
+    if (!armed) {
+      setArmed(true)
+      armedTimer.current = window.setTimeout(disarm, 4000)
+      return
+    }
+    disarm()
+    try {
+      await api.clearInbox()
+    } catch {
+      // A failed clear just leaves the list as it was.
+      return
+    }
+    setEntries([]) // the empty state takes over
+  }
+
+  useEffect(
+    () => () => {
+      if (armedTimer.current !== null) clearTimeout(armedTimer.current)
+    },
+    [],
+  )
 
   useEffect(() => {
     let active = true
@@ -99,8 +134,19 @@ export function InboxPage({
   }
 
   return (
-    <div className="glass overflow-hidden p-4">
-      {/* Hairline dividers, not per-row cards: an inbox is a list. Unread rows
+    <div className="flex flex-col gap-3">
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={handleClear}
+          onBlur={disarm}
+          className="min-h-11 rounded-lg px-3 text-sm font-semibold text-fg/55 transition-colors hover:text-fg"
+        >
+          {armed ? 'Tap again to clear' : 'Clear inbox'}
+        </button>
+      </div>
+      <div className="glass overflow-hidden p-4">
+        {/* Hairline dividers, not per-row cards: an inbox is a list. Unread rows
           get a warm accent wash bleeding to the card edges plus a full-contrast
           title, so "new" reads at a glance on both themes. */}
       <div className="flex flex-col divide-y divide-fg/10">
@@ -137,6 +183,7 @@ export function InboxPage({
             </button>
           )
         })}
+        </div>
       </div>
     </div>
   )

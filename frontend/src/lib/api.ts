@@ -998,6 +998,8 @@ export const getInboxUnread = () => request<{ count: number }>('/me/inbox/unread
 
 export const markInboxRead = () => request<void>('/me/inbox/read', { method: 'POST' })
 
+export const clearInbox = () => request<void>('/me/inbox', { method: 'DELETE' })
+
 export const getFamily = () => request<FamilyMember[]>(`/users?date=${localDate()}`)
 
 // The day's calorie lock-in: the first lock of a date pays +2 breadcrumbs;

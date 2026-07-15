@@ -290,6 +290,36 @@ def test_families_never_see_each_others_history(owner, parent, other):
     assert unread(other) == 0
 
 
+# ---- clear -----------------------------------------------------------------------
+
+
+def test_clear_deletes_only_my_rows(owner, parent):
+    make_item(owner)  # a board line for the other parent
+    make_item(parent)  # a board line back for the owner
+    assert len(entries(parent)) == 1
+    assert len(entries(owner)) == 1
+    assert parent.delete("/me/inbox").status_code == 204
+    assert entries(parent) == []
+    # the other member's history is untouched
+    assert len(entries(owner)) == 1
+
+
+def test_a_minor_clears_their_own_inbox(owner, child):
+    item = make_item(owner, assignee_ids=[user_id(child)])
+    complete(child, item["id"])  # pending -> parents
+    complete(owner, item["id"])  # approval -> the kid's payoff line
+    assert unread(child) >= 1
+    assert child.delete("/me/inbox").status_code == 204
+    assert entries(child) == []
+    assert unread(child) == 0
+
+
+def test_clearing_an_empty_inbox_is_still_204(owner):
+    assert entries(owner) == []  # the actor hears none of their own news
+    assert owner.delete("/me/inbox").status_code == 204
+    assert owner.delete("/me/inbox").status_code == 204
+
+
 # ---- retention -----------------------------------------------------------------------
 
 

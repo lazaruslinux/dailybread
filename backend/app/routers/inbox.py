@@ -5,7 +5,7 @@ is require_family — kids read their own Inbox (crumb earns and approval
 payoffs are theirs)."""
 
 from fastapi import APIRouter, Depends, status
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -52,4 +52,15 @@ def mark_all_read(
         .where(InboxEntry.user_id == user.id, InboxEntry.read.is_(False))
         .values(read=True)
     )
+    db.commit()
+
+
+@router.delete("", status_code=status.HTTP_204_NO_CONTENT)
+def clear_inbox(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_family),
+):
+    # Empty the caller's own history. Scoped to their rows, so a shared device's
+    # other members keep theirs.
+    db.execute(delete(InboxEntry).where(InboxEntry.user_id == user.id))
     db.commit()
