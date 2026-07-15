@@ -85,8 +85,6 @@ export interface User {
   village_presence: boolean
   // Sharing level/crumbs with villages?
   share_level: boolean
-  // Minors only: parents opted this kid's photo/name into the villages.
-  village_avatar?: boolean
 }
 
 export interface SetupState {

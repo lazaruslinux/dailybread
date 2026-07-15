@@ -790,6 +790,12 @@ def _events_out(
     )
     if only_event_ids is not None:
         q = q.where(VillageEvent.id.in_(only_event_ids))
+    else:
+        # Don't drag the whole event history through the joins forever: a
+        # shifted schedule moves at most one calendar day, so a one-day slack
+        # in SQL keeps the exact viewer-local cutoff below the only filter
+        # that matters.
+        q = q.where(Item.date_for >= dt.date.today() - dt.timedelta(days=1))
     rows = db.execute(q).all()
     if not rows:
         return []
@@ -945,6 +951,11 @@ def share_event(
     )
     if item is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such card")
+    # The same wall every item route has: another member's private card can't
+    # be published to a village by someone who can't even open it.
+    from app.routers.items import _require_visible
+
+    _require_visible(item, parent)
     if item.kind not in (ItemKind.activity, ItemKind.appointment):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "Only activities and appointments can be shared"

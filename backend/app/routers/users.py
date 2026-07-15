@@ -393,8 +393,8 @@ def get_avatar(
 ):
     """Serve a member's avatar image. 404 when they have none so the frontend
     falls back to generated initials. The URL is versioned by avatar_updated_at,
-    so the response can be cached hard. Village-mates' PARENT photos (plus any
-    kid a family has explicitly opted in via village_avatar) are the one thing
+    so the response can be cached hard. Village-mates' PARENT photos (plus kids
+    whose family flipped its share_kid_avatars switch) are the one thing
     visible across families — the faces on the village card and event lists."""
     try:
         user = _target_member(user_id, viewer, db)

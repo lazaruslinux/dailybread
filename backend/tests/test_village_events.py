@@ -126,6 +126,35 @@ def test_share_guards(village, owner, other, child):
     share(owner, village, item["id"], expect=400)
 
 
+def test_private_card_shares_only_for_someone_who_can_see_it(village, owner, parent):
+    """The share endpoint enforces the same visibility wall as every other
+    item route: one parent's private card is invisible to the other parent,
+    so it can't be published to a village by them either."""
+    private = make_event(parent, visibility="private", title="Counseling")
+    res = owner.post(f"/villages/{village}/events", json={"item_id": private["id"]})
+    assert res.status_code == 404
+    assert events(owner) == []
+    # its owner can still share it (visible to them; village exposure is
+    # their own explicit call)
+    share(parent, village, private["id"])
+
+
+def test_past_events_drop_off_the_list(village, owner, other):
+    """The events list is upcoming-only end to end: the SQL cutoff prunes
+    old history, the viewer-local filter trims yesterday, and direct paths
+    (share/RSVP responses) still reach an old event by id."""
+    old = make_event(owner, title="Long done", date_for=(TODAY - dt.timedelta(days=3)).isoformat())
+    yesterday = make_event(owner, title="Just missed", date_for=(TODAY - dt.timedelta(days=1)).isoformat())
+    out = share(owner, village, old["id"])  # share response reaches it by id
+    share(owner, village, yesterday["id"])
+    upcoming = make_event(owner)
+    share(owner, village, upcoming["id"])
+    assert [e["title"] for e in events(other)] == ["Soccer practice"]
+    # RSVP on an old invite still answers (only_event_ids bypasses the cutoff)
+    answered = rsvp(other, out["event_id"], "maybe")
+    assert answered["title"] == "Long done"
+
+
 def test_outsider_family_sees_nothing(village, owner, other, app):
     from tests.conftest import login
 

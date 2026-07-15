@@ -216,7 +216,7 @@ class VillageEventAttendee(Base):
     never assignees on any card. Tracked for "going" answers; replaced whole
     on every RSVP write. How a member RENDERS across the wall is decided at
     read time (parents by name+face; kids only by initial unless their
-    village_avatar flag is on)."""
+    family's share_kid_avatars switch is on)."""
 
     __tablename__ = "village_event_attendees"
     __table_args__ = (
@@ -446,10 +446,11 @@ class Item(Base):
     # family's board: locks the card against local edit (the organizer manages
     # it; changing the RSVP is how it leaves) and dies with the event (CASCADE).
     # The organizer's own source card keeps this NULL. use_alter breaks the
-    # items<->village_events FK cycle at create_all time: Postgres gets the
-    # real constraint (CASCADE safety net); SQLite tests run without it, so
-    # every code path must delete copies EXPLICITLY — and the tests assert
-    # exactly that, which keeps the explicit paths honest.
+    # items<->village_events FK cycle at create_all time; both dialects still
+    # get the CASCADE (SQLite renders use_alter FKs inline and conftest turns
+    # FKs on). Code paths delete copies EXPLICITLY anyway — the notify lists
+    # need collecting before rows vanish, and the cascade racing the ORM's own
+    # DELETE is why organizer-deletes log a benign rowcount SAWarning.
     village_event_id: Mapped[int | None] = mapped_column(
         ForeignKey("village_events.id", ondelete="CASCADE", use_alter=True),
         nullable=True,

@@ -147,8 +147,11 @@ def going_adults(db: Session, event_ids: list[int]) -> list[User]:
 
 def delete_copies(db: Session, event_ids: list[int]) -> None:
     """Remove every materialized copy of these events. Explicit rather than
-    FK-only: SQLite tests run without the use_alter constraint, and the
-    notify lists are collected before rows disappear anyway."""
+    FK-only: the notify lists are collected before rows disappear, and the
+    deletes hold in both dialects without leaning on cascade order. (The
+    CASCADE FK is live in SQLite too — use_alter still renders inline in its
+    DDL — so on a source-item delete it races these ORM deletes and SQLAlchemy
+    logs a benign rowcount warning.)"""
     for copy in copies_of(db, event_ids):
         db.delete(copy)  # ORM delete so completions cascade in both dialects
 
