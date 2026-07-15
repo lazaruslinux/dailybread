@@ -9,6 +9,7 @@ import {
   type User,
   type VillageEvent,
 } from '../lib/api'
+import { mapsUrl } from '../lib/items'
 import { formatTime } from '../lib/moods'
 import { Avatar } from './Avatar'
 import { KIND_STYLE } from './ItemCard'
@@ -96,6 +97,7 @@ export function ItemDetail({
         ? `${formatTime(item.time_of_day)} – ${formatTime(item.end_time)}`
         : formatTime(item.time_of_day)
       : null
+  const locationHref = item.location ? mapsUrl(item.location) : null
   const [armed, setArmed] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -213,14 +215,20 @@ export function ItemDetail({
               <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-fg/40">
                 Where
               </span>
-              <a
-                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.location)}`}
-                target="_blank"
-                rel="noopener"
-                className="flex min-h-11 items-center gap-1 py-1 font-semibold text-accent-bright underline decoration-accent-bright/40 underline-offset-2"
-              >
-                <MapPin className="h-3.5 w-3.5 shrink-0" /> {item.location}
-              </a>
+              {locationHref ? (
+                <a
+                  href={locationHref}
+                  target="_blank"
+                  rel="noopener"
+                  className="flex min-h-11 items-center gap-1 py-1 font-semibold text-accent-bright underline decoration-accent-bright/40 underline-offset-2"
+                >
+                  <MapPin className="h-3.5 w-3.5 shrink-0" /> {item.location}
+                </a>
+              ) : (
+                <span className="flex items-center gap-1 py-1 text-fg/70">
+                  <MapPin className="h-3.5 w-3.5 shrink-0" /> {item.location}
+                </span>
+              )}
             </div>
           )}
           {villageEvent && (
@@ -239,7 +247,7 @@ export function ItemDetail({
             onClick={onChangeRsvp}
             className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 text-sm font-semibold text-fg/80 transition-colors hover:bg-fg/10"
           >
-            {villageEvent.is_own ? "See who's going" : "See who's going · Change RSVP"}
+            {villageEvent.is_own ? 'View Attendees' : 'View Attendees · Change RSVP'}
           </button>
         )}
 

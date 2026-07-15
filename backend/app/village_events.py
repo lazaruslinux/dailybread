@@ -57,8 +57,8 @@ def materialize(
 ) -> Item:
     """A going family's own copy of the event: family-visible, no assignees,
     owned by the parent who RSVPed, schedule on the family's clock. If the
-    organizer has the source called off right now, the copy is born with the
-    same strikethrough."""
+    organizer has the source called off or already marked done right now, the
+    copy is born with the same mark — the family can't act on it either way."""
     copy = Item(
         family_id=family.id,
         owner_id=parent.id,
@@ -67,22 +67,54 @@ def materialize(
     )
     _apply(copy, src, organizer_tz, family.timezone)
     db.add(copy)
-    cancelled = db.scalar(
-        select(Completion).where(
-            Completion.item_id == src.id, Completion.cancelled.is_(True)
-        )
-    )
-    if cancelled is not None:
+    marked = db.scalar(select(Completion).where(Completion.item_id == src.id))
+    # A cancelled source (never pending) or an approved done both carry over; a
+    # kid's still-pending tap on the source is not "done" yet, so it doesn't.
+    if marked is not None and (marked.cancelled or not marked.pending):
         db.flush()  # the copy needs its id for the mirrored mark
         db.add(
             Completion(
                 item_id=copy.id,
                 user_id=None,  # never leak the organizer's cross-family id
-                date_for=copy.date_for or cancelled.date_for,
-                cancelled=True,
+                date_for=copy.date_for or marked.date_for,
+                cancelled=marked.cancelled,
             )
         )
     return copy
+
+
+def mirror_done(db: Session, src: Item, done: bool) -> None:
+    """A shared source's own completion echoes onto every going family's copy,
+    the same way a call-off does: the copy shows done (or clears) but the family
+    can never toggle it — the host drives it. The mark carries user_id=None (no
+    per-family "who" to attribute, and the organizer's id must never cross the
+    family wall). Quiet like a title edit — no notification. Cheap no-op for
+    unshared cards and copies (no events point at them). Caller owns the commit."""
+    events = events_on(db, src)
+    if not events:
+        return
+    for copy in copies_of(db, [e.id for e in events]):
+        existing = db.scalars(
+            select(Completion).where(Completion.item_id == copy.id)
+        ).all()
+        if done:
+            # Leave any mark already there be: a mirrored done, or a mirrored
+            # call-off (which outranks a plain done). Only fill a bare copy.
+            if existing:
+                continue
+            db.add(
+                Completion(
+                    item_id=copy.id,
+                    user_id=None,
+                    date_for=copy.date_for or src.date_for,
+                    cancelled=False,
+                )
+            )
+        else:
+            # Clear only the mirrored done mark; a mirrored call-off stays put.
+            for row in existing:
+                if row.user_id is None and not row.cancelled:
+                    db.delete(row)
 
 
 def copies_of(db: Session, event_ids: list[int]) -> list[Item]:

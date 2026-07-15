@@ -84,8 +84,8 @@ def _require_visible(item: Item, user: User) -> None:
 
 def _require_unmanaged(item: Item) -> None:
     """A materialized village-event copy is the ORGANIZER's to edit, cancel,
-    or remove; the attendee family's way out is changing their RSVP.
-    Completions are deliberately not gated — attending is checkable."""
+    remove, AND check off; the attendee family's way out is changing their
+    RSVP. The host's own done/cancel marks mirror down onto the copies."""
     if item.village_event_id is not None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Managed by the organizer")
 
@@ -1105,6 +1105,19 @@ def _notify_event_change(
         log.exception("village-change push failed (the change is saved)")
 
 
+def _mirror_done_to_copies(db: Session, src: Item, done: bool) -> None:
+    """After the organizer marks a shared source done (or undoes it), echo the
+    mark onto every going family's copy. Runs after the completion's own commit;
+    a failure here never fails the member's own action. A no-op for unshared
+    cards and for copies (which 403 before they get here)."""
+    try:
+        village_events.mirror_done(db, src, done)
+        db.commit()
+    except Exception:
+        db.rollback()
+        log.exception("village done-mirror failed (the completion itself is saved)")
+
+
 def _record_kid_payoff(
     db: Session, kid: User, parent: User, verb: str, title: str, awarded: int
 ) -> None:
@@ -1137,6 +1150,9 @@ def complete_item(
     _check_complete_date(date_for)
     item = _get_item(db, item_id, user.family_id)
     _require_visible(item, user)
+    # A materialized copy is the organizer's to complete; the attendee family
+    # can't check it off. The host's mark mirrors down to them instead.
+    _require_unmanaged(item)
     target = _resolve_completion_target(db, item, user, for_user)
 
     if item.kind == ItemKind.routine:
@@ -1223,6 +1239,10 @@ def complete_item(
         db, item, user, date_for, _completions_by_item(db, [item])[item.id]
     )
     out.crumbs_awarded = awarded
+    # A shared source drags its copies to match its REAL done state: a parent's
+    # tap (or an approval) marks them; a kid's still-pending tap is not done yet,
+    # so nothing mirrors until a parent makes it official.
+    _mirror_done_to_copies(db, item, done=out.completed)
     return out
 
 
@@ -1241,6 +1261,7 @@ def uncomplete_item(
     _check_complete_date(date_for)
     item = _get_item(db, item_id, user.family_id)
     _require_visible(item, user)
+    _require_unmanaged(item)  # copies clear only when the host uncompletes
     target = _resolve_completion_target(db, item, user, for_user)
 
     if item.kind == ItemKind.routine:
@@ -1265,6 +1286,10 @@ def uncomplete_item(
     if completions:
         db.commit()
 
-    return _build_feed_item(
+    out = _build_feed_item(
         db, item, user, date_for, _completions_by_item(db, [item])[item.id]
     )
+    # Mirror the source's resulting state onto copies: a real uncheck clears
+    # them, but a minor's no-op uncheck of an approved row leaves them done.
+    _mirror_done_to_copies(db, item, done=out.completed)
+    return out

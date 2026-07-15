@@ -385,6 +385,10 @@ def _past_due_pass(db: Session, clocks: dict[int, dt.datetime], now: dt.datetime
                 Item.kind != ItemKind.routine,
                 Item.repeat_type.is_(None),
                 Item.date_for.in_(candidate_days),
+                # A shared-event copy can't be acted on by its family (only the
+                # host drives it), so it must never nag them as "past due". The
+                # organizer's own source still nags the host family.
+                Item.village_event_id.is_(None),
             )
         )
         .unique()

@@ -350,10 +350,72 @@ def test_copies_are_managed_by_the_organizer(village, owner, other):
     assert other.delete(f"/items/{copy_id}").status_code == 403
     assert other.post(f"/items/{copy_id}/cancel?date={TOMORROW.isoformat()}").status_code == 403
     assert other.request("DELETE", f"/items/{copy_id}/cancel?date={TOMORROW.isoformat()}").status_code == 403
-    # completion is allowed: attending is checkable
-    assert other.post(f"/items/{copy_id}/complete?date={TODAY.isoformat()}").status_code == 200
+    # completion is the host's too: a copy can't be checked or unchecked, the
+    # done mark mirrors down from the organizer.
+    assert other.post(f"/items/{copy_id}/complete?date={TODAY.isoformat()}").status_code == 403
+    assert other.request(
+        "DELETE", f"/items/{copy_id}/complete?date={TODAY.isoformat()}"
+    ).status_code == 403
     # the organizer's source stays fully editable
     assert owner.patch(f"/items/{item['id']}", json={"title": "Soccer scrimmage"}).status_code == 200
+
+
+def _completions(app, item_id):
+    from sqlalchemy.orm import sessionmaker
+
+    from app.models import Completion
+
+    Session = sessionmaker(bind=app.state.test_engine, expire_on_commit=False)
+    with Session() as db:
+        return db.query(Completion).filter_by(item_id=item_id).all()
+
+
+def test_a_kid_cannot_check_a_managed_copy(village, owner, other, app):
+    from tests.conftest import login
+
+    kid = {"username": "bkid", "display_name": "Kenny B", "password": "bkid-pass-1234"}
+    assert other.post("/auth/users", json={**kid, "role": "child"}).status_code == 201
+    bkid = login(app, kid)
+
+    item = make_event(owner)
+    out = share(owner, village, item["id"])
+    ev = rsvp(other, out["event_id"], "going", [user_id(other)])
+    copy_id = ev["my_item_id"]
+    # the kid can see the family-visible copy but still can't touch it
+    assert bkid.post(f"/items/{copy_id}/complete?date={TODAY.isoformat()}").status_code == 403
+
+
+def test_organizer_done_mirrors_onto_copies_without_leaking(village, owner, other, app):
+    item = make_event(owner)
+    out = share(owner, village, item["id"])
+    ev = rsvp(other, out["event_id"], "going", [user_id(other)])
+    copy_id = ev["my_item_id"]
+
+    # the organizer marks their source done -> the copy shows done
+    assert owner.post(f"/items/{item['id']}/complete?date={TODAY.isoformat()}").status_code == 200
+    assert feed_ids(other)[copy_id]["completed"] is True
+    # and the copy's completion carries NO cross-family user id
+    rows = _completions(app, copy_id)
+    assert len(rows) == 1 and rows[0].user_id is None and rows[0].cancelled is False
+
+    # undoing on the source clears the copy again
+    assert owner.request(
+        "DELETE", f"/items/{item['id']}/complete?date={TODAY.isoformat()}"
+    ).status_code == 200
+    assert feed_ids(other)[copy_id]["completed"] is False
+    assert _completions(app, copy_id) == []
+
+
+def test_rsvp_after_source_done_is_born_done(village, owner, other, app):
+    item = make_event(owner)
+    out = share(owner, village, item["id"])
+    # the organizer completes BEFORE anyone RSVPs
+    assert owner.post(f"/items/{item['id']}/complete?date={TODAY.isoformat()}").status_code == 200
+    ev = rsvp(other, out["event_id"], "going", [user_id(other)])
+    copy_id = ev["my_item_id"]
+    assert feed_ids(other)[copy_id]["completed"] is True
+    rows = _completions(app, copy_id)
+    assert len(rows) == 1 and rows[0].user_id is None and rows[0].cancelled is False
 
 
 # ---- timezone conversion -------------------------------------------------------------
@@ -596,6 +658,38 @@ def test_village_pref_gates_the_push_not_the_inbox(village, owner, other, config
     assert any("invited you" in r["title"] for r in inbox_rows(other, "invite"))
     # pref accepted by the prefs endpoint
     assert other.get("/push/prefs").json()["prefs"]["village"] is False
+
+
+def test_past_due_nags_the_source_but_never_the_copy(
+    village, owner, other, configured, push_outbox, engine_db
+):
+    """A shared-event copy can't be acted on by its family, so it must never
+    nag them as past due. The organizer's own source still nags its host."""
+    import app.push as push_engine
+
+    yesterday = TODAY - dt.timedelta(days=1)
+    owner.put("/push/subscription", json={
+        "endpoint": "https://push.example/host-device",
+        "keys": {"p256dh": "k1", "auth": "a1"},
+    })
+    other.put("/push/subscription", json={
+        "endpoint": "https://push.example/guest-device",
+        "keys": {"p256dh": "k2", "auth": "a2"},
+    })
+    item = make_event(
+        owner, kind="appointment", date_for=yesterday.isoformat(),
+        time_of_day="09:00", end_time="10:00",
+    )
+    out = share(owner, village, item["id"])
+    rsvp(other, out["event_id"], "going", [user_id(other)])  # the copy lands on B's board
+    push_outbox.clear()
+
+    # 25 hours after 9am yesterday: exactly one nudge, to the source's family.
+    sent = push_engine.digest_tick(dt.datetime.combine(TODAY, dt.time(10, 5)))
+    assert sent == 1
+    endpoints = [ep for ep, _p in push_outbox]
+    assert endpoints == ["https://push.example/host-device"]
+    assert push_outbox[0][1]["title"] == "Past due: Soccer practice"
 
 
 def test_location_validation_and_feed_exposure(owner):

@@ -4,6 +4,7 @@ import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { Avatar } from './Avatar'
 import { Sheet } from './Recipes'
+import { mapsUrl } from '../lib/items'
 import { formatTime } from '../lib/moods'
 
 // Shared village events on the Home board: a strip of open invites for
@@ -170,6 +171,7 @@ export function VillageEventSheet({
   })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const locationHref = ev.location ? mapsUrl(ev.location) : null
 
   async function answer(status: api.RsvpStatus, attendees: number[] = []) {
     setBusy(true)
@@ -225,16 +227,21 @@ export function VillageEventSheet({
           <CalendarClock className="h-4 w-4 shrink-0 text-fg/40" />
           {whenLabel(ev)}
         </div>
-        {ev.location && (
-          <a
-            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ev.location)}`}
-            target="_blank"
-            rel="noopener"
-            className="flex min-h-11 items-center gap-2 font-semibold text-accent-bright underline decoration-accent-bright/40 underline-offset-2"
-          >
-            <MapPin className="h-4 w-4 shrink-0" /> {ev.location}
-          </a>
-        )}
+        {ev.location &&
+          (locationHref ? (
+            <a
+              href={locationHref}
+              target="_blank"
+              rel="noopener"
+              className="flex min-h-11 items-center gap-2 font-semibold text-accent-bright underline decoration-accent-bright/40 underline-offset-2"
+            >
+              <MapPin className="h-4 w-4 shrink-0" /> {ev.location}
+            </a>
+          ) : (
+            <span className="flex items-center gap-2 text-fg/75">
+              <MapPin className="h-4 w-4 shrink-0" /> {ev.location}
+            </span>
+          ))}
         {ev.notes && <p className="leading-relaxed text-fg/70">{ev.notes}</p>}
       </div>
 
