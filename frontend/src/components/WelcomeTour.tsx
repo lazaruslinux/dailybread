@@ -82,7 +82,7 @@ const TOUR: {
   {
     title: 'Villages',
     Icon: Trees,
-    body: 'Link your family with another to join a village; a group of families that can privately share events, recipes and more. (This feature is in active development)',
+    body: 'Link your family with other families you trust to form a village. Inside it you can privately share recipes from your kitchen and share activities and appointments from your board, so families can RSVP and plan get-togethers. Each family keeps its own copy and RSVPs for its own people.',
     adultOnly: true,
   },
   {
