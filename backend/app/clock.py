@@ -8,6 +8,7 @@ before comparing against the wall-clock times stored on cards. NULL means
 """
 
 import datetime as dt
+import os
 from zoneinfo import ZoneInfo
 
 
@@ -33,9 +34,20 @@ def family_now(now: dt.datetime, tz_name: str | None) -> dt.datetime:
 
 
 def _zone(tz_name: str | None) -> ZoneInfo | dt.tzinfo:
-    """The zone a NULL family timezone means: the server's own."""
+    """The zone a NULL family timezone means: the server's own. Resolved from
+    the TZ environment variable as a real IANA zone so a conversion honours the
+    date's own DST offset; the current fixed-offset tzinfo would apply today's
+    offset to a date on the other side of a boundary, an hour off. TZ unset or
+    unloadable falls back to that fixed offset, the module's graceful-failure
+    philosophy (see family_now)."""
     if tz_name:
         return ZoneInfo(tz_name)
+    env = os.environ.get("TZ")
+    if env:
+        try:
+            return ZoneInfo(env)
+        except Exception:
+            pass
     server = dt.datetime.now().astimezone().tzinfo
     return server if server is not None else dt.timezone.utc
 

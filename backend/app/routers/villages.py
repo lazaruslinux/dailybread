@@ -706,14 +706,22 @@ def save_a_copy(
 # through the same membership gate as the shelf — an outsider 404s.
 
 
-def _notify_village(db: Session, users: list[User], kind: str, title: str, body: str, tag: str) -> None:
+def _notify_village(
+    db: Session, users: list[User], kind: str, title: str, body: str | dict[int, str], tag: str
+) -> None:
     """Inbox lines first (always), committed on their own, then the push leg
-    gated per-user by the "village" pref. The _push_board_change shape."""
+    gated per-user by the "village" pref. The _push_board_change shape. A dict
+    body carries per-family text (each family's own wall clock); a str is the
+    same for all."""
     if not users:
         return
+
+    def _body(u) -> str:
+        return body if isinstance(body, str) else body.get(u.family_id, "")
+
     try:
         for u in users:
-            inbox.record(db, u.id, u.family_id, kind, title, body)
+            inbox.record(db, u.id, u.family_id, kind, title, _body(u))
         db.commit()
     except Exception:
         db.rollback()
@@ -721,9 +729,9 @@ def _notify_village(db: Session, users: list[User], kind: str, title: str, body:
     if not push.enabled():
         return
     try:
-        payload = {"title": title, "body": body, "tag": tag, "url": "/"}
         for u in users:
             if push.wants(u, "village"):
+                payload = {"title": title, "body": _body(u), "tag": tag, "url": "/"}
                 push.send_to_user(db, u.id, payload)
     except Exception:
         log.exception("village push failed (the change itself is saved)")
@@ -983,14 +991,15 @@ def share_event(
     db.commit()
     db.refresh(event)
 
-    from app.routers.items import _schedule_text
+    from app.routers.items import _event_notify_bodies
 
+    recipients = _village_adults(db, village.id, exclude_family=parent.family_id)
     _notify_village(
         db,
-        _village_adults(db, village.id, exclude_family=parent.family_id),
+        recipients,
         "invite",
         f"{parent.display_name.split()[0]} invited you: {item.title}",
-        _schedule_text(item) + (f" · {item.location}" if item.location else ""),
+        _event_notify_bodies(db, item, recipients),
         f"village-invite-{event.id}",
     )
     return _events_out(db, parent, [event.id])[0]

@@ -701,3 +701,79 @@ def test_location_validation_and_feed_exposure(owner):
     assert feed_ids(owner)[item["id"]]["location"] == "Riverside Park"
     assert owner.patch(f"/items/{item['id']}", json={"location": None}).status_code == 200
     assert feed_ids(owner)[item["id"]]["location"] is None
+
+
+# ---- cross-timezone notification text ------------------------------------------------
+# The schedule in an invite/change notification renders on each recipient
+# family's own wall clock, not the organizer's. Same-tz families are unchanged.
+
+
+def _tz(client, name):
+    fam = client.get("/families/me").json()
+    assert client.patch(
+        "/families/me", json={"name": fam["name"], "timezone": name}
+    ).status_code == 200
+
+
+def test_same_tz_invite_body_is_byte_identical(village, owner, other):
+    from types import SimpleNamespace
+
+    from app.routers.items import _schedule_text
+
+    item = make_event(owner)  # default families keep NULL tz
+    share(owner, village, item["id"])
+    ref = SimpleNamespace(
+        repeat_type=None, date_for=TOMORROW, all_day=False,
+        time_of_day=dt.time(17, 30), end_time=dt.time(18, 30),
+    )
+    expected = _schedule_text(ref) + " · Riverside Park"
+    body = inbox_rows(other, "invite")[0]["body"]
+    assert body == expected
+
+
+def test_cross_tz_invite_body_shows_the_recipients_wall_clock(village, owner, other):
+    _tz(owner, "America/New_York")
+    _tz(other, "America/Phoenix")  # no DST, UTC-7 year round
+    item = make_event(owner, time_of_day="18:00", end_time="19:00")
+    share(owner, village, item["id"])
+    body = inbox_rows(other, "invite")[0]["body"]
+    # 6-7 PM in NY (EDT, UTC-4) is 3-4 PM in Phoenix on the same date
+    assert "3:00 PM – 4:00 PM" in body
+    assert "6:00 PM" not in body
+
+
+def test_all_day_invite_body_keeps_the_calendar_date_everywhere(village, owner, other):
+    _tz(owner, "America/New_York")
+    _tz(other, "Pacific/Auckland")
+    item = make_event(
+        owner, kind="appointment", all_day=True, time_of_day=None, end_time=None
+    )
+    share(owner, village, item["id"])
+    body = inbox_rows(other, "invite")[0]["body"]
+    assert TOMORROW.strftime("%a %b %-d") in body and "all day" in body
+
+
+def test_cross_tz_schedule_change_body_uses_the_recipients_clock(village, owner, other):
+    _tz(owner, "America/New_York")
+    _tz(other, "America/Phoenix")
+    item = make_event(owner, time_of_day="17:30", end_time="18:30")
+    out = share(owner, village, item["id"])
+    rsvp(other, out["event_id"], "going", [user_id(other)])
+    other.post("/me/inbox/read")
+    assert owner.patch(
+        f"/items/{item['id']}", json={"time_of_day": "18:00", "end_time": "19:00"}
+    ).status_code == 200
+    line = next(r for r in inbox_rows(other, "village") if "Updated" in r["title"])
+    assert "3:00 PM – 4:00 PM" in line["body"]
+
+
+def test_null_tz_zone_uses_the_dates_own_dst_offset(monkeypatch):
+    """_zone(None) resolves the server's real IANA zone from TZ, so a NULL-tz
+    family converts a schedule on the date's own offset, not today's."""
+    monkeypatch.setenv("TZ", "America/New_York")
+    jan = dt.date(2026, 1, 15)  # EST, UTC-5
+    d, s, _ = shift_schedule(jan, dt.time(12, 0), None, False, None, "America/Phoenix")
+    assert (d, s) == (jan, dt.time(10, 0))
+    jul = dt.date(2026, 7, 15)  # EDT, UTC-4
+    d, s, _ = shift_schedule(jul, dt.time(12, 0), None, False, None, "America/Phoenix")
+    assert (d, s) == (jul, dt.time(9, 0))

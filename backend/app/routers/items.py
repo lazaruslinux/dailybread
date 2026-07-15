@@ -6,10 +6,12 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app import crumbs, inbox, push, recurrence, village_events
+from app.clock import shift_schedule
 from app.db import get_db
 from app.deps import require_family, require_parent
 from app.models import (
     Completion,
+    Family,
     Item,
     ItemKind,
     ReminderLog,
@@ -796,7 +798,7 @@ def update_item(
                 _notify_event_change(
                     db, recipients, item,
                     f"Updated: {item.title}",
-                    _schedule_text(item) + (f" · {item.location}" if item.location else ""),
+                    _event_notify_bodies(db, item, recipients),
                 )
     except Exception:
         db.rollback()
@@ -943,6 +945,55 @@ def _schedule_text(item: Item) -> str:
     return base
 
 
+def _schedule_text_on(item: Item, from_tz: str | None, to_tz: str | None) -> str:
+    """_schedule_text rendered on a recipient family's wall clock. A shared
+    village event fans out to families that may keep different timezones, so the
+    WHEN each family reads must be its own; the organizer's is only one of them.
+    Same-tz recipients (equal names, both NULL included) shift to a byte-
+    identical string. Repeats and dateless cards carry no instant to convert and
+    format unchanged."""
+    date_for, start, end = item.date_for, item.time_of_day, item.end_time
+    if item.repeat_type is None and date_for is not None:
+        date_for, start, end = shift_schedule(
+            date_for, start, end, item.all_day, from_tz, to_tz
+        )
+    if item.repeat_type is not None:
+        base = "Repeats " + ("weekly" if item.repeat_type == RepeatType.weekly else "monthly")
+    elif date_for is not None:
+        base = date_for.strftime("%a %b %-d")
+    else:
+        base = "Anytime"
+    if item.all_day:
+        return f"{base} · all day"
+    if start is not None:
+        clock = start.strftime("%-I:%M %p")
+        if end is not None:
+            clock += " – " + end.strftime("%-I:%M %p")
+        return f"{base} · {clock}"
+    return base
+
+
+def _event_notify_bodies(
+    db: Session, item: Item, recipients: list[User], *, with_location: bool = True
+) -> dict[int, str]:
+    """Per-family notification bodies for a shared event: the schedule on each
+    recipient family's own clock plus the (unshifting) location when present,
+    keyed by family_id. One query covers the organizer and recipient families,
+    no per-user lookup. Same-tz families read text byte-identical to a single
+    _schedule_text body."""
+    fam_ids = {r.family_id for r in recipients} | {item.family_id}
+    tz_by_family = dict(
+        db.execute(select(Family.id, Family.timezone).where(Family.id.in_(fam_ids))).all()
+    )
+    organizer_tz = tz_by_family.get(item.family_id)
+    suffix = f" · {item.location}" if (with_location and item.location) else ""
+    return {
+        r.family_id: _schedule_text_on(item, organizer_tz, tz_by_family.get(r.family_id))
+        + suffix
+        for r in recipients
+    }
+
+
 def _board_change_recipients(db: Session, item: Item, actor: User) -> list[User]:
     """Adults who can see the card, minus whoever made the change. Push
     config and prefs deliberately don't filter here — the same audience gets
@@ -1075,7 +1126,7 @@ def _mirror_called_off(db: Session, src: Item, cancelled: bool) -> None:
         _notify_event_change(
             db, recipients, src,
             (f"Called off: {src.title}" if cancelled else f"Back on: {src.title}"),
-            _schedule_text(src),
+            _event_notify_bodies(db, src, recipients, with_location=False),
         )
     except Exception:
         db.rollback()
@@ -1083,13 +1134,18 @@ def _mirror_called_off(db: Session, src: Item, cancelled: bool) -> None:
 
 
 def _notify_event_change(
-    db: Session, recipients: list, item: Item, title: str, body: str = ""
+    db: Session, recipients: list, item: Item, title: str, body: str | dict[int, str] = ""
 ) -> None:
     """The going families hear a shared event moved, was called off, or is
-    back on. Inbox always; push behind the "village" pref."""
+    back on. Inbox always; push behind the "village" pref. A dict body carries
+    per-family text (each family's own wall clock); a str is the same for all."""
+
+    def _body(r) -> str:
+        return body if isinstance(body, str) else body.get(r.family_id, "")
+
     try:
         for r in recipients:
-            inbox.record(db, r.id, r.family_id, "village", title, body)
+            inbox.record(db, r.id, r.family_id, "village", title, _body(r))
         db.commit()
     except Exception:
         db.rollback()
@@ -1097,9 +1153,12 @@ def _notify_event_change(
     if not push.enabled():
         return
     try:
-        payload = {"title": title, "body": body, "tag": f"village-item-{item.id}", "url": "/"}
         for r in recipients:
             if push.wants(r, "village"):
+                payload = {
+                    "title": title, "body": _body(r),
+                    "tag": f"village-item-{item.id}", "url": "/",
+                }
                 push.send_to_user(db, r.id, payload)
     except Exception:
         log.exception("village-change push failed (the change is saved)")
