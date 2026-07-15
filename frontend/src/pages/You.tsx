@@ -14,7 +14,7 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import * as api from '../lib/api'
 import { updateMyProfile } from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
@@ -214,6 +214,30 @@ export function You({
   const [changingPassword, setChangingPassword] = useState(false)
   const [sub, setSub] = useState<SubPage | null>(null)
   const [touring, setTouring] = useState(false)
+  // The window is the only scroller, so opening a subpage would otherwise
+  // inherit the list's scroll position. Remember where the list was, open the
+  // subpage at the top, and restore the list's position on the way back.
+  const savedScroll = useRef<number | null>(null)
+
+  function openSub(page: SubPage) {
+    savedScroll.current = window.scrollY
+    setSub(page)
+    window.scrollTo(0, 0)
+  }
+
+  function closeSub() {
+    setSub(null)
+  }
+
+  useLayoutEffect(() => {
+    // Only the transition back to the list restores; a fresh open leaves the
+    // ref null, and a sub-to-sub jump keeps the list position for later.
+    if (sub === null && savedScroll.current !== null) {
+      window.scrollTo(0, savedScroll.current)
+      savedScroll.current = null
+    }
+  }, [sub])
+
   if (!user) return null
 
   if (touring) {
@@ -235,7 +259,7 @@ export function You({
     return (
       <div className="flex flex-col gap-4">
         <button
-          onClick={() => setSub(null)}
+          onClick={closeSub}
           className="flex items-center gap-1 self-start rounded-lg py-1 pr-2 text-sm font-semibold text-fg/60 transition-colors hover:text-fg"
         >
           <ChevronLeft className="h-4 w-4" /> You
@@ -263,23 +287,23 @@ export function You({
 
   return (
     <div className="flex flex-col gap-4">
-      <Profile userId={user.id} onOpenCrumbs={() => setSub('crumbs')} />
+      <Profile userId={user.id} onOpenCrumbs={() => openSub('crumbs')} />
 
       <JournalCard />
 
       <div className="flex flex-col gap-2">
-        <SettingsRow Icon={Inbox} page="inbox" onOpen={setSub} badge={inboxUnread} />
-        <SettingsRow Icon={BreadIcon as unknown as LucideIcon} page="crumbs" onOpen={setSub} />
+        <SettingsRow Icon={Inbox} page="inbox" onOpen={openSub} badge={inboxUnread} />
+        <SettingsRow Icon={BreadIcon as unknown as LucideIcon} page="crumbs" onOpen={openSub} />
         {/* Minors get no notifications (the server sends them none, so the
             page would be empty), no health area, and no village roster; the
             API 403s the latter two anyway. */}
-        {!user.is_minor && <SettingsRow Icon={Bell} page="notifications" onOpen={setSub} />}
-        <SettingsRow Icon={Palette} page="appearance" onOpen={setSub} />
+        {!user.is_minor && <SettingsRow Icon={Bell} page="notifications" onOpen={openSub} />}
+        <SettingsRow Icon={Palette} page="appearance" onOpen={openSub} />
         {!user.is_minor && (
-          <SettingsRow Icon={HeartPulse} page="health" onOpen={setSub} iconClass="text-red-400" />
+          <SettingsRow Icon={HeartPulse} page="health" onOpen={openSub} iconClass="text-red-400" />
         )}
-        <SettingsRow Icon={BookOpen} page="verses" onOpen={setSub} />
-        {!user.is_minor && <SettingsRow Icon={Trees} page="villages" onOpen={setSub} />}
+        <SettingsRow Icon={BookOpen} page="verses" onOpen={openSub} />
+        {!user.is_minor && <SettingsRow Icon={Trees} page="villages" onOpen={openSub} />}
       </div>
 
       <div className="flex flex-col gap-2">
