@@ -150,17 +150,22 @@ function todaySlot(item: api.FeedItem, nowHm: string): Slot {
 }
 
 
-// The day's first hello: a slim strip when today's show-up crumb landed,
-// dismissed with one tap and quiet for the rest of the day (per device;
-// the award itself is server-side and never repeats).
+// The day's first hello: a slim strip when today's show-up crumb landed.
+// Marked seen the moment it renders, so it greets once per day per device
+// whether or not it's dismissed (the award itself is server-side and never
+// repeats; login_award_today stays true all day, so showing can't gate on it).
 function WelcomeCrumb() {
-  const todayKey = `crumb-banner-${new Date().toISOString().slice(0, 10)}`
+  const todayKey = `crumb-banner-${api.localDate()}`
   const [show, setShow] = useState(false)
   useEffect(() => {
     if (localStorage.getItem(todayKey)) return
     api
       .getMyCrumbs()
-      .then((c) => setShow(c.login_award_today))
+      .then((c) => {
+        if (!c.login_award_today) return
+        localStorage.setItem(todayKey, '1')
+        setShow(true)
+      })
       .catch(() => {})
   }, [todayKey])
   if (!show) return null
@@ -178,10 +183,7 @@ function WelcomeCrumb() {
       <button
         type="button"
         aria-label="Dismiss"
-        onClick={() => {
-          localStorage.setItem(todayKey, '1')
-          setShow(false)
-        }}
+        onClick={() => setShow(false)}
         className="-m-1.5 shrink-0 rounded-lg p-1.5 text-fg/40 hover:bg-fg/10 hover:text-fg/70"
       >
         <X className="h-4 w-4" strokeWidth={2.5} />
