@@ -37,14 +37,14 @@ from app import throttle
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-# Signup invites are redeemable by ANONYMOUS visitors on the sign-in screen,
-# so they live only 15 minutes (village codes, by contrast, need a signed-in
-# admin and get 48h). All anonymous code attempts share ONE throttle bucket —
+# Signup invites are redeemable by ANONYMOUS visitors on the sign-in screen.
+# The owner mints a code and passes it to another family's parent out of band
+# (a text, say), so it needs to survive until they get around to it — 48h, to
+# match village codes. All anonymous code attempts share ONE throttle bucket —
 # per-code keys would throttle nothing, since every wrong guess is a fresh
 # key — with a higher cap so a prankster can't cheaply starve a real invitee.
-# Residual risk: a deliberate flood locks code entry for 15 minutes; on a
-# family server that's acceptable, and the owner just re-mints afterward.
-SIGNUP_INVITE_TTL = dt.timedelta(minutes=15)
+# The code is a hashed, no-lookalike-alphabet secret, so a long window is safe.
+SIGNUP_INVITE_TTL = dt.timedelta(hours=48)
 SIGNUP_THROTTLE_KEY = "signup-invite"
 SIGNUP_MAX_FAILURES = 30
 

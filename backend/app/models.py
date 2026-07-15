@@ -108,8 +108,8 @@ class SignupInvite(Base):
     one with the invitee's name; the invitee redeems the code on the sign-in
     screen, chooses their own username and password, and lands in the
     create-your-family wizard — invites found NEW households, they never join
-    an existing family. Codes live 15 minutes (they're redeemable by anonymous
-    visitors, unlike village codes) and only their hash is stored."""
+    an existing family. Codes live 48 hours (matching village codes; they're
+    redeemable by anonymous visitors, so only their hash is stored)."""
 
     __tablename__ = "signup_invites"
 

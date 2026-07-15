@@ -527,7 +527,7 @@ function InviteHouseholdSheet({ onClose }: { onClose: () => void }) {
             <p className="text-sm leading-relaxed text-fg/70">
               Give this code to <span className="font-semibold text-fg">{invite.display_name}</span>.
               On the sign-in screen they tap "Enter invite code", pick their own username and
-              password, and set up their own family. It works once and expires in 15 minutes; if
+              password, and set up their own family. It works once and expires in 48 hours; if
               it lapses, just mint another.
             </p>
             <div className="flex items-center justify-center gap-3 rounded-xl border border-fg/10 bg-fg/5 p-4">

@@ -34,6 +34,18 @@ def test_owner_mints_a_code_shown_once(owner):
     assert "-" in invite["code"]
 
 
+def test_invite_ttl_matches_village_codes(owner):
+    # 48h, so the owner can text a code and the other family gets to it whenever.
+    assert auth_router.SIGNUP_INVITE_TTL == dt.timedelta(hours=48)
+    before = dt.datetime.now(dt.timezone.utc)
+    invite = mint(owner)
+    expires = dt.datetime.fromisoformat(invite["expires_at"])
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=dt.timezone.utc)
+    remaining = expires - before
+    assert dt.timedelta(hours=47) < remaining < dt.timedelta(hours=49)
+
+
 def test_minting_is_server_admin_only(other, parent, child):
     # `other` is family B's ADMIN — but not the install's owner.
     for client in (other, parent, child):
