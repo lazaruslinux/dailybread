@@ -216,6 +216,32 @@ def unsave_food(
         db.commit()
 
 
+def _heal_liquid_unit(db: Session, food: Food) -> None:
+    """A barcode scanned before the liquid-unit fix can sit in the shared cache
+    as grams though its serving names a volume ("2 Tbsp (30mL)"). Flip such a
+    cached row to millilitres in place on the next scan: the stored numbers are
+    per-100 either way and FoodServing.grams already holds the right count of
+    the base unit, so only the unit label changes. The heal fires only on an
+    unambiguous metric/fl-oz mark in the name: has_mass=True suppresses the
+    bare cup/spoon tier, here because such a name is unproven either way (a
+    cached "0.75 cup" of cereal must never become millilitres; the real pre-fix
+    casualties all carry a metric parenthetical). Barcode cache rows only
+    (family_id None, USDA/OFF source); a family's own custom food is never
+    touched."""
+    if (
+        food.base_unit != "g"
+        or food.family_id is not None
+        or food.source == FoodSource.custom
+    ):
+        return
+    if any(
+        foods_api._volume_from_text(s.name, has_mass=True) is not None
+        for s in food.servings
+    ):
+        food.base_unit = "ml"
+        db.commit()
+
+
 @router.get("/barcode/{code}", response_model=FoodOut)
 def lookup_barcode(
     code: str,
@@ -264,6 +290,7 @@ def lookup_barcode(
         .limit(1)
     )
     if cached is not None:
+        _heal_liquid_unit(db, cached)
         return cached
 
     # USDA being down must not break scanning — treat its errors as a miss

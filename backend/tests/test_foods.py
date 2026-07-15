@@ -691,3 +691,190 @@ def test_usda_barcode_requires_exact_gtin(monkeypatch):
     payload["foods"] = payload["foods"][:1]
     assert foods_api.lookup_barcode_usda("022200001234", "test-key") is None
     assert foods_api.lookup_barcode_usda("022200001234", "") is None
+
+
+# ---- volume-signal classification ---------------------------------------------------
+# Labels routinely stamp a drink's serving with a mass unit; the human serving
+# text carries the real volume. These pin the classifier directly (it had none)
+# plus the cache-hit heal for rows scanned before the fix.
+
+
+def test_volume_text_classifies_a_grams_labelled_liquid_as_millilitres():
+    # The real failing case: USDA gives servingSize 30 / servingSizeUnit "g" but
+    # the household text says "2 Tbsp (30mL)"; the metric mark wins.
+    assert foods_api._serving_fields(30, "g", "2 Tbsp (30mL)") == {
+        "serving_amount": 30.0,
+        "base_unit": "ml",
+    }
+    # bare metric and fl oz phrasings both read as a volume
+    assert foods_api._serving_fields(None, None, "240 ml") == {
+        "serving_amount": 240.0,
+        "base_unit": "ml",
+    }
+    assert foods_api._serving_fields(None, None, "8 fl oz")["base_unit"] == "ml"
+    # a household spoon with no gram companion still converts
+    assert foods_api._serving_fields(None, None, "1 tbsp")["base_unit"] == "ml"
+
+
+def test_volume_text_leaves_solids_as_grams():
+    # A solid's household text names no volume, so the source's grams stand.
+    assert foods_api._serving_fields(21, "g", "1 slice (21 g)") == {
+        "serving_amount": 21.0,
+        "base_unit": "g",
+    }
+    # a cup measure sitting beside a gram weight is a solid (cereal), not a drink
+    assert foods_api._serving_fields(30, "g", "0.75 cup (30 g)") == {
+        "serving_amount": 30.0,
+        "base_unit": "g",
+    }
+
+
+def test_bare_household_cup_with_gram_fields_stays_grams():
+    # USDA's real shape: the household text is BARE ("1 cup"); the gram weight
+    # lives in servingSize/servingSizeUnit, never in the phrase. That pair is a
+    # cup-measured solid; without the field-mass seed it would classify as
+    # 236.59 mL and inflate "1 serving" of a 39 g cereal about sixfold.
+    f = {
+        **_fdc("Toasted Oat Cereal", brand="Big G"),
+        "servingSize": 39,
+        "servingSizeUnit": "g",
+        "householdServingFullText": "1 cup",
+    }
+    result = foods_api._usda_food_result(f)
+    assert result.base_unit == "g" and result.serving_amount == 39.0
+    # a metric mark beside the same gram fields still wins (the half & half fix)
+    f["servingSize"] = 30
+    f["householdServingFullText"] = "2 Tbsp (30mL)"
+    result = foods_api._usda_food_result(f)
+    assert result.base_unit == "ml" and result.serving_amount == 30.0
+
+
+def test_exact_volume_fields_outrank_a_converted_household_phrase():
+    # When the source's own fields already carry an exact millilitre size, a
+    # bare spoon/cup phrase must not replace it with its lossy conversion.
+    assert foods_api._serving_fields(30, "ml", "2 tbsp") == {
+        "serving_amount": 30.0,
+        "base_unit": "ml",
+    }
+    assert foods_api._serving_fields(240, "ml", "1 cup") == {
+        "serving_amount": 240.0,
+        "base_unit": "ml",
+    }
+    # a metric mark in the phrase agrees with the fields; either path lands 30
+    assert foods_api._serving_fields(30, "ml", "2 Tbsp (30mL)") == {
+        "serving_amount": 30.0,
+        "base_unit": "ml",
+    }
+
+
+def test_fraction_servings_never_parse_as_their_denominator():
+    # "1/4 cup" must not read as "4 cup"; the fraction token is skipped and the
+    # gram fields decide.
+    assert foods_api._serving_fields(28, "g", "1/4 cup") == {
+        "serving_amount": 28.0,
+        "base_unit": "g",
+    }
+    assert foods_api._volume_from_text("1/2 cup") is None
+
+
+def test_absurd_volume_readings_are_rejected():
+    # A vandalized record's digit string must never cache a non-finite or
+    # kiloliter-scale serving.
+    assert foods_api._volume_from_text("9" * 400 + " ml") is None
+    assert foods_api._volume_from_text("50000 ml") is None
+    assert foods_api._volume_from_text("11 l") is None
+
+
+def test_off_infers_volume_when_the_unit_is_missing(monkeypatch):
+    # Open Food Facts often omits serving_quantity_unit; the serving_size text
+    # then decides. The old "or 'g'" default would have mislabelled this drink.
+    payload = {
+        "status": 1,
+        "product": {
+            "product_name": "Almond Milk",
+            "brands": "Silk",
+            "serving_size": "240 ml",
+            "serving_quantity": 240,
+            "nutriments": {"energy-kcal_100g": 17, "proteins_100g": 0.5},
+        },
+    }
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return payload
+
+    monkeypatch.setattr(foods_api.httpx, "get", lambda *a, **k: FakeResponse())
+    result = foods_api.lookup_barcode_off("3450000000001")
+    assert result is not None
+    assert result.base_unit == "ml" and result.serving_amount == 240.0
+    # and a product with no parseable serving stays unstructured (not grams)
+    payload["product"]["serving_size"] = "one scoop"
+    payload["product"].pop("serving_quantity")
+    result = foods_api.lookup_barcode_off("3450000000001")
+    assert result.serving_amount is None and result.base_unit == "g"
+
+
+def test_cache_hit_heals_a_mislabelled_liquid(owner, monkeypatch):
+    # A liquid cached as grams before the fix (its serving names a volume) is
+    # reclassified to millilitres on the next scan, numbers preserved.
+    def off_hit(code):
+        return foods_api.FoodResult(
+            "off", code, "Half & Half", "Land O Lakes",
+            130.0, 3.0, 3.0, 12.0,
+            serving="2 Tbsp (30mL)", serving_amount=30.0, base_unit="g",
+        )
+
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", off_hit)
+    first = owner.get("/foods/barcode/4111111111111").json()
+    assert first["base_unit"] == "g"  # cached wrong, as a pre-fix scan would
+
+    def must_not_be_called(code):
+        raise AssertionError("the heal must not re-hit the network")
+
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", must_not_be_called)
+    again = owner.get("/foods/barcode/4111111111111").json()
+    assert again["id"] == first["id"]  # same cached row, flipped in place
+    assert again["base_unit"] == "ml"
+    assert again["servings"][0]["grams"] == 30.0  # the numbers are untouched
+
+
+def test_cache_hit_leaves_a_solid_alone(owner, monkeypatch):
+    def off_hit(code):
+        return foods_api.FoodResult(
+            "off", code, "Pita", "Athens", 275.0, 8.0, 53.0, 5.0,
+            serving="1 slice (21 g)", serving_amount=21.0, base_unit="g",
+        )
+
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", off_hit)
+    owner.get("/foods/barcode/4222222222222")
+
+    def must_not_be_called(code):
+        raise AssertionError("the heal must not re-hit the network")
+
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", must_not_be_called)
+    again = owner.get("/foods/barcode/4222222222222").json()
+    assert again["base_unit"] == "g"
+
+
+def test_cache_hit_never_heals_on_a_bare_household_name(owner, monkeypatch):
+    # A cached solid whose serving name is only a bare cup ("0.75 cup" cereal,
+    # grams 30) is ambiguous: the heal demands an unambiguous metric/fl-oz mark
+    # and must leave it alone. Every real pre-fix liquid casualty carries one.
+    def off_hit(code):
+        return foods_api.FoodResult(
+            "off", code, "Toasted Oats", "Big G", 367.0, 12.0, 73.0, 6.0,
+            serving="0.75 cup", serving_amount=30.0, base_unit="g",
+        )
+
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", off_hit)
+    owner.get("/foods/barcode/4333333333333")
+
+    def must_not_be_called(code):
+        raise AssertionError("the heal must not re-hit the network")
+
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", must_not_be_called)
+    again = owner.get("/foods/barcode/4333333333333").json()
+    assert again["base_unit"] == "g"
+    assert again["servings"][0]["grams"] == 30.0

@@ -7,6 +7,8 @@ FoodResult with nutrition per 100 g.
 """
 
 import dataclasses
+import math
+import re
 
 import httpx
 
@@ -103,6 +105,80 @@ def _serving_in_base(size, unit) -> tuple[float, str] | None:
     if u in _VOLUME_TO_ML:
         return round(n * _VOLUME_TO_ML[u], 2), "ml"
     return None
+
+
+# Volume marks we can read out of a human serving phrase, in millilitres.
+# Labels routinely stamp drinks with a mass unit (a half & half at "2 Tbsp
+# (30mL)" arrives with servingSizeUnit "g"), so the phrase, not the unit field,
+# is the honest source. A metric mark (ml/cl/l) or fl oz is an unambiguous
+# liquid; a bare spoon or cup can also measure a solid, so it only counts when
+# no gram weight sits beside it. Nutrition stays per-100 of the base unit: USDA
+# branded per-100 figures are per 100 g and we read them as per 100 mL, exact
+# only near water density but within label rounding for drinkable liquids. No
+# density table by design.
+_ML_PER_UNIT = {
+    "ml": 1.0, "milliliter": 1.0, "milliliters": 1.0, "millilitre": 1.0, "millilitres": 1.0,
+    "cl": 10.0,
+    "l": 1000.0, "liter": 1000.0, "liters": 1000.0, "litre": 1000.0, "litres": 1000.0,
+    "floz": 29.5735,
+    "cup": 236.588, "cups": 236.588,
+    "tbsp": 14.7868, "tbsps": 14.7868, "tablespoon": 14.7868, "tablespoons": 14.7868,
+    "tsp": 4.92892, "tsps": 4.92892, "teaspoon": 4.92892, "teaspoons": 4.92892,
+}
+_METRIC_VOLUME = {
+    "ml", "milliliter", "milliliters", "millilitre", "millilitres",
+    "cl", "l", "liter", "liters", "litre", "litres",
+}
+_MASS_WORDS = {"g", "gram", "grams", "mg", "kg", "oz", "ounce", "ounces", "lb", "lbs"}
+
+
+# No real label serving exceeds a few litres; anything bigger (or non-finite,
+# from a vandalized record's absurd digit string) is noise that must never
+# reach the shared cache as FoodServing.grams.
+_MAX_SERVING_ML = 10000
+
+
+def _volume_from_text(text: str, has_mass: bool = False) -> float | None:
+    """Millilitres for a serving phrase that names a volume, else None. A metric
+    reading (ml/cl/l) wins because it's the figure the label rounded to; fl oz
+    is the next most trustworthy (US labels use it for liquids only); a bare
+    cup/spoon is ambiguous (it measures cereal as readily as milk) and its
+    conversion is lossy, so it counts only as a last resort. has_mass seeds the
+    guard that suppresses that ambiguous tier: callers set it when a better
+    reading exists outside the phrase (USDA's servingSize/servingSizeUnit,
+    whether grams for a solid or an exact millilitre size) or when the phrase
+    is merely unproven (the cache heal, which flips rows only on an unambiguous
+    metric/fl-oz mark). Fractions ("1/4 cup") have no float shape we can read,
+    so their tokens are skipped and the caller's size/unit fields decide."""
+    if not text:
+        return None
+    norm = text.lower()
+    for phrase in ("fluid ounces", "fluid ounce", "fl. oz.", "fl oz", "fl.oz", "fl-oz"):
+        norm = norm.replace(phrase, "floz")
+    metric = imperial = household = None
+    # The lookbehind keeps a fraction's denominator ("1/4 cup" -> "4 cup") and
+    # a decimal's tail from parsing as a standalone amount.
+    for amount, unit in re.findall(r"(?<![\d/.])(\d+(?:\.\d+)?)\s*([a-z]+)", norm):
+        if unit in _MASS_WORDS:
+            has_mass = True
+            continue
+        factor = _ML_PER_UNIT.get(unit)
+        if factor is None:
+            continue
+        ml = round(float(amount) * factor, 2)
+        if not math.isfinite(ml) or ml <= 0 or ml >= _MAX_SERVING_ML:
+            continue
+        if unit in _METRIC_VOLUME:
+            metric = metric if metric is not None else ml
+        elif unit == "floz":
+            imperial = imperial if imperial is not None else ml
+        elif household is None:
+            household = ml
+    if metric is not None:
+        return metric
+    if imperial is not None:
+        return imperial
+    return household if not has_mass else None
 
 
 def _norm_gtin(s) -> str:
@@ -203,7 +279,11 @@ def _usda_food_result(f: dict) -> FoodResult:
         fiber_g=_num(by_number.get(_N_FIBER)),
         sugar_g=_num(by_number.get(_N_SUGAR)),
         serving=_usda_serving(f),
-        **_serving_fields(f.get("servingSize"), f.get("servingSizeUnit")),
+        **_serving_fields(
+            f.get("servingSize"),
+            f.get("servingSizeUnit"),
+            f.get("householdServingFullText") or "",
+        ),
     )
 
 
@@ -247,9 +327,20 @@ def search_usda(query: str, api_key: str, limit: int = 25) -> list[FoodResult]:
     return results[:limit]
 
 
-def _serving_fields(size, unit) -> dict:
-    """FoodResult kwargs for a label serving, when it's measurable."""
+def _serving_fields(size, unit, text: str = "") -> dict:
+    """FoodResult kwargs for a label serving, when it's measurable. The human
+    serving text is consulted first for a volume signal because USDA and OFF
+    routinely stamp liquid servings with unit "g" (a half & half at "2 Tbsp
+    (30mL)" arrives as servingSizeUnit "g"); a metric or fl-oz reading there
+    wins over the mislabelled unit. A bare household phrase defers to ANY
+    parseable fields: gram fields make it a cup-measured solid (USDA's text is
+    typically just "1 cup" with the 39 g in servingSize/servingSizeUnit), and
+    exact volume fields beat its lossy spoon-to-mL conversion. Only when the
+    fields give no measurable size does the household tier convert."""
     parsed = _serving_in_base(size, unit)
+    ml = _volume_from_text(text, has_mass=parsed is not None)
+    if ml is not None:
+        return {"serving_amount": ml, "base_unit": "ml"}
     if parsed is None:
         return {}
     amount, base = parsed
@@ -340,7 +431,12 @@ def lookup_barcode_off(barcode: str) -> FoodResult | None:
         fiber_g=_num(nut.get("fiber_100g")),
         sugar_g=_num(nut.get("sugars_100g")),
         serving=(p.get("serving_size") or "").strip(),
-        # serving_quantity is normalized (grams, or millilitres for drinks);
-        # older records omit the unit, which then means grams.
-        **_serving_fields(p.get("serving_quantity"), p.get("serving_quantity_unit") or "g"),
+        # serving_quantity is normalized (grams, or millilitres for drinks).
+        # When the unit is missing the serving_size text decides (a volume there
+        # means millilitres); nothing parseable leaves the serving unstructured.
+        **_serving_fields(
+            p.get("serving_quantity"),
+            p.get("serving_quantity_unit"),
+            p.get("serving_size") or "",
+        ),
     )
