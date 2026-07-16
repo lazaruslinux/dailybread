@@ -2,17 +2,11 @@ import { Bell, BellOff } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import * as api from '../lib/api'
+import { keyBytes, PUSH_OFF_KEY } from '../lib/push'
 
 // The You-tab "Notifications" card: turn card reminders on or off for THIS
 // device, and ring it once to prove the pipe works. One subscription per
 // device per member; the server pushes ~15 minutes before a timed card.
-
-// The applicationServerKey the browser wants is raw bytes, not base64url.
-function keyBytes(b64url: string): Uint8Array {
-  const pad = '='.repeat((4 - (b64url.length % 4)) % 4)
-  const raw = atob((b64url + pad).replace(/-/g, '+').replace(/_/g, '/'))
-  return Uint8Array.from(raw, (c) => c.charCodeAt(0))
-}
 
 // Why this device can't do push (or null when it can). Checked lazily so an
 // unsupported browser just gets a quiet explanation, never an error.
@@ -215,6 +209,13 @@ export function NotificationsCard() {
         p256dh: json.keys?.p256dh ?? '',
         auth: json.keys?.auth ?? '',
       })
+      // Enabling withdraws any earlier "off on purpose" mark, so the app-open
+      // resync may heal this device again.
+      try {
+        localStorage.removeItem(PUSH_OFF_KEY)
+      } catch {
+        // storage unavailable: the resync stays conservative, nothing to do
+      }
       setState({ kind: 'on', endpoint: sub.endpoint })
       setNote('This device will get reminders before timed cards and the morning digest.')
     } catch (err) {
@@ -233,6 +234,14 @@ export function NotificationsCard() {
     setError(null)
     setNote(null)
     try {
+      // Record the intent FIRST: permission stays 'granted' after a disable,
+      // so without this mark the app-open resync couldn't tell "turned off on
+      // purpose" from "push service dropped us" and would re-enable.
+      try {
+        localStorage.setItem(PUSH_OFF_KEY, '1')
+      } catch {
+        // storage unavailable: the resync bails on unreadable storage anyway
+      }
       const reg = await navigator.serviceWorker.getRegistration()
       const sub = reg && (await reg.pushManager.getSubscription())
       if (sub) {

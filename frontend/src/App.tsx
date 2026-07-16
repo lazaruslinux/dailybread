@@ -4,6 +4,7 @@ import { Suspense, lazy, useEffect, useState } from 'react'
 import { useAuth } from './auth/AuthContext'
 import { useInboxUnread } from './hooks/useInboxUnread'
 import { applyTheme, getTheme } from './lib/theme'
+import { resyncPushSubscription } from './lib/push'
 import { BreadIcon } from './components/BreadIcon'
 import { DailyGreeting } from './components/Greeting'
 import { HealthBadge } from './components/HealthBadge'
@@ -103,6 +104,12 @@ function AppShell() {
   useEffect(() => {
     applyTheme(user?.theme ?? getTheme(user?.id))
   }, [user?.id, user?.theme])
+
+  // Heal a silently-dropped push subscription on app open (never prompts).
+  // Adults only: minors get no pushes at all, so there's nothing to re-bind.
+  useEffect(() => {
+    if (user && !user.is_minor) void resyncPushSubscription()
+  }, [user?.id])
 
   const switchTab = (next: Tab) => {
     setOverlay(null)
