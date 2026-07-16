@@ -223,7 +223,7 @@ export function Profile({
           {isSelf && onOpenCrumbs && (
             <button
               onClick={onOpenCrumbs}
-              className="text-[11px] font-semibold text-accent-bright"
+              className="-my-3.5 flex min-h-11 items-center self-center rounded-lg px-3 text-xs font-semibold text-accent-bright"
             >
               How do breadcrumbs work?
             </button>

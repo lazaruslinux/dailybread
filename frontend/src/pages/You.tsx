@@ -203,6 +203,7 @@ export function You({
   inboxUnread = 0,
   onInboxRead,
   onGoTo,
+  reselect = 0,
 }: {
   onOpenAdmin: () => void
   inboxUnread?: number
@@ -210,6 +211,9 @@ export function You({
   // Inbox rows navigate: board/village news to Home, workouts to Health,
   // groceries/recipes/dinner to the Kitchen.
   onGoTo?: (tab: 'home' | 'fitness' | 'kitchen') => void
+  // Bumps each time the You tab is tapped while already active; a change means
+  // "return to the root", so we close any open subpage (scroll restores).
+  reselect?: number
 }) {
   const { user, logout } = useAuth()
   const [changingPassword, setChangingPassword] = useState(false)
@@ -239,6 +243,18 @@ export function You({
     }
   }, [sub])
 
+  // Tapping the active You tab (reselect bumps) returns to the root. Skip the
+  // initial mount so a first render never force-closes a subpage that an Inbox
+  // deep-link may have just opened.
+  const firstReselect = useRef(true)
+  useEffect(() => {
+    if (firstReselect.current) {
+      firstReselect.current = false
+      return
+    }
+    closeSub()
+  }, [reselect])
+
   if (!user) return null
 
   if (touring) {
@@ -261,9 +277,9 @@ export function You({
       <div className="flex flex-col gap-4">
         <button
           onClick={closeSub}
-          className="flex items-center gap-1 self-start rounded-lg py-1 pr-2 text-sm font-semibold text-fg/60 transition-colors hover:text-fg"
+          className="-my-2 -ml-2.5 flex min-h-11 items-center gap-1 self-start rounded-lg pl-2.5 pr-3 text-base font-semibold text-fg/60 transition-colors hover:text-fg"
         >
-          <ChevronLeft className="h-4 w-4" /> You
+          <ChevronLeft className="h-5 w-5" /> You
         </button>
         <h2 className="-mt-2 text-xl font-bold tracking-tight">{SUB_META[sub].label}</h2>
         {sub === 'inbox' && (

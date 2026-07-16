@@ -59,7 +59,9 @@ const EARNS: {
   },
 ]
 
-const LADDER = [5, 15, 25, 35, 45]
+// The first level of each tier band, so the badge number matches the caption
+// (slice 1-9, roll 10-19, loaf 20-29, baker 30-39, breadmaster 40+).
+const LADDER = [1, 10, 20, 30, 40]
 
 export function BreadcrumbsPage() {
   const { user } = useAuth()
@@ -130,12 +132,23 @@ export function BreadcrumbsPage() {
         <div className="flex flex-col gap-2">
           {LADDER.map((level) => {
             const tier = tierOf(level)
+            const here = me?.tier === tier
             return (
-              <div key={tier} className="flex items-center gap-3 rounded-xl px-1.5 py-1.5">
+              <div
+                key={tier}
+                className={`flex items-center gap-3 rounded-xl px-1.5 py-1.5 ${
+                  here ? 'bg-accent/10 ring-1 ring-accent/40' : ''
+                }`}
+              >
                 <LevelBadge level={level} size="md" />
                 <span className={`text-sm font-bold ${TIER_META[tier].text}`}>
                   {TIER_META[tier].label}
                 </span>
+                {here && (
+                  <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-bright">
+                    You
+                  </span>
+                )}
                 <span className="ml-auto text-xs text-fg/40">
                   {tier === 'breadmaster'
                     ? 'level 40 and beyond'

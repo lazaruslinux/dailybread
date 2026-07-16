@@ -82,6 +82,10 @@ function AppShell() {
   const { user } = useAuth()
   const [tab, setTab] = useState<Tab>('home')
   const [overlay, setOverlay] = useState<Overlay>(null)
+  // Re-tapping the already-active You tab returns to the You root (closes any
+  // open subpage). setTab with the current tab is a no-op, so You never hears
+  // about the tap on its own; this counter gives it a signal to act on.
+  const [youReselect, setYouReselect] = useState(0)
   // One poller owns the unread count; the tab-bar dot and the You row badge
   // read the same number, and opening the Inbox zeroes both at once.
   const { count: inboxUnread, zero: zeroInbox } = useInboxUnread()
@@ -112,6 +116,9 @@ function AppShell() {
   }, [user?.id])
 
   const switchTab = (next: Tab) => {
+    // Already on You with no overlay in the way: a tap means "back to the
+    // root", handled inside You via the bumped counter.
+    if (next === 'you' && tab === 'you' && !overlay) setYouReselect((n) => n + 1)
     setOverlay(null)
     setTab(next)
   }
@@ -188,6 +195,7 @@ function AppShell() {
                 inboxUnread={inboxUnread}
                 onInboxRead={zeroInbox}
                 onGoTo={switchTab}
+                reselect={youReselect}
               />
             )}
           </Suspense>
