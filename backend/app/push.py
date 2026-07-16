@@ -39,6 +39,12 @@ log = logging.getLogger("dailybread.push")
 
 TICK_SECONDS = 60
 
+# How late a timed reminder may still fire when the server was down through
+# its lead window. A flat bound for both appointment_lead_minutes and
+# reminder_lead_minutes: the point is only that a card's start slipped past
+# during downtime, not the length of its runway.
+CATCHUP_MINUTES = 30
+
 # Every notification kind a member can turn off individually. Board updates
 # and meal picks share one switch ("family"): they're all "someone changed
 # something you can see", and ten-plus toggles is where people stop reading.
@@ -103,7 +109,13 @@ def send_to_subscription(db: Session, sub: PushSubscription, payload: dict) -> b
             db.delete(sub)
             db.commit()
         else:
-            log.warning("push send failed: %s", e)
+            log.warning(
+                "push send failed for user %s (sub %s, tag %s): %s",
+                sub.user_id,
+                sub.id,
+                payload.get("tag"),
+                e,
+            )
         return False
 
 
@@ -172,7 +184,7 @@ def reminder_tick(now: dt.datetime) -> int:
         # and (for anything recurring) on a day its schedule lands on. The
         # lead depends on the kind: appointments get an hour of runway (shoes
         # on, drive somewhere), everything else the short heads-up.
-        due: list[tuple[Item, dt.date]] = []
+        due: list[tuple[Item, dt.date, bool]] = []
         for item in items:
             local = clocks.get(item.family_id, now)
             today = local.date()
@@ -185,19 +197,31 @@ def reminder_tick(now: dt.datetime) -> int:
             window_end = (local + dt.timedelta(minutes=lead)).time()
             if window_end < window_start:
                 window_end = dt.time(23, 59, 59)  # clamp at midnight; the next day picks up the rest
-            if not (window_start < item.time_of_day <= window_end):
-                continue
+            if window_start < item.time_of_day <= window_end:
+                late = False
+            else:
+                # Catch-up: start slipped past while the server was down. Fire up to
+                # CATCHUP_MINUTES late, never after the event has ended, never across
+                # midnight (yesterday's miss is the past-due pass's problem).
+                catch_start = (local - dt.timedelta(minutes=CATCHUP_MINUTES)).time()
+                if catch_start > window_start:  # subtraction crossed midnight
+                    catch_start = dt.time(0, 0)
+                if not (catch_start < item.time_of_day <= window_start):
+                    continue
+                if item.end_time is not None and item.end_time <= window_start:
+                    continue  # already over; a late ping is noise
+                late = True
             if item.repeat_type is None:
                 if item.date_for != today:
                     continue
             elif not _occurs(item, today):
                 continue
-            due.append((item, today))
+            due.append((item, today, late))
         if not due:
             return 0
-        comps = _completions_by_item(db, [item for item, _ in due])
+        comps = _completions_by_item(db, [item for item, _, _ in due])
 
-        for item, today in due:
+        for item, today, late in due:
             rows = comps[item.id]
             # A pending row (kid mode: awaiting parent approval) counts as
             # "already acted" here — the kid did the thing; don't nag them.
@@ -227,9 +251,13 @@ def reminder_tick(now: dt.datetime) -> int:
             when = _fmt(item.time_of_day)
             if item.end_time:
                 when += f" – {_fmt(item.end_time)}"
+            if late:
+                body = f"Started at {_fmt(item.time_of_day)}"
+            else:
+                body = f"Coming up at {when}" if not item.end_time else f"Coming up: {when}"
             payload = {
                 "title": item.title,
-                "body": f"Coming up at {when}" if not item.end_time else f"Coming up: {when}",
+                "body": body,
                 "tag": f"item-{item.id}-{today.isoformat()}",
                 "url": "/",
             }

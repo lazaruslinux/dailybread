@@ -5,7 +5,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import crumbs
+from app import crumbs, inbox
 from app.clock import family_now, valid_timezone
 from app.config import settings
 from app.db import get_db
@@ -394,6 +394,16 @@ def create_user(
     db.add(user)
     db.commit()
     db.refresh(user)
+    # A new member is family news for the family's other adults (the admin who
+    # added them and the account itself are excluded). A new-household account
+    # belongs to no family yet — nobody to tell.
+    if not data.new_household:
+        recipients = [u for u in inbox.other_adults(db, admin) if u.id != user.id]
+        inbox.record_all(
+            db, recipients, "member",
+            f"{user.display_name} joined the family",
+            f"Added by {admin.display_name.split()[0]}",
+        )
     return user
 
 

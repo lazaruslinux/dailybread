@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app import inbox
 from app.db import get_db
 from app.deps import require_family, require_parent
 from app.models import GroceryItem, Food, FoodSource, Recipe, RecipeIngredient, User, base_unit_of
@@ -241,6 +242,10 @@ def create_recipe(
     _set_ingredients(db, recipe, data.ingredients)
     db.commit()
     db.refresh(recipe)
+    inbox.record_all(
+        db, inbox.other_adults(db, parent), "recipe",
+        f"{parent.display_name.split()[0]} added a recipe: {recipe.name}",
+    )
     return _serialize(recipe)
 
 
@@ -252,6 +257,19 @@ def update_recipe(
     parent: User = Depends(require_parent),
 ):
     recipe = _get_recipe(db, recipe_id, parent.family_id)
+    before_name = recipe.name
+
+    # Snapshot before applying: a re-save of identical content is not an edit,
+    # so it must not repeat the "edited a recipe" Inbox line.
+    def _snapshot():
+        return (
+            recipe.name,
+            recipe.servings,
+            recipe.steps,
+            [(i.food_id, i.position, i.amount, i.unit) for i in recipe.ingredients],
+        )
+
+    before = _snapshot()
     fields = data.model_fields_set  # only touch keys the client actually sent
 
     if "name" in fields and data.name is not None:
@@ -268,6 +286,12 @@ def update_recipe(
 
     db.commit()
     db.refresh(recipe)
+    if _snapshot() != before:
+        inbox.record_all(
+            db, inbox.other_adults(db, parent), "recipe",
+            f"{parent.display_name.split()[0]} edited a recipe: {recipe.name}",
+            f'Was "{before_name}"' if recipe.name != before_name else "",
+        )
     return _serialize(recipe)
 
 
@@ -277,8 +301,14 @@ def delete_recipe(
     db: Session = Depends(get_db),
     parent: User = Depends(require_parent),
 ):
-    db.delete(_get_recipe(db, recipe_id, parent.family_id))
+    recipe = _get_recipe(db, recipe_id, parent.family_id)
+    name = recipe.name
+    db.delete(recipe)
     db.commit()
+    inbox.record_all(
+        db, inbox.other_adults(db, parent), "recipe",
+        f"{parent.display_name.split()[0]} removed a recipe: {name}",
+    )
 
 # One line on the grocery list per ingredient: "Ground beef, 85/15 · 200 g".
 # Titles are capped at the column's 120 chars.
@@ -315,4 +345,15 @@ def send_to_grocery(
             )
         )
     db.commit()
-    return {"added": len(recipe.ingredients)}
+    n = len(recipe.ingredients)
+    detail = f"{n} ingredient{'' if n == 1 else 's'}"
+    if data.list_id is not None:
+        from app.routers.grocery import _store_name
+
+        detail += f" · {_store_name(db, data.list_id, parent.family_id)}"
+    inbox.record_all(
+        db, inbox.other_adults(db, parent), "grocery",
+        f"{parent.display_name.split()[0]} sent {recipe.name} to groceries",
+        detail,
+    )
+    return {"added": n}

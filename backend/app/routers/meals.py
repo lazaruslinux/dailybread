@@ -4,9 +4,18 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from app import inbox
 from app.db import get_db
 from app.deps import require_family, require_parent
-from app.models import DinnerVote, Meal, MealSlot, Recipe, RecipeIngredient, User
+from app.models import (
+    DinnerChoice,
+    DinnerVote,
+    Meal,
+    MealSlot,
+    Recipe,
+    RecipeIngredient,
+    User,
+)
 from app.routers.recipes import per_serving_macros
 from app.schemas import (
     DinnerPlanOut,
@@ -23,6 +32,22 @@ router = APIRouter(prefix="/meals", tags=["meals"])
 # Same bound as the calendar: wide enough for any month view, small enough
 # that a range request stays cheap.
 _MAX_SPAN = dt.timedelta(days=45)
+
+
+def _clock(t: dt.time) -> str:
+    """A wall-clock time the way a person reads it: "5:30 PM"."""
+    hour = t.hour % 12 or 12
+    suffix = "AM" if t.hour < 12 else "PM"
+    return f"{hour}:{t.minute:02d} {suffix}"
+
+
+# How each dinner vote reads in a line: "Alex voted for dinner" / "Going out".
+_CHOICE_LABEL = {
+    DinnerChoice.self_serve: "Self-serve",
+    DinnerChoice.homemade: "Homemade",
+    DinnerChoice.go_out: "Going out",
+    DinnerChoice.delivery: "Delivery",
+}
 
 
 def _out(meal: Meal) -> MealOut:
@@ -92,6 +117,9 @@ def set_meal(
             Meal.slot == data.slot,
         )
     )
+    # None = no row yet; distinct from any (recipe_id, custom_title) pair, so
+    # a fresh plan always counts as a change below.
+    before_pick = (meal.recipe_id, meal.custom_title) if meal is not None else None
     if meal is None:
         meal = Meal(family_id=parent.family_id, date_for=data.date_for, slot=data.slot)
         db.add(meal)
@@ -101,22 +129,29 @@ def set_meal(
     db.refresh(meal)
     if meal.slot == MealSlot.dinner:
         _push_dinner_lock(db, parent, meal, recipe)
+    elif (meal.recipe_id, meal.custom_title) != before_pick:
+        # Breakfast and lunch aren't a lock-in moment (only dinner rings), but
+        # planning them is still family history worth an Inbox line — when the
+        # pick actually changed (re-saving the same plan is not news).
+        what = recipe.name if recipe is not None else (meal.custom_title or "")
+        inbox.record_all(
+            db, inbox.other_adults(db, parent), "dinner",
+            f"{parent.display_name.split()[0]} planned {meal.slot.value}: {what}",
+        )
     return _out(meal)
 
 
 def _push_dinner_lock(db: Session, parent: User, meal: Meal, recipe: Recipe | None) -> None:
     """Locking dinner IS setting the meal row, and it's the one dinner moment
-    the family hears about (votes stay quiet). Clearing the meal (unlock)
-    says nothing either."""
+    the family hears about ON THE PHONE (votes stay quiet). Clearing the meal
+    (unlock) says nothing either."""
     try:
-        from app import inbox, push
+        from app import push
 
         what = recipe.name if recipe is not None else (meal.custom_title or "")
         body = what
         if meal.time_of_day is not None:
-            hour = meal.time_of_day.hour % 12 or 12
-            suffix = "AM" if meal.time_of_day.hour < 12 else "PM"
-            body = f"{what} · {hour}:{meal.time_of_day.minute:02d} {suffix}"
+            body = f"{what} · {_clock(meal.time_of_day)}"
         payload = {
             "title": f"{parent.display_name.split()[0]} locked in dinner",
             "body": body,
@@ -164,15 +199,36 @@ def set_meal_time(
         meal = Meal(family_id=parent.family_id, date_for=data.date_for, slot=data.slot)
         db.add(meal)
     meal.time_of_day = data.time_of_day
+    first = parent.display_name.split()[0]
+    slot = data.slot.value
     if meal.time_of_day is None and meal.recipe_id is None and not meal.custom_title:
         db.delete(meal)
         db.commit()
+        inbox.record_all(
+            db, inbox.other_adults(db, parent), "dinner",
+            f"{first} cleared the {slot} time",
+        )
         return MealOut(
             date_for=data.date_for, slot=data.slot,
             recipe_id=None, recipe_name=None, custom_title=None, time_of_day=None,
         )
     db.commit()
     db.refresh(meal)
+    if data.time_of_day is None:
+        inbox.record_all(
+            db, inbox.other_adults(db, parent), "dinner",
+            f"{first} cleared the {slot} time",
+        )
+    else:
+        what = meal.recipe.name if meal.recipe is not None else (meal.custom_title or "")
+        detail = " · ".join(
+            p for p in (what, _clock(data.time_of_day), meal.date_for.strftime("%a %b %-d")) if p
+        )
+        inbox.record_all(
+            db, inbox.other_adults(db, parent), "dinner",
+            f"{first} set a {slot} time",
+            detail,
+        )
     return _out(meal)
 
 
@@ -194,12 +250,23 @@ def clear_meal(
         )
     )
     if meal is not None:
+        had_pick = meal.recipe_id is not None or bool(meal.custom_title)
+        what = meal.recipe.name if meal.recipe is not None else (meal.custom_title or "")
+        date_txt = meal.date_for.strftime("%a %b %-d")
         if meal.time_of_day is not None:
             meal.recipe_id = None
             meal.custom_title = None
         else:
             db.delete(meal)
         db.commit()
+        # Only a real un-plan is news: clearing a night that carried only a
+        # time (or nothing) says nothing.
+        if had_pick:
+            inbox.record_all(
+                db, inbox.other_adults(db, parent), "dinner",
+                f"{parent.display_name.split()[0]} unplanned {slot.value}",
+                f"{what} · {date_txt}",
+            )
 
 
 # ---- the dinner plan ---------------------------------------------------------------
@@ -318,6 +385,9 @@ def cast_dinner_vote(
             DinnerVote.user_id == user.id,
         )
     )
+    # None = first vote; distinct from any ballot triple, so a new vote always
+    # counts as a change below.
+    before = (vote.choice, vote.detail, vote.recipe_id) if vote is not None else None
     if vote is None:
         vote = DinnerVote(family_id=user.family_id, date_for=date_for, user_id=user.id)
         db.add(vote)
@@ -325,9 +395,21 @@ def cast_dinner_vote(
     vote.detail = data.detail.strip()
     vote.recipe_id = recipe_id
     db.commit()
-    # Votes stay quiet on purpose: the plan block is standing, not a
-    # conversation thread. The family hears when dinner gets LOCKED IN
-    # (set_meal), the one moment that decides the night.
+    # Votes write history but never RING: the family gets pushed only when
+    # dinner is LOCKED IN (set_meal), the one moment that decides the night. A
+    # kid's vote still records to the adults — every voice on the plan is news.
+    # Re-casting the identical ballot is not (voting is a tap UI; taps repeat).
+    if (vote.choice, vote.detail, vote.recipe_id) != before:
+        extra = ""
+        if recipe_id is not None:
+            extra = f" · {db.get(Recipe, recipe_id).name}"
+        elif vote.detail:
+            extra = f" · {vote.detail}"
+        inbox.record_all(
+            db, inbox.other_adults(db, user), "dinner",
+            f"{user.display_name.split()[0]} voted for dinner",
+            f"{_CHOICE_LABEL.get(data.choice, '')}{extra} · {date_for.strftime('%a %b %-d')}",
+        )
     return _plan_out(db, user.family_id, date_for)
 
 
@@ -347,4 +429,8 @@ def retract_dinner_vote(
     if vote is not None:
         db.delete(vote)
         db.commit()
+        inbox.record_all(
+            db, inbox.other_adults(db, user), "dinner",
+            f"{user.display_name.split()[0]} took back their dinner vote",
+        )
     return _plan_out(db, user.family_id, date_for)

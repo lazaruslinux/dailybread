@@ -985,7 +985,7 @@ export const getMyCrumbs = () => request<Crumbs>('/me/crumbs')
 
 export interface InboxEntry {
   id: number
-  kind: string // crumb/board/dinner/workout/pending/approved — picks the row icon
+  kind: string // crumb/board/dinner/workout/pending/approved/invite/rsvp/village/grocery/recipe/member — picks the row icon
   title: string
   body: string
   read: boolean

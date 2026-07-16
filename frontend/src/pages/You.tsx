@@ -207,8 +207,9 @@ export function You({
   onOpenAdmin: () => void
   inboxUnread?: number
   onInboxRead?: () => void
-  // Inbox rows navigate: board/village news to Home, workouts to Health.
-  onGoTo?: (tab: 'home' | 'fitness') => void
+  // Inbox rows navigate: board/village news to Home, workouts to Health,
+  // groceries/recipes/dinner to the Kitchen.
+  onGoTo?: (tab: 'home' | 'fitness' | 'kitchen') => void
 }) {
   const { user, logout } = useAuth()
   const [changingPassword, setChangingPassword] = useState(false)

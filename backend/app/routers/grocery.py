@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from app import inbox
 from app.db import get_db
 from app.deps import require_family, require_parent
 from app.models import GroceryItem, GroceryList, User
@@ -35,6 +36,14 @@ def _check_list(db: Session, list_id: int | None, family_id: int) -> None:
     store = db.get(GroceryList, list_id)
     if store is None or store.family_id != family_id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No such store")
+
+
+def _store_name(db: Session, list_id: int | None, family_id: int) -> str:
+    """A list's display name for an Inbox line; None is the built-in General."""
+    if list_id is None:
+        return "General"
+    store = db.get(GroceryList, list_id)
+    return store.name if store is not None and store.family_id == family_id else "General"
 
 
 def _state(db: Session, family_id: int) -> GroceryStateOut:
@@ -81,6 +90,10 @@ def add_store(
     db.add(store)
     db.commit()
     db.refresh(store)
+    inbox.record_all(
+        db, inbox.other_adults(db, parent), "grocery",
+        f"{parent.display_name.split()[0]} added a store: {store.name}",
+    )
     return store
 
 
@@ -94,8 +107,14 @@ def remove_store(
     store = db.get(GroceryList, list_id)
     if store is None or store.family_id != parent.family_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such store")
+    name = store.name
     db.delete(store)
     db.commit()
+    inbox.record_all(
+        db, inbox.other_adults(db, parent), "grocery",
+        f"{parent.display_name.split()[0]} removed a store: {name}",
+        "Its items moved to General",
+    )
 
 
 # ---- items --------------------------------------------------------------------
@@ -112,6 +131,11 @@ def add_grocery(
     db.add(item)
     db.commit()
     db.refresh(item)
+    inbox.record_all(
+        db, inbox.other_adults(db, parent), "grocery",
+        f"{parent.display_name.split()[0]} added to groceries: {item.title}",
+        _store_name(db, item.list_id, parent.family_id),
+    )
     return item
 
 
@@ -122,6 +146,9 @@ def update_grocery(
     db: Session = Depends(get_db),
     parent: User = Depends(require_parent),
 ):
+    # No Inbox line here on purpose: check/uncheck taps are the store-aisle hot
+    # path, and renames/moves ride the same PATCH — recording any of them would
+    # drown the inbox. Adds, deletes, and clears carry the grocery history.
     item = _get_item(db, item_id, parent.family_id)
     fields = data.model_fields_set  # only touch keys the client actually sent
     if "title" in fields and data.title is not None:
@@ -142,8 +169,15 @@ def delete_grocery(
     db: Session = Depends(get_db),
     parent: User = Depends(require_parent),
 ):
-    db.delete(_get_item(db, item_id, parent.family_id))
+    item = _get_item(db, item_id, parent.family_id)
+    title, list_id = item.title, item.list_id
+    db.delete(item)
     db.commit()
+    inbox.record_all(
+        db, inbox.other_adults(db, parent), "grocery",
+        f"{parent.display_name.split()[0]} removed from groceries: {title}",
+        _store_name(db, list_id, parent.family_id),
+    )
 
 
 @router.post("/clear-checked", response_model=GroceryStateOut)
@@ -155,7 +189,7 @@ def clear_checked(
     """Sweep checked lines off ONE list (None = General), not all of them:
     clearing what you grabbed at Walmart shouldn't erase Safeway's progress."""
     _check_list(db, list_id, parent.family_id)
-    db.execute(
+    result = db.execute(
         delete(GroceryItem).where(
             GroceryItem.family_id == parent.family_id,
             GroceryItem.checked,
@@ -163,4 +197,11 @@ def clear_checked(
         )
     )
     db.commit()
+    n = result.rowcount
+    if n:  # clearing a list with nothing checked is a quiet no-op
+        inbox.record_all(
+            db, inbox.other_adults(db, parent), "grocery",
+            f"{parent.display_name.split()[0]} cleared checked-off groceries",
+            f"{n} item{'' if n == 1 else 's'} · {_store_name(db, list_id, parent.family_id)}",
+        )
     return _state(db, parent.family_id)

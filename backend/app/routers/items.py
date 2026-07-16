@@ -3,10 +3,11 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app import crumbs, inbox, push, recurrence, village_events
-from app.clock import shift_schedule
+from app.clock import family_now, shift_schedule
 from app.db import get_db
 from app.deps import require_family, require_parent
 from app.models import (
@@ -648,6 +649,32 @@ def calendar(
     return CalendarOut(start=start, end=end, days=days)
 
 
+def _server_now() -> dt.datetime:
+    """The server's wall clock — an indirection so tests can pin it."""
+    return dt.datetime.now()
+
+
+def _claim_past_start(db: Session, item: Item) -> None:
+    """The member just set this time themselves; catch-up is for reminders
+    lost to downtime, not edits into the past. A dated one-shot created (or
+    rescheduled) onto a start already behind its family's clock pre-claims its
+    ReminderLog slot, so the tick's catch-up window finds nothing to fire.
+    Repeating cards are out of scope: their claims are per-occurrence day.
+    Runs after the endpoint's own commit; a racing tick that claimed first is
+    the same outcome, so the collision is swallowed like _already_reminded."""
+    if item.repeat_type is not None or item.date_for is None or item.time_of_day is None:
+        return
+    tz = db.scalar(select(Family.timezone).where(Family.id == item.family_id))
+    local = family_now(_server_now(), tz)
+    if item.date_for != local.date() or item.time_of_day > local.time():
+        return
+    db.add(ReminderLog(item_id=item.id, date_for=item.date_for))
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+
+
 @router.post("", response_model=FeedItemOut, status_code=status.HTTP_201_CREATED)
 def create_item(
     data: ItemIn,
@@ -687,6 +714,7 @@ def create_item(
     db.add(item)
     db.commit()
     db.refresh(item)
+    _claim_past_start(db, item)
     _push_board_change(
         db,
         _board_change_recipients(db, item, parent),
@@ -712,6 +740,8 @@ def update_item(
     fields = data.model_fields_set  # only touch keys the client actually sent
     before_schedule = tuple(getattr(item, f) for f in _SCHEDULE_FIELDS)
     before_location = item.location
+    before_title = item.title
+    before_notes = item.notes
 
     if "assignee_ids" in fields:
         item.assignees = _resolve_assignees(db, data.assignee_ids or [], parent.family_id)
@@ -776,15 +806,42 @@ def update_item(
         db.execute(delete(ReminderLog).where(ReminderLog.item_id == item.id))
     db.commit()
     db.refresh(item)
+    first = parent.display_name.split()[0]
     if rescheduled:
+        # The old ReminderLog rows were cleared above so the NEW schedule
+        # reminds afresh — unless that schedule is already in the past, in
+        # which case the slot is re-claimed on the spot.
+        _claim_past_start(db, item)
         _push_board_change(
             db,
             _board_change_recipients(db, item, parent),
-            parent.display_name.split()[0],
+            first,
             "rescheduled",
             item.kind,
             item.title,
             f"Now {_schedule_text(item)}",
+        )
+    # A content-only edit writes ONE Inbox line and never rings (title, notes,
+    # and location tweaks are quiet on the phone by design). The elif chain is
+    # deliberate: a reschedule already spoke, so never a second line. Cut on
+    # purpose: assignee, visibility, and shared_to_feed changes stay silent.
+    elif "title" in fields and item.title != before_title:
+        inbox.record_all(
+            db, _board_change_recipients(db, item, parent), "board",
+            f"{first} edited {_KIND_PHRASE[item.kind]}: {item.title}",
+            f'Was "{before_title}"',
+        )
+    elif "notes" in fields and item.notes != before_notes:
+        inbox.record_all(
+            db, _board_change_recipients(db, item, parent), "board",
+            f"{first} edited {_KIND_PHRASE[item.kind]}: {item.title}",
+            "Notes updated",
+        )
+    elif "location" in fields and item.location != before_location:
+        inbox.record_all(
+            db, _board_change_recipients(db, item, parent), "board",
+            f"{first} edited {_KIND_PHRASE[item.kind]}: {item.title}",
+            f"Location: {item.location}" if item.location else "Location removed",
         )
     # A shared source card drags its village copies along: every copy is
     # rewritten from the source (schedules reconverted onto each family's
@@ -905,6 +962,10 @@ def uncancel_item(
     if rows:
         db.commit()
         _mirror_called_off(db, item, cancelled=False)
+        inbox.record_all(
+            db, _board_change_recipients(db, item, parent), "board",
+            f"{parent.display_name.split()[0]} put back on: {item.title}",
+        )
     return _build_feed_item(
         db, item, parent, date_for, _completions_by_item(db, [item])[item.id]
     )
@@ -1022,12 +1083,12 @@ def _push_board_change(
     body: str = "",
 ) -> None:
     """One family push per board action, phrased like a person: the verb, the
-    kind, and the card's name right in the title. Routines never push here —
-    they're the board's daily heartbeat, not news (kid routines still reach
-    parents through Kid Tasks). Each recipient also gets an Inbox line first,
-    recorded and committed before the push leg so a push failure never loses
-    the history."""
-    if kind == ItemKind.routine or not recipients:
+    kind, and the card's name right in the title. Each recipient gets an Inbox
+    line first, recorded and committed before the push leg so a push failure
+    never loses the history — routines included. Routines never PUSH here,
+    though: they're the board's daily heartbeat, not news (kid routines still
+    reach parents through Kid Tasks)."""
+    if not recipients:
         return
     payload = {
         "title": f"{actor_first} {verb} {_KIND_PHRASE[kind]}: {title}",
@@ -1042,7 +1103,7 @@ def _push_board_change(
     except Exception:
         db.rollback()
         log.exception("board-change inbox write failed (the change itself is saved)")
-    if not push.enabled():
+    if kind == ItemKind.routine or not push.enabled():
         return
     try:
         for r in recipients:
@@ -1285,14 +1346,18 @@ def complete_item(
             # The payoff moment: the kid hears the approval by name even when
             # the daily cap zeroes the crumb — being seen IS the reward.
             _record_kid_payoff(db, doer, user, "approved", item.title, awarded)
-            _push_board_change(
-                db,
-                _board_change_recipients(db, item, user),
-                doer.display_name.split()[0],
-                "completed",
-                item.kind,
-                item.title,
-            )
+            # A routine approval writes no board line: the parents already got
+            # the "pending" line, the kid gets "approved". Only non-routine
+            # kid cards announce the completion to the other parent.
+            if item.kind != ItemKind.routine:
+                _push_board_change(
+                    db,
+                    _board_change_recipients(db, item, user),
+                    doer.display_name.split()[0],
+                    "completed",
+                    item.kind,
+                    item.title,
+                )
 
     out = _build_feed_item(
         db, item, user, date_for, _completions_by_item(db, [item])[item.id]
@@ -1344,6 +1409,24 @@ def uncomplete_item(
         db.delete(completion)
     if completions:
         db.commit()
+        first = user.display_name.split()[0]
+        if user.is_minor:
+            # A kid withdrawing their own pending check-off: every parent hears,
+            # the same audience the pending notice went to.
+            parents = db.scalars(
+                select(User).where(
+                    User.family_id == user.family_id, User.role == Role.parent
+                )
+            ).all()
+            inbox.record_all(
+                db, list(parents), "board",
+                f"{first} withdrew their check-off: {item.title}",
+            )
+        else:
+            inbox.record_all(
+                db, _board_change_recipients(db, item, user), "board",
+                f"{first} unchecked {_KIND_PHRASE[item.kind]}: {item.title}",
+            )
 
     out = _build_feed_item(
         db, item, user, date_for, _completions_by_item(db, [item])[item.id]

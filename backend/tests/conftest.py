@@ -44,6 +44,19 @@ def _push_unconfigured(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _items_clock_at_dawn(monkeypatch):
+    """Pin the items router's wall clock to just past midnight. Tests create
+    cards at fixed times ("14:10 today") and drive reminder_tick with a fake
+    now; without this pin, a suite run AFTER that hour would trip the
+    edits-into-the-past ReminderLog pre-claim at creation and swallow the
+    reminder under test. Tests exercising the pre-claim itself re-pin it."""
+    from app.routers import items as items_router
+
+    dawn = dt.datetime.combine(dt.date.today(), dt.time(0, 1))
+    monkeypatch.setattr(items_router, "_server_now", lambda: dawn)
+
+
+@pytest.fixture(autouse=True)
 def _reset_process_state():
     # The login throttle and the food-search cache are process-global; without
     # this, one test's lockouts or cached results would bleed into the next.

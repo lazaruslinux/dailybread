@@ -311,6 +311,17 @@ def join_village(
     db.commit()
     throttle.clear(f"village-join:{admin.username}")
     db.refresh(village)
+    # The village's other families hear a new one arrived (push + inbox, the
+    # "village" pref). The joining family is excluded — it knows it joined.
+    family = db.get(Family, admin.family_id)
+    _notify_village(
+        db,
+        _village_adults(db, village.id, exclude_family=admin.family_id),
+        "village",
+        f"{family.name} joined {village.name}",
+        "",
+        f"village-join-{village.id}-{admin.family_id}",
+    )
     return _village_out(db, village, admin.family_id)
 
 
@@ -572,6 +583,16 @@ def share_recipe(
     db.commit()
     db.refresh(share)
     family = db.get(Family, parent.family_id)
+    # The village's other families hear about the new shelf entry (push +
+    # inbox, "village" pref).
+    _notify_village(
+        db,
+        _village_adults(db, village.id, exclude_family=parent.family_id),
+        "village",
+        f"{parent.display_name.split()[0]} shared a recipe: {recipe.name}",
+        f"On {village.name}'s shelf",
+        f"village-recipe-{share.id}",
+    )
     return _shelf_row(db, share, recipe, village.name, family.name, parent.family_id)
 
 
@@ -696,6 +717,20 @@ def save_a_copy(
         )
     db.commit()
     db.refresh(copy)
+    # The payoff for the sharer: their family's parents hear when another
+    # family adopts their recipe. Inbox-only — a quiet thank-you, not a push.
+    copier_family = db.get(Family, parent.family_id)
+    sharer_parents = list(
+        db.scalars(
+            select(User).where(
+                User.family_id == share.family_id, User.role == Role.parent
+            )
+        )
+    )
+    inbox.record_all(
+        db, sharer_parents, "recipe",
+        f"{copier_family.name} saved your recipe: {src.name}",
+    )
     return _serialize(copy)
 
 

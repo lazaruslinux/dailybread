@@ -8,14 +8,18 @@ transaction boundary, so an event that fails to save never leaves a phantom
 inbox row, and crumbs.award() can fold the entry into its own atomic commit.
 """
 
+import logging
+
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.models import InboxEntry
+from app.models import InboxEntry, User
+
+log = logging.getLogger("dailybread.inbox")
 
 # Newest rows kept per member, pruned on insert. Count-based, not age-based:
 # the storage bound is hard and a quiet member's inbox never empties out.
-MAX_PER_USER = 100
+MAX_PER_USER = 300
 
 
 def record(
@@ -47,3 +51,32 @@ def record(
             body=body[:200],
         )
     )
+
+
+def other_adults(db: Session, actor: User) -> list[User]:
+    """The actor's family adults minus the actor: the default audience for a
+    family-activity line. Board-item lines are the exception — they use
+    _board_change_recipients so private cards never leak to the other parent."""
+    return [
+        u
+        for u in db.scalars(select(User).where(User.family_id == actor.family_id))
+        if not u.is_minor and u.id != actor.id
+    ]
+
+
+def record_all(
+    db: Session, users: list[User], kind: str, title: str, body: str = ""
+) -> None:
+    """One record() per recipient then a SINGLE commit, always AFTER the
+    endpoint's own commit. Wrapped so an inbox write can never fail the action
+    it describes or leave a phantom row: a failure rolls the inbox insert back
+    and logs, the already-committed action stands."""
+    if not users:
+        return
+    try:
+        for u in users:
+            record(db, u.id, u.family_id, kind, title, body)
+        db.commit()
+    except Exception:
+        db.rollback()
+        log.exception("inbox write failed (the action itself is saved)")

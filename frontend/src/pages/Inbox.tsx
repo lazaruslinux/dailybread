@@ -2,10 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import {
   BadgeCheck,
   CalendarCheck,
+  CookingPot,
   Dumbbell,
   Hourglass,
   Mailbox,
+  ShoppingCart,
   Trees,
+  UserPlus,
   Users,
   Utensils,
   type LucideIcon,
@@ -29,6 +32,9 @@ const KIND_ICON: Record<string, { Icon: LucideIcon; tint: string }> = {
   invite: { Icon: Mailbox, tint: 'text-accent-bright' },
   rsvp: { Icon: Users, tint: 'text-fg/60' },
   village: { Icon: Trees, tint: 'text-accent-bright' },
+  grocery: { Icon: ShoppingCart, tint: 'text-fg/60' },
+  recipe: { Icon: CookingPot, tint: 'text-fg/60' },
+  member: { Icon: UserPlus, tint: 'text-accent-bright' },
 }
 
 // "Just now" through short dates: enough to place a row without a timestamp
@@ -45,12 +51,15 @@ function ago(iso: string): string {
   return then.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-// Where a tapped entry leads, by kind: board and village news live on Home,
-// workouts on the Health tab, crumb earns in Breadcrumbs & Levels. The
+// Where a tapped entry leads, by kind: board/village/member news lives on
+// Home, workouts on the Health tab, crumb earns in Breadcrumbs & Levels, and
+// the Kitchen owns groceries, recipes, and the meal planner (dinner). The
 // caller (You) owns the actual navigation.
-export function inboxDestination(kind: string): 'home' | 'fitness' | 'crumbs' {
+export function inboxDestination(kind: string): 'home' | 'fitness' | 'crumbs' | 'kitchen' {
   if (kind === 'crumb') return 'crumbs'
   if (kind === 'workout') return 'fitness'
+  // Dinner lines move off Home to the Kitchen, where the meal planner lives.
+  if (kind === 'grocery' || kind === 'recipe' || kind === 'dinner') return 'kitchen'
   return 'home'
 }
 

@@ -272,6 +272,111 @@ def test_repeating_appointment_checked_today_stays_quiet(
     assert push_engine.reminder_tick(_now_at(14, 0)) == 0
 
 
+# ---- catch-up: a start that slipped past while the server was down ----------------
+
+
+def _dated_task(client, title, time_of_day, end_time=None):
+    body = {
+        "kind": "task",
+        "title": title,
+        "date_for": dt.date.today().isoformat(),
+        "time_of_day": time_of_day,
+    }
+    if end_time is not None:
+        body["kind"] = "appointment"
+        body["end_time"] = end_time
+    res = client.post("/items", json=body)
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+def test_a_missed_start_still_fires_within_the_catch_up_window(
+    owner, configured, push_outbox, engine_db
+):
+    owner.put("/push/subscription", json=SUB)
+    _dated_task(owner, "Take out bins", "14:00:00")
+    push_outbox.clear()
+    # 14:20: the 14:00 start slipped past during downtime, still inside the
+    # 30-minute catch-up. It fires, flagged with when it began.
+    assert push_engine.reminder_tick(_now_at(14, 20)) == 1
+    assert push_outbox[-1][1]["body"] == "Started at 2:00 PM"
+    # The ReminderLog claim means a second tick sends nothing more.
+    assert push_engine.reminder_tick(_now_at(14, 21)) == 0
+
+
+def test_a_start_missed_by_more_than_thirty_minutes_stays_quiet(
+    owner, configured, outbox, engine_db
+):
+    owner.put("/push/subscription", json=SUB)
+    _dated_task(owner, "Take out bins", "14:00:00")
+    outbox.clear()
+    assert push_engine.reminder_tick(_now_at(14, 45)) == 0  # 45 min late, past catch-up
+
+
+def test_an_already_ended_event_does_not_fire_late(owner, configured, outbox, engine_db):
+    owner.put("/push/subscription", json=SUB)
+    _dated_task(owner, "Standup", "14:00:00", end_time="14:10:00")
+    outbox.clear()
+    # 14:20 is inside the catch-up window, but the event ended at 14:10 — a
+    # late ping is only noise, so it stays quiet.
+    assert push_engine.reminder_tick(_now_at(14, 20)) == 0
+
+
+def test_an_on_time_fire_never_refires_as_late(owner, configured, outbox, engine_db):
+    owner.put("/push/subscription", json=SUB)
+    _dated_task(owner, "Take out bins", "14:10:00")
+    outbox.clear()
+    assert push_engine.reminder_tick(_now_at(14, 0)) == 1  # on time
+    # 14:20 would be inside the catch-up window, but the on-time fire already
+    # claimed the ReminderLog row.
+    assert push_engine.reminder_tick(_now_at(14, 20)) == 0
+
+
+def test_creating_a_card_timed_in_the_past_fires_nothing(
+    owner, configured, outbox, engine_db, monkeypatch
+):
+    # The member just set this time themselves; catch-up is for reminders lost
+    # to downtime, not edits into the past. Pin the items clock AFTER the
+    # card's start so creation lands as an edit into the past and pre-claims.
+    from app.routers import items as items_router
+
+    monkeypatch.setattr(items_router, "_server_now", lambda: _now_at(14, 10))
+    _dated_task(owner, "Take out bins", "14:00:00")
+    outbox.clear()
+    assert push_engine.reminder_tick(_now_at(14, 20)) == 0
+
+
+def test_rescheduling_into_the_past_fires_nothing(
+    owner, configured, outbox, engine_db, monkeypatch
+):
+    from app.routers import items as items_router
+
+    # Created for the evening: no pre-claim at creation.
+    item = _dated_task(owner, "Take out bins", "19:00:00")
+    # Then, at 14:10, rescheduled onto a start that already passed.
+    monkeypatch.setattr(items_router, "_server_now", lambda: _now_at(14, 10))
+    res = owner.patch(f"/items/{item['id']}", json={"time_of_day": "14:00:00"})
+    assert res.status_code == 200, res.text
+    outbox.clear()  # the reschedule's own board push isn't under test
+    assert push_engine.reminder_tick(_now_at(14, 20)) == 0
+
+
+def test_a_failed_send_logs_the_user_and_tag(owner, configured, monkeypatch, caplog):
+    def boom(subscription_info, data, **kwargs):
+        from pywebpush import WebPushException
+
+        raise WebPushException("boom", response=SimpleNamespace(status_code=500))
+
+    monkeypatch.setattr("pywebpush.webpush", boom)
+    owner.put("/push/subscription", json=SUB)
+    uid = user_id(owner)
+    with caplog.at_level("WARNING"):
+        owner.post("/push/test")
+    msg = " ".join(r.getMessage() for r in caplog.records)
+    assert f"push send failed for user {uid}" in msg
+    assert "tag test" in msg  # the /push/test payload's tag rides the log line
+
+
 # ---- board-change notifications --------------------------------------------------
 
 
