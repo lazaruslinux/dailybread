@@ -18,11 +18,19 @@ your information anywhere unless you explicitly connect an outside service.
 
 ## What leaves the server, and only if you opt in
 
-- Strava: if you connect a Strava account, the server contacts Strava's API to
-  read your activities. That is a per-account choice, and you can skip it.
-- Food data: looking up foods can query a public nutrition database. You can
-  also import that database once and keep every lookup fully local, so nothing
-  leaves at all.
+- Food data: searching for a food or scanning a barcode queries a public
+  nutrition database (USDA FoodData Central or Open Food Facts). Only the
+  search text or barcode number is sent, and once a food has been used it is
+  cached on your server, so repeat lookups stay local. Skip search and scanning
+  and enter foods by hand, and nothing leaves at all.
+- Web push: if you turn on notifications, reminders are delivered through your
+  browser vendor's push service (Apple, Google, or Mozilla, the same pipe every
+  web app uses). That service relays an encrypted payload it cannot read. Leave
+  notifications off and nothing goes out this way.
+
+Health and fitness data moves the other direction. Your own phone pushes it to
+your server, and the app never reaches out to any fitness service to fetch it.
+See [docs/fitness-sync.md](docs/fitness-sync.md).
 
 Nothing else is sent out. There is no telemetry, no third-party crash
 reporting, no ads, and no tracking.

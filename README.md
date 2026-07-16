@@ -37,8 +37,11 @@ and what's next.
 ## Privacy
 
 Your data stays on your server. The app keeps no cloud account, sends no
-telemetry, and makes no third-party calls except for features you turn on
-yourself (Strava, and optional online food lookups). See [PRIVACY.md](PRIVACY.md).
+telemetry, and makes no third-party calls except optional online food lookups
+you turn on yourself. Health and fitness data arrives because your own phone
+pushes it to your server; nothing fitness-related is fetched from an outside
+service (see [docs/fitness-sync.md](docs/fitness-sync.md)). See
+[PRIVACY.md](PRIVACY.md).
 
 ## Tech
 
@@ -56,6 +59,9 @@ data or secrets move between them.
 2. A public demo: a throwaway sandbox with fake data, for trying the app.
 3. Your own private instance: where you and your family actually use it, on your
    own network.
+
+Step-by-step instructions for standing up your own instance are in
+[docs/self-hosting.md](docs/self-hosting.md).
 
 ## Repository layout
 
