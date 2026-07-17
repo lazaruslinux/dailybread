@@ -85,6 +85,40 @@ the loop idempotent across restarts. Card times are wall-clock local, and the
 loop compares them against each family's own timezone, so households in
 different zones on one install each get their mornings at their own hour.
 
+## Inbox
+
+`app/inbox.py` keeps an append-only per-member history of family activity. It
+is written at the same call sites that build pushes, but deliberately ignores
+push preferences and whether push is configured at all: the prefs decide what
+interrupts a phone, the inbox is the record of what happened. `record()` never
+commits on its own; the write is folded into the caller's transaction (or, for
+the fan-out helper, committed only after the action itself has already
+committed, so a failed inbox write can never lose the action or leave a phantom
+row). Each member's history is capped at a fixed number of newest rows, pruned
+on insert, so storage is bounded and a quiet member's inbox never empties out.
+
+## Crumb economy
+
+`app/crumbs.py` is a small points ledger. Everything routes through `award()`,
+one attempted insert whose unique `(user, source_key)` makes every earn
+idempotent: the same claim pattern (a day, a streak milestone) can be replayed
+and only ever pays once. `award()` commits itself, so a caller commits its own
+work first and treats the crumb as a separate concern. Levels and bread tiers
+are derived from the running total on read, never stored, so the rules can
+change without a migration.
+
+## Village events
+
+A `VillageEvent` is a pointer at the organizer's own real card, the same
+indirection the shared-recipe feature uses. When a family RSVPs "going", that
+copy is materialized as an independent Item on their board, its schedule
+converted onto their own clock so a cross-timezone household sees the right
+wall time. The organizer keeps control: schedule edits, cancels, and done marks
+mirror onto the copies, while attendees cannot edit a copy at all (the server
+answers "Managed by the organizer"). Unshare, leaving the village, and deleting
+either the source or the village all clean up the materialized copies
+explicitly.
+
 ## Fitness ingest
 
 `POST /api/ingest/health` accepts two dialects on one endpoint, sniffed from
@@ -98,6 +132,13 @@ exporter's stable id (or member + start + activity when there isn't one), so
 re-sending a whole window is always safe. Apple payloads carry local wall
 times; Android payloads carry UTC and are converted onto the family's clock
 before day bucketing. Everything imported is self-only, like the diary.
+
+Steps, active energy, and distance also retain their hourly shape: alongside
+the daily rollup, each hour's value lands in its own `fitness_intraday` table
+(keyed on member, day, metric, and hour) to drive the time-of-day charts. It
+upserts on the same key, so re-sending a window is idempotent exactly like the
+daily metrics. All-day heart rate keeps an hourly average the same way, with
+no daily rollup.
 
 ## Auth and sessions
 

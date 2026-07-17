@@ -181,7 +181,7 @@ Where dailybread is headed, in order. Done items stay for history.
   toward a fun custom name, since several families can share a last name),
   shown atop the member dashboard, and renameable by an admin anytime.
 - **Invite onboarding** — the server admin invites a new household by minting
-  a one-time code (15-minute expiry, stored hashed, attempts throttled)
+  a one-time code (48-hour expiry, stored hashed, attempts throttled)
   instead of typing a temporary password. The invitee taps "Enter invite
   code" on the sign-in screen, is greeted by name, chooses their own
   password, gets a four-step tour, and founds their own family — invites
@@ -220,19 +220,76 @@ Where dailybread is headed, in order. Done items stay for history.
   connect flow asks which phone the data lives on. No routes or
   per-session calories from that side yet; the Apple path is unchanged.
 
+- **Breadcrumb economy** — a light points layer for showing up: the day's
+  first activity earns a crumb, all three read verses earn three, a synced
+  workout of fifteen minutes and a locked diary day each earn their own, and
+  verse-streak milestones pay once ever. Crumbs stack into levels and
+  bread-themed tiers (Slice, Roll, Loaf, Baker, Breadmaster). The ledger is
+  unique on (member, source), so nothing ever double-pays. Board completions
+  earn crumbs for kids only, capped per day, since a parent's approval is the
+  gate no adult can farm. There are deliberately no purchases and no public
+  leaderboard.
+- **Diary lock and saved foods** — a finished food-diary day can be locked,
+  freezing its entries until it is unlocked; locking the current day pays a
+  small crumb bonus, once ever per date, so back-locking a month of old days
+  earns nothing. Any food from a search, scan, or custom entry
+  can be pinned to a per-family saved-foods shelf and picked straight from the
+  Kitchen or the diary, so the foods a household actually eats are one tap away.
+- **Notifications rework** — pushes became kind-aware and carry the actor's
+  name, each toggled on its own preference: timed reminders, the past-due
+  alert, the morning and evening check-ins, family activity, workouts,
+  approvals, health-sync alerts, and verse-streak reminders. Routine changes stay silent by design, appointments get a longer
+  lead than ordinary timed cards, and a reminder that would have fired while
+  the server was down catches up for a short window without ever nagging a
+  conscious edit. The check-ins that did not earn their keep (the old mid-day,
+  dinner-time, and tomorrow-preview pushes) were removed.
+- **Kid permissions** — the Child role got a real audit. Calorie data is
+  hidden from kids everywhere in the UI, food search and all food management
+  are refused by the server, and the village roster is adults-only. Kids cast real dinner votes now
+  instead of a silent no-op, and the welcome tour has a kid-voiced deck plus a
+  card that explains kid accounts to parents.
+- **Health tab redesign** — the fitness tab became the Health tab: a distance
+  metric alongside steps and active energy, time-of-day charts backed by
+  hourly intraday buckets, a tappable workout detail with a larger route map,
+  and resting heart rate on its own card. Shipped with a dark "crust" theme and
+  an onboarding step that lets a new member pick light or dark up front.
+- **Inbox** — a persistent per-member notification history that records nearly
+  every family action (board changes, dinner, grocery, recipes, approvals,
+  village activity, crumb earns), independent of push preferences, since the
+  prefs decide what interrupts a phone while the inbox is the record of what
+  happened. An unread badge rides the You tab, kids get their own approval
+  payoff lines, and a tap clears it. Personal lines (mood, verses, diary,
+  weigh-ins) stay out of it.
+- **Village events** — a family can share an activity or appointment from its
+  board to a village, and each other family answers with a per-family RSVP
+  (going, maybe, can't) through an attendee picker. Answering "going"
+  materializes an independent copy on the attending family's board, converted
+  onto their own clock; the organizer keeps control (schedule, cancel, and
+  done all mirror to the copies, which attendees cannot edit), and everything
+  is cleaned up on unshare, leave, or delete. One family-wide switch decides
+  whether kids' photos show to villages.
+- **Accessibility and performance** — a 44-pixel minimum touch target swept
+  across the app, every page except Home code-split into its own lazily loaded
+  chunk with the service worker precaching them, and a stale-chunk reload guard
+  so an installed PWA recovers cleanly after a deploy instead of white-screening
+  on an old asset hash.
+- **Public demo instance** — a separate, throwaway deployment with fake seeded
+  data so someone who isn't in the family can try the app. It shares only the
+  code with a real instance, holds no real data, resets on a nightly schedule,
+  and stays offline except when it is being shown. The LAN-only rule is about
+  the private family instance; the demo is the one deliberately public face.
+
 ## Next
 
-1. **Public demo instance** — a separate, throwaway deployment with fake
-   seeded data so someone who isn't in the family can try the app. The
-   LAN-only rule is about the family instance; the demo shares only the
-   code. Strava as an optional secondary fitness connector if ever
-   wanted; intraday (hourly) metric detail stays deliberately deferred
-   to keep the sync light.
+The app is feature-complete for a single household living in it day to day.
+The next stretch is bringing on more real families: shaking out the invite and
+onboarding flow, exercising villages across separate households, and polishing
+whatever their feedback surfaces. No fixed feature promises past that; the
+roadmap follows real use.
 
 ## Ongoing polish
 
-- Member colors, a do-not-disturb dot, loading skeletons, pull-to-refresh,
-  an in-app "How to use" / FAQ section.
+- Member colors, a do-not-disturb dot, loading skeletons, pull-to-refresh.
 - Health layer: a parent-facing UI for setting a
   child's goals (the endpoints exist), net carbs on the diary, more
   exercise types (the catalog is data-driven), and a projected

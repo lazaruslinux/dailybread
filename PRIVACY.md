@@ -45,6 +45,6 @@ reporting, no ads, and no tracking.
 
 ## The public demo is different
 
-The public demo (URL to be decided) is a sandbox filled with fake data so
-people can try the app. It is wiped and reset on a schedule. Do not put real
-personal information into the demo.
+A public demo, when one is online, is linked from the README. It is a sandbox
+filled with fake data so people can try the app, and it is wiped and reset on a
+schedule. Do not put real personal information into the demo.
