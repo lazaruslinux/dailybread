@@ -124,10 +124,14 @@ review it, and decide what ships.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+GNU AGPL-3.0. See [LICENSE](LICENSE). Copyright (c) 2026 lazaruslinux.
+
+In plain terms: run it, modify it, and self-host it freely. If you host a
+modified version for other people, you must share your modifications under
+the same license.
 
 One carve-out: the daily verse text in `frontend/src/lib/verses.ts` is quoted
-from the New King James Version and is not covered by the MIT license.
+from the New King James Version and is not covered by the AGPL.
 Scripture taken from the New King James Version&reg;. Copyright &copy; 1982 by
 Thomas Nelson. Used by permission. All rights reserved. Quoted under the
 publisher's gratis use policy (fewer than 500 verses, comprising a small
