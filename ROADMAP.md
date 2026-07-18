@@ -289,7 +289,6 @@ roadmap follows real use.
 
 ## Ongoing polish
 
-- Member colors, a do-not-disturb dot, loading skeletons, pull-to-refresh.
 - Health layer: a parent-facing UI for setting a
   child's goals (the endpoints exist), net carbs on the diary, more
   exercise types (the catalog is data-driven), and a projected
