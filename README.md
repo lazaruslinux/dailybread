@@ -124,7 +124,7 @@ review it, and decide what ships.
 
 ## License
 
-GNU AGPL-3.0. See [LICENSE](LICENSE). Copyright (c) 2026 lazaruslinux.
+GNU AGPL-3.0. See [LICENSE](LICENSE). Copyright (c) 2026 Lazarus Labs LLC.
 
 In plain terms: run it, modify it, and self-host it freely. If you host a
 modified version for other people, you must share your modifications under
