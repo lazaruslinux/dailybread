@@ -3,7 +3,7 @@
 // gratis quotation policy (fewer than 500 verses, scripture is a small
 // fraction of the work, notice included). The required copyright notice
 // ships in the Me tab and the README; the verse text below is NOT covered
-// by this project's MIT license.
+// by this project's AGPL-3.0 license.
 //
 // Curation: morning encouragement, weighted toward the New Testament and
 // the words of Jesus, with a handful of beloved Psalms and prophets.
