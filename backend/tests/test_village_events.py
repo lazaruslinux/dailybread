@@ -646,6 +646,90 @@ def test_rsvp_lines_reach_the_organizer_with_headcount(village, owner, other, pa
     assert len(inbox_rows(parent, "rsvp")) == 1
 
 
+def _push_device(client, endpoint):
+    client.put("/push/subscription", json={
+        "endpoint": endpoint, "keys": {"p256dh": "k", "auth": "a"},
+    })
+
+
+def test_rsvp_is_inbox_only_and_tells_the_co_parent(
+    village, owner, other, app, configured, outbox
+):
+    from tests.conftest import login
+
+    # A second parent in the ACTING family hears what their co-parent answered.
+    creds = {"username": "bparent", "display_name": "Bea Parent", "password": "bea-pass-111"}
+    assert other.post("/auth/users", json={**creds, "role": "parent"}).status_code == 201
+    b_parent = login(app, creds)
+
+    _push_device(owner, "https://push.example/organizer")
+    item = make_event(owner)
+    out = share(owner, village, item["id"])
+    rsvp(other, out["event_id"], "going", [user_id(other)])
+    # The organizer's inbox line lands, but the phone stays silent (his
+    # policy: RSVP replies are history, not interruptions).
+    assert any("Going · 1" in r["title"] for r in inbox_rows(owner, "rsvp"))
+    assert outbox == []
+    lines = inbox_rows(b_parent, "rsvp")
+    assert len(lines) == 1 and "replied Going · 1" in lines[0]["title"]
+
+    # Withdrawing follows the same channels.
+    assert other.delete(f"/villages/events/{out['event_id']}/rsvp").status_code == 204
+    assert outbox == []
+    assert any("withdrew their RSVP" in r["title"] for r in inbox_rows(owner, "rsvp"))
+    assert any("withdrew the RSVP" in r["title"] for r in inbox_rows(b_parent, "rsvp"))
+
+
+def test_identical_rsvp_repeat_records_nothing(village, owner, other, app):
+    from tests.conftest import login
+
+    creds = {"username": "bparent2", "display_name": "Bea Parent", "password": "bea-pass-222"}
+    assert other.post("/auth/users", json={**creds, "role": "parent"}).status_code == 201
+    b_parent = login(app, creds)
+
+    item = make_event(owner)
+    out = share(owner, village, item["id"])
+    rsvp(other, out["event_id"], "going", [user_id(other)])
+    # The identical re-save changes nothing and records nothing (the
+    # dinner-vote convention): still exactly one line on each side.
+    rsvp(other, out["event_id"], "going", [user_id(other)])
+    assert len(inbox_rows(owner, "rsvp")) == 1
+    assert len(inbox_rows(b_parent, "rsvp")) == 1
+    # A REAL change records again.
+    rsvp(other, out["event_id"], "maybe")
+    assert len(inbox_rows(owner, "rsvp")) == 2
+    assert len(inbox_rows(b_parent, "rsvp")) == 2
+
+
+def test_share_event_pushes_others_but_own_family_gets_inbox_only(
+    village, owner, other, parent, configured, outbox
+):
+    # Subscribe AFTER the card exists so the board-change push from creating
+    # it never muddies the assertion.
+    item = make_event(owner)
+    _push_device(other, "https://push.example/guest")
+    _push_device(parent, "https://push.example/coparent")
+    share(owner, village, item["id"])
+    # The invite still PUSHES the other family; the co-parent's phone is
+    # silent but their inbox says what went out.
+    assert outbox == ["https://push.example/guest"]
+    lines = inbox_rows(parent, "village")
+    assert len(lines) == 1
+    assert "shared to Bread Circle: Soccer practice" in lines[0]["title"]
+
+
+def test_unshare_event_still_pushes_called_off(village, owner, other, configured, outbox):
+    item = make_event(owner)
+    out = share(owner, village, item["id"])
+    rsvp(other, out["event_id"], "going", [user_id(other)])
+    _push_device(other, "https://push.example/guest-off")
+    assert owner.delete(f"/villages/events/{out['event_id']}").status_code == 204
+    # Changes to an event you're going to keep their push (the demotion must
+    # never over-reach into "Called off").
+    assert outbox == ["https://push.example/guest-off"]
+    assert any("Called off" in r["title"] for r in inbox_rows(other, "village"))
+
+
 def test_village_pref_gates_the_push_not_the_inbox(village, owner, other, configured, outbox):
     other.put("/push/subscription", json={
         "endpoint": "https://push.example/village-device",

@@ -317,8 +317,9 @@ def join_village(
     db.commit()
     throttle.clear(f"village-join:{admin.username}")
     db.refresh(village)
-    # The village's other families hear a new one arrived (push + inbox, the
-    # "village" pref). The joining family is excluded — it knows it joined.
+    # The village's other families hear a new one arrived (inbox-only; a join
+    # is news, not an interruption). The joining family is excluded — it knows
+    # it joined.
     family = db.get(Family, admin.family_id)
     _notify_village(
         db,
@@ -327,6 +328,12 @@ def join_village(
         f"{family.name} joined {village.name}",
         "",
         f"village-join-{village.id}-{admin.family_id}",
+        send_push=False,
+    )
+    # The joining admin's own co-parents see it too (inbox-only).
+    inbox.record_all(
+        db, inbox.other_adults(db, admin), "village",
+        f"{admin.display_name.split()[0]} joined {village.name}",
     )
     return _village_out(db, village, admin.family_id)
 
@@ -452,6 +459,7 @@ def leave_village(
             VillageFamily.family_id == admin.family_id,
         )
     )
+    village_name = village.name  # survives the last-family-out delete below
     remaining = db.scalar(
         select(func.count())
         .select_from(VillageFamily)
@@ -465,6 +473,11 @@ def leave_village(
             db, recipients, "village", f"Called off: {hosted_titles}",
             "The organizer's family left the village", f"village-left-{village_id}",
         )
+    # The leaving admin's own co-parents see it too (inbox-only).
+    inbox.record_all(
+        db, inbox.other_adults(db, admin), "village",
+        f"{admin.display_name.split()[0]} left {village_name}",
+    )
 
 
 # ---- the recipe shelf ---------------------------------------------------------------
@@ -595,15 +608,22 @@ def share_recipe(
     db.commit()
     db.refresh(share)
     family = db.get(Family, parent.family_id)
-    # The village's other families hear about the new shelf entry (push +
-    # inbox, "village" pref).
+    first = parent.display_name.split()[0]
+    # The village's other families hear about the new shelf entry (inbox-only;
+    # a shelf entry is browsable news, not an interruption).
     _notify_village(
         db,
         _village_adults(db, village.id, exclude_family=parent.family_id),
         "village",
-        f"{parent.display_name.split()[0]} shared a recipe: {recipe.name}",
+        f"{first} shared a recipe: {recipe.name}",
         f"On {village.name}'s shelf",
         f"village-recipe-{share.id}",
+        send_push=False,
+    )
+    # And the acting family's OTHER adults see it in their own history too.
+    inbox.record_all(
+        db, inbox.other_adults(db, parent), "village",
+        f"{first} shared to {village.name}: {recipe.name}",
     )
     return _shelf_row(db, share, recipe, village.name, family.name, parent.family_id)
 
@@ -612,12 +632,18 @@ def share_recipe(
 def unshare_recipe(
     share_id: int, db: Session = Depends(get_db), parent: User = Depends(require_parent)
 ):
-    """Take an own-family entry off the shelf. Copies others saved survive."""
+    """Take an own-family entry off the shelf. Copies others saved survive.
+    The village hears nothing; the co-parent sees the retraction in history."""
     share = _get_share(db, share_id, parent.family_id)
     if share.family_id != parent.family_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such shared recipe")
+    name = db.scalar(select(Recipe.name).where(Recipe.id == share.recipe_id)) or ""
     db.delete(share)
     db.commit()
+    inbox.record_all(
+        db, inbox.other_adults(db, parent), "village",
+        f"{parent.display_name.split()[0]} took off the shelf: {name}",
+    )
 
 
 def _matching_custom_food(db: Session, family_id: int, src: Food) -> Food | None:
@@ -855,15 +881,22 @@ def share_food(
     db.commit()
     db.refresh(share)
     family = db.get(Family, parent.family_id)
-    # The village's other families hear about the new shelf entry (push +
-    # inbox, "village" pref).
+    first = parent.display_name.split()[0]
+    # The village's other families hear about the new shelf entry (inbox-only;
+    # a shelf entry is browsable news, not an interruption).
     _notify_village(
         db,
         _village_adults(db, village.id, exclude_family=parent.family_id),
         "village",
-        f"{parent.display_name.split()[0]} shared a food: {food.name}",
+        f"{first} shared a food: {food.name}",
         f"On {village.name}'s shelf",
         f"village-food-{share.id}",
+        send_push=False,
+    )
+    # And the acting family's OTHER adults see it in their own history too.
+    inbox.record_all(
+        db, inbox.other_adults(db, parent), "village",
+        f"{first} shared to {village.name}: {food.name}",
     )
     return _food_shelf_row(db, share, food, village.name, family.name, parent.family_id)
 
@@ -872,12 +905,18 @@ def share_food(
 def unshare_food(
     share_id: int, db: Session = Depends(get_db), parent: User = Depends(require_parent)
 ):
-    """Take an own-family entry off the food shelf. Copies others saved survive."""
+    """Take an own-family entry off the food shelf. Copies others saved survive.
+    The village hears nothing; the co-parent sees the retraction in history."""
     share = _get_food_share(db, share_id, parent.family_id)
     if share.family_id != parent.family_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such shared food")
+    name = db.scalar(select(Food.name).where(Food.id == share.food_id)) or ""
     db.delete(share)
     db.commit()
+    inbox.record_all(
+        db, inbox.other_adults(db, parent), "village",
+        f"{parent.display_name.split()[0]} took off the shelf: {name}",
+    )
 
 
 @router.post(
@@ -952,12 +991,23 @@ def save_a_food_copy(
 
 
 def _notify_village(
-    db: Session, users: list[User], kind: str, title: str, body: str | dict[int, str], tag: str
+    db: Session,
+    users: list[User],
+    kind: str,
+    title: str,
+    body: str | dict[int, str],
+    tag: str,
+    send_push: bool = True,
 ) -> None:
     """Inbox lines first (always), committed on their own, then the push leg
     gated per-user by the "village" pref. The _push_board_change shape. A dict
     body carries per-family text (each family's own wall clock); a str is the
-    same for all."""
+    same for all.
+
+    send_push=False makes the line inbox-only. His policy (2026-07-18): the
+    phone buzzes ONLY for event invitations and changes to events the family
+    RSVP'd going to — joins, shelf shares, and RSVP replies are history, not
+    interruptions."""
     if not users:
         return
 
@@ -971,7 +1021,7 @@ def _notify_village(
     except Exception:
         db.rollback()
         log.exception("village inbox write failed (the change itself is saved)")
-    if not push.enabled():
+    if not send_push or not push.enabled():
         return
     try:
         for u in users:
@@ -1239,13 +1289,20 @@ def share_event(
     from app.routers.items import _event_notify_bodies
 
     recipients = _village_adults(db, village.id, exclude_family=parent.family_id)
+    first = parent.display_name.split()[0]
+    # Invitations are one of the two things that still PUSH (his policy).
     _notify_village(
         db,
         recipients,
         "invite",
-        f"{parent.display_name.split()[0]} invited you: {item.title}",
+        f"{first} invited you: {item.title}",
         _event_notify_bodies(db, item, recipients),
         f"village-invite-{event.id}",
+    )
+    # The acting family's OTHER adults get an inbox-only line, never a push.
+    inbox.record_all(
+        db, inbox.other_adults(db, parent), "village",
+        f"{first} shared to {village.name}: {item.title}",
     )
     return _events_out(db, parent, [event.id])[0]
 
@@ -1279,6 +1336,21 @@ def set_rsvp(
             VillageEventRsvp.family_id == parent.family_id,
         )
     )
+    # Identical re-save (same status AND same attendee set) changes nothing
+    # and records nothing — the dinner-vote convention (27d2e83). Attendee
+    # rows only exist for going, so a non-going answer compares against the
+    # empty set.
+    if rsvp is not None and rsvp.status == data.status:
+        stored = set(
+            db.scalars(
+                select(VillageEventAttendee.user_id).where(
+                    VillageEventAttendee.rsvp_id == rsvp.id
+                )
+            )
+        )
+        effective = set(attendee_ids) if data.status == RsvpStatus.going else set()
+        if stored == effective:
+            return _events_out(db, parent, [event.id])[0]
     was_going = rsvp is not None and rsvp.status == RsvpStatus.going
     if rsvp is None:
         rsvp = VillageEventRsvp(
@@ -1315,6 +1387,8 @@ def set_rsvp(
     if data.status == RsvpStatus.going:
         label = f"Going · {len(attendee_ids)}"
     family_name = db.scalar(select(Family.name).where(Family.id == parent.family_id))
+    # RSVP replies are history for the organizer, not an interruption:
+    # inbox-only (his policy).
     _notify_village(
         db,
         [u for u in db.scalars(select(User).where(User.family_id == event.family_id, User.role == Role.parent))],
@@ -1322,6 +1396,12 @@ def set_rsvp(
         f"{family_name}: {label}",
         src.title,
         f"village-rsvp-{event.id}-{parent.family_id}",
+        send_push=False,
+    )
+    # The acting family's OTHER adults see the answer their co-parent gave.
+    inbox.record_all(
+        db, inbox.other_adults(db, parent), "rsvp",
+        f"{parent.display_name.split()[0]} replied {label}: {src.title}",
     )
     return _events_out(db, parent, [event.id])[0]
 
@@ -1349,13 +1429,21 @@ def clear_rsvp(
     db.commit()
     src = db.get(Item, event.item_id)
     family_name = db.scalar(select(Family.name).where(Family.id == parent.family_id))
+    title = src.title if src else ""
+    # Withdrawals are history too: inbox-only (his policy).
     _notify_village(
         db,
         [u for u in db.scalars(select(User).where(User.family_id == event.family_id, User.role == Role.parent))],
         "rsvp",
         f"{family_name} withdrew their RSVP",
-        src.title if src else "",
+        title,
         f"village-rsvp-{event.id}-{parent.family_id}",
+        send_push=False,
+    )
+    # The acting family's OTHER adults see the withdrawal too.
+    inbox.record_all(
+        db, inbox.other_adults(db, parent), "rsvp",
+        f"{parent.display_name.split()[0]} withdrew the RSVP: {title}",
     )
 
 
@@ -1371,6 +1459,7 @@ def unshare_event(
     if event.family_id != parent.family_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such event")
     title = db.scalar(select(Item.title).where(Item.id == event.item_id)) or ""
+    village_name = db.scalar(select(Village.name).where(Village.id == event.village_id)) or ""
     recipients = village_events.going_adults(db, [event.id])
     village_events.delete_copies(db, [event.id])
     db.delete(event)  # RSVPs and attendee rows cascade
@@ -1378,6 +1467,10 @@ def unshare_event(
     _notify_village(
         db, recipients, "village", f"Called off: {title}",
         "The organizer took it off the village", f"village-off-{event_id}",
+    )
+    inbox.record_all(
+        db, inbox.other_adults(db, parent), "village",
+        f"{parent.display_name.split()[0]} unshared from {village_name}: {title}",
     )
 
 

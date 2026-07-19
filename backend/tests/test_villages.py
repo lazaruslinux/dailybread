@@ -634,6 +634,63 @@ def test_deleting_shared_food_unshares_it(village, owner, other):
     assert other.get("/villages/food-shelf").json() == []
 
 
+def test_join_and_shelf_shares_are_inbox_only(owner, other, parent, configured, outbox):
+    created = _create(owner)
+    owner.put("/push/subscription", json={
+        "endpoint": "https://push.example/owner-device",
+        "keys": {"p256dh": "k", "auth": "a"},
+    })
+    assert other.post("/villages/join", json={"code": created["invite_code"]}).status_code == 200
+    # The join is recorded, but nobody's phone buzzes (his policy: only event
+    # invitations and changes to going events push).
+    assert any(
+        r["kind"] == "village" and "joined" in r["title"]
+        for r in owner.get("/me/inbox").json()
+    )
+    assert outbox == []
+
+    other.put("/push/subscription", json={
+        "endpoint": "https://push.example/other-device",
+        "keys": {"p256dh": "k", "auth": "a"},
+    })
+    recipe = make_recipe(owner)
+    share(owner, created["id"], recipe["id"])
+    food = make_food(owner, name="Quiet dish")
+    share_food(owner, created["id"], food["id"])
+    assert outbox == []
+    rows = other.get("/me/inbox").json()
+    assert any("shared a recipe" in r["title"] for r in rows)
+    assert any("shared a food: Quiet dish" in r["title"] for r in rows)
+    # The sharer's co-parent gets the own-family lines, inbox-only.
+    prows = parent.get("/me/inbox").json()
+    assert any(r["title"] == "Owner shared to Bread Circle: Quiet dish" for r in prows)
+    assert any(r["title"] == "Owner shared to Bread Circle: Pancakes" for r in prows)
+
+
+def test_undo_lines_reach_the_co_parent_only(village, owner, other, parent):
+    # Unshare a food: the co-parent hears, the village hears NOTHING.
+    food = make_food(owner, name="Retracted dish")
+    entry = share_food(owner, village, food["id"])
+    assert owner.delete(f"/villages/food-shelf/{entry['share_id']}").status_code == 204
+    assert any(
+        r["title"] == "Owner took off the shelf: Retracted dish"
+        for r in parent.get("/me/inbox").json()
+    )
+    assert not any(
+        "took off the shelf" in r["title"] for r in other.get("/me/inbox").json()
+    )
+
+
+def test_join_writes_the_co_parent_line(owner, other, parent):
+    # B founds a village; A's admin joins; A's co-parent sees it in history.
+    created = _create(other, name="B Lane")
+    assert owner.post("/villages/join", json={"code": created["invite_code"]}).status_code == 200
+    assert any(
+        r["title"] == "Owner joined B Lane" and r["kind"] == "village"
+        for r in parent.get("/me/inbox").json()
+    )
+
+
 # ---- presence: opt-in mood/status on the village card -----------------------------
 
 

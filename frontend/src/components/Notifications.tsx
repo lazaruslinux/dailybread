@@ -88,7 +88,7 @@ const PREF_GROUPS: {
       {
         kind: 'village',
         label: 'Village Events',
-        hint: 'Invites, RSVPs, and changes from linked families',
+        hint: 'Invitations and changes to events you are going to',
       },
     ],
   },
