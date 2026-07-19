@@ -42,9 +42,3 @@ reporting, no ads, and no tracking.
 - Accounts are created by an administrator. There is no public sign-up.
 - On the private family instance, the database is meant to sit on an encrypted
   disk, so the stored data is unreadable without the key.
-
-## The public demo is different
-
-A public demo, when one is online, is linked from the README. It is a sandbox
-filled with fake data so people can try the app, and it is wiped and reset on a
-schedule. Do not put real personal information into the demo.

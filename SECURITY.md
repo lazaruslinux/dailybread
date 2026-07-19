@@ -18,6 +18,5 @@ count too.
 ## Deployment note
 
 dailybread is designed to run on a private network behind a reverse proxy that
-terminates TLS, not exposed directly to the public internet. The public demo is
-the one deliberate exception, and it holds only fake data. A report is still
+terminates TLS, not exposed directly to the public internet. A report is still
 welcome for anything that would be a real risk in that intended setup.

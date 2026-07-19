@@ -273,11 +273,6 @@ Where dailybread is headed, in order. Done items stay for history.
   chunk with the service worker precaching them, and a stale-chunk reload guard
   so an installed PWA recovers cleanly after a deploy instead of white-screening
   on an old asset hash.
-- **Public demo instance** — a separate, throwaway deployment with fake seeded
-  data so someone who isn't in the family can try the app. It shares only the
-  code with a real instance, holds no real data, resets on a nightly schedule,
-  and stays offline except when it is being shown. The LAN-only rule is about
-  the private family instance; the demo is the one deliberately public face.
 
 ## Next
 

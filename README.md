@@ -11,7 +11,7 @@ control.
   <img src="docs/screenshots/health-light.png" alt="Health tab: steps, active calories, distance, exercise, and resting heart rate" width="200">
 </p>
 
-The screens show a fictional demo family; none of it is real data.
+The screens show a fictional family; none of it is real data.
 
 ## Status
 
@@ -83,12 +83,11 @@ service (see [docs/fitness-sync.md](docs/fitness-sync.md)). See
 
 ## How it is meant to be run
 
-There are three separate things, and they share only this source code. No real
+There are two separate things, and they share only this source code. No real
 data or secrets move between them.
 
 1. This repository: the code.
-2. A public demo: a throwaway sandbox with fake data, for trying the app.
-3. Your own private instance: where you and your family actually use it, on your
+2. Your own private instance: where you and your family actually use it, on your
    own network.
 
 Step-by-step instructions for standing up your own instance are in
