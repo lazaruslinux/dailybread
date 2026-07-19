@@ -1959,6 +1959,11 @@ export function CustomFoodBox() {
           <span className="block truncate font-medium">{f.name}</span>
           {summary && <span className="block truncate text-xs text-fg/45">{summary}</span>}
         </span>
+        {f.shared_to.length > 0 && (
+          <span className="flex shrink-0 items-center gap-1 rounded-full border border-accent-bright/30 bg-accent-bright/10 px-2 py-0.5 text-[10px] font-semibold text-accent-bright">
+            <Share2 className="h-3 w-3" /> Shared
+          </span>
+        )}
         {canEdit && <Pencil className="h-4 w-4 shrink-0 text-fg/35" />}
       </>
     )

@@ -64,6 +64,8 @@ function ShareSheet({
     setError(null)
     try {
       await api.shareFood(villageId, id)
+      // The Custom foods row grows its "Shared" chip immediately.
+      window.dispatchEvent(new Event('db:foods-changed'))
       onShared()
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Something went wrong')
@@ -331,6 +333,8 @@ export function SharedRecipesBox() {
     setError(null)
     try {
       await api.unshareFood(entry.share_id)
+      // The Custom foods row drops its "Shared" chip immediately.
+      window.dispatchEvent(new Event('db:foods-changed'))
       refresh()
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Something went wrong')

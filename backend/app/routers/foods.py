@@ -16,8 +16,16 @@ from app.models import (
     Recipe,
     RecipeIngredient,
     User,
+    Village,
 )
-from app.schemas import FOOD_NUTRIENTS, FoodIn, FoodOut, FoodServingOut, SavedFoodIn
+from app.schemas import (
+    FOOD_NUTRIENTS,
+    FoodIn,
+    FoodOut,
+    FoodServingOut,
+    RecipeShareOut,
+    SavedFoodIn,
+)
 
 router = APIRouter(prefix="/foods", tags=["foods"])
 
@@ -333,14 +341,43 @@ def lookup_barcode(
 @router.get("", response_model=list[FoodOut])
 def list_custom_foods(db: Session = Depends(get_db), user: User = Depends(require_family)):
     """The family's own custom foods, alphabetical."""
-    return list(
+    foods = list(
         db.scalars(
             select(Food)
             .where(Food.family_id == user.family_id, Food.source == FoodSource.custom)
-            .options(selectinload(Food.servings))
+            .options(selectinload(Food.servings), selectinload(Food.village_shares))
             .order_by(func.lower(Food.name))
         )
     )
+    return _with_shares(db, foods)
+
+
+def _with_shares(db: Session, foods: list[Food]) -> list[FoodOut]:
+    """Attach shared_to — the "Shared" indicator and the owner's unshare handle,
+    RecipeOut's shape — to each food. Village names come from ONE batched query
+    over the whole list: GET /foods is on the Kitchen hot path, no N+1."""
+    village_ids = {sh.village_id for f in foods for sh in f.village_shares}
+    names = (
+        {
+            v.id: v.name
+            for v in db.scalars(select(Village).where(Village.id.in_(village_ids)))
+        }
+        if village_ids
+        else {}
+    )
+    out: list[FoodOut] = []
+    for f in foods:
+        o = FoodOut.model_validate(f)
+        o.shared_to = [
+            RecipeShareOut(
+                share_id=sh.id,
+                village_id=sh.village_id,
+                village_name=names.get(sh.village_id, ""),
+            )
+            for sh in f.village_shares
+        ]
+        out.append(o)
+    return out
 
 
 @router.post("", response_model=FoodOut, status_code=status.HTTP_201_CREATED)
@@ -383,7 +420,8 @@ def update_custom_food(
     _apply_custom_food(food, data)
     db.commit()
     db.refresh(food)
-    return food
+    # Edits keep their shares (live pointers); the response says so.
+    return _with_shares(db, [food])[0]
 
 
 @router.delete("/{food_id}", status_code=status.HTTP_204_NO_CONTENT)

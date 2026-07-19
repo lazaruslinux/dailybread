@@ -591,6 +591,31 @@ def test_recipe_copy_carries_ingredient_folder(village, owner, other):
     assert copied["folder"] == "Panda Express"
 
 
+def test_food_list_carries_shared_to(village, owner):
+    shared = make_food(owner, name="Shared dish")
+    make_food(owner, name="Plain dish")
+    entry = share_food(owner, village, shared["id"])
+
+    foods = {f["name"]: f for f in owner.get("/foods").json()}
+    assert foods["Shared dish"]["shared_to"] == [
+        {"share_id": entry["share_id"], "village_id": village, "village_name": "Bread Circle"}
+    ]
+    assert foods["Plain dish"]["shared_to"] == []
+
+    # Edits keep the share handle; unsharing empties it.
+    edited = owner.put(
+        f"/foods/{shared['id']}",
+        json={
+            "name": "Shared dish", "base_unit": "g", "calories": 410.0,
+            "servings": [{"name": "1 serving", "grams": 100.0}],
+        },
+    )
+    assert edited.json()["shared_to"][0]["share_id"] == entry["share_id"]
+    assert owner.delete(f"/villages/food-shelf/{entry['share_id']}").status_code == 204
+    foods = {f["name"]: f for f in owner.get("/foods").json()}
+    assert foods["Shared dish"]["shared_to"] == []
+
+
 def test_leaving_takes_food_shares_off_the_shelf(village, owner, other):
     food = make_food(owner, name="Departing dish")
     share_food(owner, village, food["id"])

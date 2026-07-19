@@ -788,6 +788,9 @@ export interface Food {
   // The family's own filing label for a custom food; null for cache rows and
   // unfiled custom foods. Client-side grouping only.
   folder: string | null
+  // Where this custom food sits on village shelves (own foods only), for the
+  // "Shared" chip. Empty for cache rows and search results.
+  shared_to: RecipeShare[]
   base_unit: BaseUnit
   serving: string // display label for the source's serving, e.g. "1 slice (21 g)"; "" when unknown
   servings: FoodServing[]
@@ -1079,7 +1082,7 @@ export const unlockDiaryDay = (date: string) =>
 
 export const getSavedFoods = () => request<Food[]>('/foods/saved')
 
-export const saveFood = (food: Omit<Food, 'id' | 'folder' | 'base_unit' | 'serving' | 'servings'> & { food_id?: number | null }) =>
+export const saveFood = (food: Omit<Food, 'id' | 'folder' | 'shared_to' | 'base_unit' | 'serving' | 'servings'> & { food_id?: number | null }) =>
   request<Food>('/foods/saved', { method: 'POST', body: JSON.stringify(food) })
 
 export const unsaveFood = (foodId: number) =>

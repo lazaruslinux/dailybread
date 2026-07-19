@@ -636,6 +636,10 @@ class FoodOut(BaseModel):
     base_unit: BaseUnit = "g"  # measure family: "g" (mass) or "ml" (volume)
     serving: str = ""  # display label for the source's serving; "" when unknown
     servings: list[FoodServingOut] = []  # structured named portions (custom foods)
+    # Where this custom food currently sits on village shelves, for the
+    # "Shared" indicator (the RecipeOut.shared_to shape). Empty for cache
+    # rows, search results, and fresh copies.
+    shared_to: list["RecipeShareOut"] = []
     calories: float | None = None
     protein_g: float | None = None
     carbs_g: float | None = None
