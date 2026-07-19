@@ -918,6 +918,20 @@ class DiaryEntry(Base):
     sugar_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
+    # View-only link back to the source food (food_id is a soft SET NULL
+    # reference). Lets the diary edit sheet re-offer the food's named servings
+    # without a second round-trip; never used to mutate. None once the food is
+    # deleted, so edits fall back to scaling the snapshot.
+    food: Mapped["Food | None"] = relationship(viewonly=True)
+
+    @property
+    def food_servings(self) -> list["FoodServing"]:
+        return self.food.servings if self.food else []
+
+    @property
+    def food_base_unit(self) -> str | None:
+        return self.food.base_unit if self.food else None
+
 
 class TargetMode(str, enum.Enum):
     """Where the calorie budget comes from: typed by hand, or computed from

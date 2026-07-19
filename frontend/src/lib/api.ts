@@ -1204,6 +1204,11 @@ export interface DiaryEntry {
   amount: number
   unit: string // an AmountUnit, or "srv" for a recipe entry
   label: string | null // human phrasing of the portion ("2 slice")
+  // The source food's named servings + measure family, so the edit sheet can
+  // re-offer by-serving editing. Empty/null for recipe entries and once the
+  // linked food is deleted.
+  food_servings: FoodServing[]
+  food_base_unit: BaseUnit | null
   calories: number | null
   protein_g: number | null
   carbs_g: number | null

@@ -762,6 +762,11 @@ class DiaryEntryOut(BaseModel):
     amount: float
     unit: str
     label: str | None
+    # The source food's named servings + measure family, carried so the edit
+    # sheet can re-offer by-serving editing. Empty/None for recipe entries and
+    # once the linked food is deleted (edits then fall back to the base unit).
+    food_servings: list[FoodServingOut] = []
+    food_base_unit: BaseUnit | None = None
     calories: float | None
     protein_g: float | None
     carbs_g: float | None

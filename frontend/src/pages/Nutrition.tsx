@@ -646,29 +646,75 @@ function EditEntrySheet({
   onClose: () => void
   onSaved: () => void
 }) {
-  const [amount, setAmount] = useState(trim(entry.amount))
+  const isRecipe = entry.unit === 'srv'
+  const servings = entry.food_servings
+  const base = entry.food_base_unit
+  // A food with named servings and its source still around can be edited by
+  // serving, exactly like the add sheet. Otherwise (recipe, deleted food, or a
+  // food with no servings) we keep the plain amount + fixed unit.
+  const canServe = !isRecipe && entry.food_id != null && servings.length > 0 && base != null
+
+  // Reopen on the portion the entry was logged as. When a serving was used, the
+  // amount is stored in the base unit and the serving name lives in the label;
+  // match it back so the picker lands on that serving with the right count.
+  // Anything else (logged in raw g/mL, or no label) reopens in the raw unit.
+  const seed = useMemo(() => {
+    if (canServe && entry.label) {
+      const want = entry.label.replace(/^[\d.]+\s*/, '').trim().toLowerCase()
+      const idx = servings.findIndex(
+        (s) => s.name.replace(/^1\s+/, '').trim().toLowerCase() === want,
+      )
+      if (idx >= 0 && servings[idx].grams > 0) {
+        return { unit: `serving:${idx}`, amount: trim(entry.amount / servings[idx].grams) }
+      }
+    }
+    return { unit: entry.unit, amount: trim(entry.amount) }
+    // Seed once from the entry as opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const [amount, setAmount] = useState(seed.amount)
+  const [unit, setUnit] = useState(seed.unit)
   const [slot, setSlot] = useState<api.DiarySlot>(entry.slot)
   const [time, setTime] = useState(entry.time_of_day ? entry.time_of_day.slice(0, 5) : '')
   const [armed, setArmed] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const isRecipe = entry.unit === 'srv'
   const amt = Number(amount) || 0
+
+  // Show what a chosen serving resolves to in the base unit, e.g. "= 160 g".
+  const resolved = useMemo(() => {
+    if (base == null) return null
+    const si = servingIndex(unit)
+    if (si == null || !servings[si]) return null
+    return `${trim(amt * servings[si].grams)} ${base === 'ml' ? 'mL' : 'g'}`
+  }, [amt, unit, base, servings])
 
   async function save(e: FormEvent) {
     e.preventDefault()
     setBusy(true)
     setError(null)
     try {
-      await api.updateDiaryEntry(entry.id, {
-        amount: amt,
-        slot,
-        time_of_day: time || null,
-        // A resolved serving label goes stale when the amount changes; the row
-        // falls back to the honest raw amount instead.
-        ...(amt !== entry.amount ? { label: null } : {}),
-      })
+      const patch: api.DiaryEntryPatch = { slot, time_of_day: time || null }
+      if (canServe) {
+        // The unit selector is in play. A serving pick converts to the base
+        // unit for storage (the server recomputes nutrition) and its phrasing
+        // rides in the label; a raw unit clears the label.
+        const si = servingIndex(unit)
+        const s = si != null ? servings[si] : null
+        patch.amount = s ? amt * s.grams : amt
+        patch.unit = (s && base ? base : unit) as api.AmountUnit
+        patch.label = s ? `${trim(amt)} ${s.name.replace(/^1\s+/, '')}` : null
+      } else {
+        // Recipe entry, deleted food, or a food with no servings: the unit is
+        // fixed and not editable here, so never send it (a recipe's "srv" is
+        // not an AmountUnit). Drop a now-stale serving label only if the
+        // portion actually changed.
+        patch.amount = amt
+        if (amt !== entry.amount) patch.label = null
+      }
+      await api.updateDiaryEntry(entry.id, patch)
       onSaved()
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Something went wrong.')
@@ -711,10 +757,35 @@ function EditEntrySheet({
               required
             />
           </div>
-          <span className="field flex flex-1 items-center text-fg/70">
-            {isRecipe ? 'servings' : (UNIT_LABEL[entry.unit] ?? entry.unit)}
-          </span>
+          {canServe ? (
+            <label className="block min-w-0 flex-1">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
+                Unit
+              </span>
+              <select value={unit} onChange={(e) => setUnit(e.target.value)} className="field">
+                <optgroup label="Servings">
+                  {servings.map((s, i) => (
+                    <option key={`s${i}`} value={`serving:${i}`}>
+                      {s.name}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label={base === 'ml' ? 'Volume' : 'Weight'}>
+                  {unitsForBase(base!).map((u) => (
+                    <option key={u} value={u}>
+                      {UNIT_LABEL[u] ?? u}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+            </label>
+          ) : (
+            <span className="field flex flex-1 items-center text-fg/70">
+              {isRecipe ? 'servings' : (UNIT_LABEL[entry.unit] ?? entry.unit)}
+            </span>
+          )}
         </div>
+        {resolved && <p className="-mt-2 text-xs text-fg/45">= {resolved}</p>}
 
         <div>
           <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
@@ -1369,7 +1440,8 @@ function NutritionTab() {
         )}
         {editing && (
           <EditEntrySheet
-            key="edit"
+            // Remount per entry so the once-only serving seed is always fresh.
+            key={editing.id}
             entry={editing}
             onClose={() => setEditing(null)}
             onSaved={() => {

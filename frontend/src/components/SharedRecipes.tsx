@@ -1,6 +1,7 @@
-import { AnimatePresence } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { ArrowDownToLine, Share2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useAuth } from '../auth/AuthContext'
 import * as api from '../lib/api'
 import { CollapsibleCard } from './CollapsibleCard'
@@ -18,6 +19,46 @@ function compactStamp(iso: string): string {
 }
 
 const baseLabel = (base: api.BaseUnit) => (base === 'ml' ? 'mL' : 'g')
+
+// A one-question confirm over the sheet, so sharing to or removing from a
+// village is always a deliberate second tap (the family asked for this on
+// every share/unshare, recipes and foods alike). Mirrors DiscardGuard.
+function ConfirmDialog({
+  title,
+  confirmLabel,
+  danger,
+  onConfirm,
+  onCancel,
+}: {
+  title: string
+  confirmLabel: string
+  danger?: boolean
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  return createPortal(
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-6"
+      onClick={(e) => e.target === e.currentTarget && onCancel()}
+    >
+      <div className="sheet-card w-full max-w-xs p-5 text-center" role="alertdialog" aria-modal="true">
+        <p className="font-display text-lg font-semibold">{title}</p>
+        <div className="mt-4 flex flex-col gap-2">
+          <Button type="button" variant={danger ? 'danger' : 'primary'} onClick={onConfirm} className="min-h-11 w-full">
+            {confirmLabel}
+          </Button>
+          <Button type="button" variant="ghost" onClick={onCancel} className="min-h-11 w-full">
+            Cancel
+          </Button>
+        </div>
+      </div>
+    </motion.div>,
+    document.body,
+  )
+}
 
 // The village shelf, in the Kitchen: recipes AND custom foods other families
 // shared, with attribution, browseable in full and one tap from becoming your
@@ -39,6 +80,8 @@ function ShareSheet({
   const [villageId, setVillageId] = useState<number>(villages[0]?.id)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<number | null>(null)
+  const [confirm, setConfirm] = useState<{ title: string; run: () => void } | null>(null)
+  const villageName = villages.find((v) => v.id === villageId)?.name ?? 'your village'
 
   useEffect(() => {
     api.getRecipes().then(setRecipes).catch(() => setError('Could not load your recipes.'))
@@ -121,7 +164,9 @@ function ShareSheet({
                 key={r.id}
                 type="button"
                 disabled={busyId !== null}
-                onClick={() => shareRecipeIt(r.id)}
+                onClick={() =>
+                  setConfirm({ title: `Share "${r.name}" to ${villageName}?`, run: () => shareRecipeIt(r.id) })
+                }
                 className="flex min-h-11 items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left text-sm font-semibold text-fg/85 transition-colors hover:bg-fg/10 disabled:opacity-50"
               >
                 {r.name}
@@ -139,7 +184,10 @@ function ShareSheet({
                 key={f.id}
                 type="button"
                 disabled={busyId !== null || f.id == null}
-                onClick={() => f.id != null && shareFoodIt(f.id)}
+                onClick={() =>
+                  f.id != null &&
+                  setConfirm({ title: `Share "${f.name}" to ${villageName}?`, run: () => shareFoodIt(f.id!) })
+                }
                 className="flex min-h-11 items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left text-sm font-semibold text-fg/85 transition-colors hover:bg-fg/10 disabled:opacity-50"
               >
                 <span className="min-w-0 truncate">
@@ -157,6 +205,17 @@ function ShareSheet({
           </>
         )}
       </div>
+      {confirm && (
+        <ConfirmDialog
+          title={confirm.title}
+          confirmLabel="Share"
+          onConfirm={() => {
+            confirm.run()
+            setConfirm(null)
+          }}
+          onCancel={() => setConfirm(null)}
+        />
+      )}
     </Sheet>
   )
 }
@@ -183,6 +242,9 @@ function VillageShareSection({
   const [shares, setShares] = useState<api.RecipeShare[]>(initialShares)
   const [picking, setPicking] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirm, setConfirm] = useState<
+    { title: string; label: string; danger?: boolean; run: () => void } | null
+  >(null)
 
   useEffect(() => {
     api.listVillages().then(setVillages).catch(() => {})
@@ -234,7 +296,14 @@ function VillageShareSection({
           </span>
           <button
             type="button"
-            onClick={() => unshare(sh)}
+            onClick={() =>
+              setConfirm({
+                title: `Remove from ${sh.village_name}?`,
+                label: 'Remove',
+                danger: true,
+                run: () => unshare(sh),
+              })
+            }
             className="-my-2 -mr-3 flex min-h-11 shrink-0 items-center px-3 font-semibold text-fg/45 hover:text-fg/70"
           >
             Unshare
@@ -248,7 +317,9 @@ function VillageShareSection({
               <button
                 key={v.id}
                 type="button"
-                onClick={() => shareTo(v)}
+                onClick={() =>
+                  setConfirm({ title: `Share to ${v.name}?`, label: 'Share', run: () => shareTo(v) })
+                }
                 className="min-h-11 rounded-full border border-fg/10 bg-fg/5 px-3 py-1 text-xs font-semibold text-fg/70 transition-colors hover:bg-fg/10"
               >
                 {v.name}
@@ -260,12 +331,32 @@ function VillageShareSection({
             type="button"
             variant="ghost"
             className="flex min-h-11 w-full items-center justify-center gap-1.5"
-            onClick={() => (remaining.length === 1 ? shareTo(remaining[0]) : setPicking(true))}
+            onClick={() =>
+              remaining.length === 1
+                ? setConfirm({
+                    title: `Share to ${remaining[0].name}?`,
+                    label: 'Share',
+                    run: () => shareTo(remaining[0]),
+                  })
+                : setPicking(true)
+            }
           >
             <Share2 className="h-4 w-4" /> Share to village
           </Button>
         ))}
       <FormError message={error} />
+      {confirm && (
+        <ConfirmDialog
+          title={confirm.title}
+          confirmLabel={confirm.label}
+          danger={confirm.danger}
+          onConfirm={() => {
+            confirm.run()
+            setConfirm(null)
+          }}
+          onCancel={() => setConfirm(null)}
+        />
+      )}
     </div>
   )
 }
@@ -307,6 +398,7 @@ export function SharedRecipesBox() {
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState<string | null>(null)
   const [savedFood, setSavedFood] = useState<string | null>(null)
+  const [confirm, setConfirm] = useState<{ title: string; run: () => void } | null>(null)
   // Like the recipe library: show the newest couple, fold the rest.
   const [showAll, setShowAll] = useState(false)
   const [showAllFoods, setShowAllFoods] = useState(false)
@@ -573,7 +665,9 @@ export function SharedRecipesBox() {
                 {isParent && (
                   <button
                     type="button"
-                    onClick={() => unshareMine(s)}
+                    onClick={() =>
+                      setConfirm({ title: `Remove "${s.name}" from shared?`, run: () => unshareMine(s) })
+                    }
                     aria-label={`Unshare ${s.name}`}
                     className="btn-danger -my-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-base font-bold leading-none"
                   >
@@ -600,7 +694,9 @@ export function SharedRecipesBox() {
                 {isParent && (
                   <button
                     type="button"
-                    onClick={() => unshareMyFood(s)}
+                    onClick={() =>
+                      setConfirm({ title: `Remove "${s.name}" from shared?`, run: () => unshareMyFood(s) })
+                    }
                     aria-label={`Unshare ${s.name}`}
                     className="btn-danger -my-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-base font-bold leading-none"
                   >
@@ -714,6 +810,18 @@ export function SharedRecipesBox() {
               setSharing(false)
               refresh()
             }}
+          />
+        )}
+        {confirm && (
+          <ConfirmDialog
+            title={confirm.title}
+            confirmLabel="Remove"
+            danger
+            onConfirm={() => {
+              confirm.run()
+              setConfirm(null)
+            }}
+            onCancel={() => setConfirm(null)}
           />
         )}
       </AnimatePresence>

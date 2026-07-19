@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { Bookmark, BookmarkCheck, BookOpen, ChevronDown, ChevronLeft, Pencil, Plus, ScanBarcode, Search, ShoppingBasket, Trash2, X , Share2 } from 'lucide-react'
+import { Bookmark, BookmarkCheck, BookOpen, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, Pencil, Plus, ScanBarcode, Search, ShoppingBasket, Trash2, X , Share2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '../lib/api'
@@ -1465,6 +1465,30 @@ function foodSummary(f: api.Food, showCal = true): string {
   return parts.filter(Boolean).join(' · ')
 }
 
+// A custom food's stored nutrition is per-100-base; people think in servings, so
+// the detail view shows it per the food's first (label) serving, backed out the
+// same way `foodSummary` backs out its calories. Falls back to per-100 when a
+// food has no named serving. Nulls stay null so "unknown" reads as "—".
+function servingNutrition(f: api.Food): { macros: api.RecipeMacros; per: string } {
+  const s = f.servings[0]
+  const factor = s && s.grams > 0 ? s.grams / 100 : 1
+  const scale = (v: number | null | undefined) => (v == null ? null : r2(v * factor))
+  const macros = {
+    calories: scale(f.calories),
+    protein_g: scale(f.protein_g),
+    carbs_g: scale(f.carbs_g),
+    fat_g: scale(f.fat_g),
+    saturated_fat_g: scale(f.saturated_fat_g),
+    trans_fat_g: scale(f.trans_fat_g),
+    cholesterol_mg: scale(f.cholesterol_mg),
+    sodium_mg: scale(f.sodium_mg),
+    fiber_g: scale(f.fiber_g),
+    sugar_g: scale(f.sugar_g),
+  } as api.RecipeMacros
+  const per = s ? `Per ${s.name}` : `Per 100 ${UNIT_LABEL[f.base_unit]}`
+  return { macros, per }
+}
+
 // The folder names in use across a family's foods, unique and alphabetical, for
 // the folder picker's suggestions and the grouped custom-food view.
 export const foldersOf = (foods: api.Food[]): string[] =>
@@ -1480,8 +1504,10 @@ export const foldersOf = (foods: api.Food[]): string[] =>
 // converts to it: grams or ounces for a solid, millilitres or fluid ounces for
 // a liquid. It is only an ENTRY unit — storage stays g/mL. Form-wide, not
 // per-serving: per-serving units would break changeBasis's gram-ratio rescale.
-type SizeUnit = 'g' | 'oz' | 'ml' | 'floz'
-const sizeUnitsFor = (base: api.BaseUnit): SizeUnit[] => (base === 'ml' ? ['ml', 'floz'] : ['g', 'oz'])
+// The serving-size entry units are just the app's mass/volume units
+// (unitsForBase): grams/ounces/pounds for a solid, millilitres/fl-oz/cups/
+// tablespoons/teaspoons for a liquid. Storage stays g/mL.
+type SizeUnit = api.AmountUnit
 
 function FoodSheet({
   food,
@@ -1517,7 +1543,7 @@ function FoodSheet({
   const [servings, setServings] = useState<ServingDraft[]>(() =>
     editing && food.servings.length
       ? food.servings.map((s) => ({ name: s.name, grams: String(s.grams) }))
-      : [{ name: '100 g', grams: '100' }],
+      : [{ name: '', grams: '' }],
   )
   const [basis, setBasis] = useState(0)
   // Nutrition shown per the basis serving. Seed an edit from the stored per-100g
@@ -1552,7 +1578,7 @@ function FoodSheet({
       if (typeof d.brand === 'string') setBrand(d.brand)
       if (typeof d.folder === 'string') setFolder(d.folder)
       if (d.baseUnit === 'g' || d.baseUnit === 'ml') setBaseUnit(d.baseUnit)
-      if (['g', 'oz', 'ml', 'floz'].includes(d.sizeUnit)) setSizeUnit(d.sizeUnit)
+      if (d.sizeUnit in UNIT_TO_BASE) setSizeUnit(d.sizeUnit)
       if (Array.isArray(d.servings)) setServings(d.servings)
       if (typeof d.basis === 'number') setBasis(d.basis)
       if (d.nutri && typeof d.nutri === 'object') setNutri({ ...emptyNutri(), ...d.nutri })
@@ -1567,25 +1593,16 @@ function FoodSheet({
     setFolder('')
     setBaseUnit('g')
     setSizeUnit('g')
-    setServings([{ name: '100 g', grams: '100' }])
+    setServings([{ name: '', grams: '' }])
     setBasis(0)
     setNutri(emptyNutri())
     clearDraft()
   }
 
-  // Flip weight <-> volume. Retitle the untouched default serving so it doesn't
-  // read "100 g" while measuring by millilitres; entered numbers stay put (we
-  // can't convert weight to volume without a density).
+  // Flip weight <-> volume. Serving names are the user's own words now (no
+  // "100 g" default to retitle); entered numbers stay put (we can't convert a
+  // weight to a volume without a density).
   function changeBase(next: api.BaseUnit) {
-    setServings((ls) =>
-      ls.map((s) =>
-        s.name === '100 g' && next === 'ml'
-          ? { ...s, name: '100 mL' }
-          : s.name === '100 mL' && next === 'g'
-            ? { ...s, name: '100 g' }
-            : s,
-      ),
-    )
     setBaseUnit(next)
     // The entry unit follows the measure family; numbers stay put (no density).
     setSizeUnit(next)
@@ -1748,16 +1765,17 @@ function FoodSheet({
             {servings.map((s, i) => (
               <div key={i} className="flex items-center gap-2">
                 <input value={s.name} onChange={(e) => setServing(i, { ...s, name: e.target.value })}
-                  maxLength={60} placeholder={baseUnit === 'ml' ? '1 tbsp' : '1 bar'}
+                  maxLength={60} placeholder={baseUnit === 'ml' ? '1 cup, 2 tbsp' : '1 bar, 17 chips'}
                   className="field min-w-0 flex-1" aria-label={`Serving ${i + 1} name`} />
-                <div className="flex w-32 shrink-0 items-center gap-1">
+                <div className="flex shrink-0 items-center gap-1">
                   <input inputMode="decimal" value={s.grams}
                     onChange={(e) => setServing(i, { ...s, grams: decimal(e.target.value) })}
-                    placeholder="0" className="field min-w-0 flex-1 px-2 text-right"
+                    placeholder="100" style={{ width: '3.75rem' }}
+                    className="field shrink-0 px-2 text-right"
                     aria-label={`Serving ${i + 1} size in ${UNIT_LABEL[sizeUnit]}`} />
                   <select value={sizeUnit} onChange={(e) => changeSizeUnit(e.target.value as SizeUnit)}
                     className="field min-h-11 w-auto shrink-0 px-1.5 text-xs" aria-label={`Serving ${i + 1} unit`}>
-                    {sizeUnitsFor(baseUnit).map((u) => (
+                    {unitsForBase(baseUnit).map((u) => (
                       <option key={u} value={u}>{UNIT_LABEL[u]}</option>
                     ))}
                   </select>
@@ -1928,6 +1946,9 @@ export function CustomFoodBox() {
   const [foods, setFoods] = useState<api.Food[]>([])
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<{ food: api.Food | null } | null>(null)
+  // Tapping a food opens a read-only detail first (what's inside + Edit/Share),
+  // rather than dropping straight into the editor.
+  const [detail, setDetail] = useState<api.Food | null>(null)
   const preview = useLibraryPreview(foods)
   const mounted = useRef(true)
 
@@ -1968,13 +1989,13 @@ export function CustomFoodBox() {
             <Share2 className="h-3 w-3" /> Shared
           </span>
         )}
-        {canEdit && <Pencil className="h-4 w-4 shrink-0 text-fg/35" />}
+        {canEdit && <ChevronRight className="h-4 w-4 shrink-0 text-fg/35" />}
       </>
     )
     return (
       <li key={f.id}>
         {canEdit ? (
-          <button type="button" onClick={() => setEditing({ food: f })}
+          <button type="button" onClick={() => setDetail(f)}
             className="flex w-full items-center gap-3 rounded-xl bg-fg/5 px-3 py-2.5 text-left transition-colors hover:bg-fg/10">
             {inner}
           </button>
@@ -2039,6 +2060,58 @@ export function CustomFoodBox() {
           noun="foods"
         />
       </CollapsibleCard>
+
+      {detail && (
+        <Sheet onClose={() => setDetail(null)}>
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="text-lg font-bold leading-snug">{detail.name}</h3>
+              {detail.brand && <p className="mt-0.5 text-sm text-fg/55">{detail.brand}</p>}
+              {detail.folder && (
+                <p className="mt-1 flex items-center gap-1 text-xs text-fg/45">
+                  <FolderOpen className="h-3 w-3 shrink-0" /> {detail.folder}
+                </p>
+              )}
+            </div>
+            {detail.shared_to.length > 0 && (
+              <span className="flex shrink-0 items-center gap-1 rounded-full border border-accent-bright/30 bg-accent-bright/10 px-2 py-0.5 text-[10px] font-semibold text-accent-bright">
+                <Share2 className="h-3 w-3" /> Shared
+              </span>
+            )}
+          </div>
+          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-fg/35">
+            {servingNutrition(detail).per}
+          </p>
+          <div className="mb-3">
+            <NutritionPanel m={servingNutrition(detail).macros} />
+          </div>
+          {detail.servings.length > 0 && (
+            <div className="mb-3 flex flex-col gap-1">
+              {detail.servings.map((s, i) => (
+                <p key={i} className="flex justify-between gap-3 text-sm text-fg/75">
+                  <span className="min-w-0 truncate">{s.name}</span>
+                  <span className="shrink-0 text-fg/50">
+                    {s.grams} {UNIT_LABEL[detail.base_unit]}
+                  </span>
+                </p>
+              ))}
+            </div>
+          )}
+          <Button
+            type="button"
+            className="mb-2 min-h-11 w-full"
+            onClick={() => {
+              setEditing({ food: detail })
+              setDetail(null)
+            }}
+          >
+            <Pencil className="mr-1.5 inline h-4 w-4" /> Edit
+          </Button>
+          {/* Share/unshare right here, per the family's ask, so a food can be
+              shared without stepping into the editor. */}
+          <ShareFoodToVillage food={detail} />
+        </Sheet>
+      )}
 
       {editing && (
         <FoodSheet

@@ -2,7 +2,7 @@ import datetime as dt
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
 from app.deps import require_adult, require_family
@@ -185,6 +185,9 @@ def get_day(
         select(DiaryEntry)
         .where(DiaryEntry.user_id == user.id, DiaryEntry.date_for == date)
         .order_by(DiaryEntry.time_of_day.nulls_last(), DiaryEntry.created_at)
+        # Eager-load each entry's source food + its servings so the response's
+        # food_servings ride along without an N+1 (2 extra queries total).
+        .options(selectinload(DiaryEntry.food).selectinload(Food.servings))
     ).all()
 
     consumed: dict[str, float | None] = {n: None for n in _NUTRIENTS}

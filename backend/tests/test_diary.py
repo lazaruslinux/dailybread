@@ -146,6 +146,108 @@ def test_deleting_an_entry(parent):
     assert day(parent)["entries"] == []
 
 
+# ---- by-serving editing: the entry carries its food's servings -------------------
+
+
+def _custom_food(client, name="Egg roll", grams=80, **over):
+    # A custom food the picker logs by serving: "1 egg roll" = 80 g, 200 cal.
+    body = {
+        "name": name,
+        "servings": [{"name": f"1 {name.lower()}", "grams": grams}],
+        "basis_index": 0,
+        "calories": 200,
+        "protein_g": 8,
+    }
+    body.update(over)
+    res = client.post("/foods", json=body)
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+def log_food(client, food, amount, label):
+    # As the picker/edit sheet send a by-serving log: the amount is already in
+    # the food's base unit (servings * grams), the phrasing rides in `label`.
+    return log(
+        client,
+        amount=amount,
+        unit="g",
+        food_id=food["id"],
+        name=food["name"],
+        source="custom",
+        source_id=None,
+        label=label,
+    )
+
+
+def test_food_backed_entry_exposes_servings_and_base_unit(parent):
+    food = _custom_food(parent, name="Egg roll", grams=80)
+    assert log_food(parent, food, amount=80, label="1 egg roll").status_code == 201
+    entry = day(parent)["entries"][0]
+    assert entry["food_base_unit"] == "g"
+    assert [s["name"] for s in entry["food_servings"]] == ["1 egg roll"]
+    assert entry["food_servings"][0]["grams"] == 80.0
+    assert entry["label"] == "1 egg roll"
+
+
+def test_idless_food_without_servings_stays_grams_only(parent):
+    # A USDA food is cached on first log but carries no named servings, so the
+    # edit sheet has nothing to offer by-serving (canServe is false client-side).
+    log(parent, amount=100)
+    entry = day(parent)["entries"][0]
+    assert entry["food_servings"] == []
+    assert entry["food_base_unit"] == "g"  # the cache row's base unit
+
+
+def test_recipe_entry_has_no_food_link(owner):
+    owner.post("/recipes", json={"name": "Bowl", "servings": 1, "ingredients": []})
+    rid = owner.get("/recipes").json()[0]["id"]
+    owner.post("/diary", json={"date_for": TODAY, "slot": "lunch", "recipe_id": rid, "amount": 1})
+    entry = day(owner)["entries"][0]
+    assert entry["unit"] == "srv"
+    assert entry["food_servings"] == []
+    assert entry["food_base_unit"] is None
+
+
+def test_deleted_food_drops_servings_but_entry_survives(parent):
+    food = _custom_food(parent, name="Egg roll", grams=80)
+    log_food(parent, food, amount=80, label="1 egg roll")
+    assert parent.delete(f"/foods/{food['id']}").status_code == 204
+    entry = day(parent)["entries"][0]
+    assert entry["food_servings"] == []
+    assert entry["food_base_unit"] is None
+    # The snapshot still reads right and stays editable (scaled linearly).
+    assert entry["calories"] == 200.0
+
+
+def test_editing_by_serving_recomputes_and_keeps_label(parent):
+    food = _custom_food(parent, name="Egg roll", grams=80)  # 200 cal / 80 g
+    entry = log_food(parent, food, amount=80, label="1 egg roll").json()
+    assert entry["calories"] == 200.0
+    # The edit sheet turns "2 egg rolls" into 160 g + the new label.
+    edited = parent.patch(
+        f"/diary/{entry['id']}",
+        json={"amount": 160, "unit": "g", "label": "2 egg roll"},
+    )
+    assert edited.status_code == 200, edited.text
+    e = edited.json()
+    assert e["amount"] == 160.0 and e["label"] == "2 egg roll"
+    assert e["calories"] == 400.0  # 250/100g * 160g
+
+
+def test_editing_a_recipe_entry_needs_no_unit(owner):
+    # The edit sheet must NOT send a unit for a recipe entry (its "srv" is not
+    # an AmountUnit); it edits the servings count + slot only. Guards the
+    # regression where every save unconditionally sent `unit`.
+    owner.post("/recipes", json={"name": "Bowl", "servings": 1, "ingredients": []})
+    rid = owner.get("/recipes").json()[0]["id"]
+    entry = owner.post(
+        "/diary", json={"date_for": TODAY, "slot": "lunch", "recipe_id": rid, "amount": 1}
+    ).json()
+    res = owner.patch(f"/diary/{entry['id']}", json={"amount": 2, "slot": "dinner"})
+    assert res.status_code == 200, res.text
+    assert res.json()["slot"] == "dinner" and res.json()["amount"] == 2.0
+
+
 # ---- privacy: a diary belongs to one person --------------------------------------
 
 
