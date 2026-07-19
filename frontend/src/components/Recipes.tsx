@@ -6,7 +6,7 @@ import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { Button, FormError } from './ui'
 import { CollapsibleCard } from './CollapsibleCard'
-import { ShareToVillage } from './SharedRecipes'
+import { ShareFoodToVillage, ShareToVillage } from './SharedRecipes'
 import { BarcodeScanner } from './BarcodeScanner'
 
 // How many base units (g for a solid, mL for a liquid) one of each unit is.
@@ -1805,6 +1805,10 @@ function FoodSheet({
             ))}
           </div>
         </div>
+
+        {/* Share/unshare from the food itself, the recipe sheet's treatment.
+            A new food has no id to share yet, so only edits show it. */}
+        {editing && <ShareFoodToVillage food={food} />}
 
         <FormError message={error} />
         <Button type="submit" disabled={busy || !name.trim()} className="w-full">

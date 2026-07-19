@@ -161,12 +161,26 @@ function ShareSheet({
   )
 }
 
-// "Share to village" inside a recipe's own detail sheet: renders nothing when
-// the family isn't in a village; one village shares on tap, several offer chips.
-export function ShareToVillage({ recipe }: { recipe: api.Recipe }) {
+// "Share to village" inside a recipe's or custom food's own detail sheet:
+// renders nothing when the family isn't in a village; one village shares on
+// tap, several offer chips; existing shares list with an Unshare action. The
+// two wrappers below feed it the right API calls and change event; everything
+// here is type="button" because FoodSheet mounts it inside a form.
+function VillageShareSection({
+  initialShares,
+  doShare,
+  doUnshare,
+  changeEvent,
+}: {
+  initialShares: api.RecipeShare[]
+  // Resolves to the new share's id (the unshare handle).
+  doShare: (villageId: number) => Promise<number>
+  doUnshare: (shareId: number) => Promise<void>
+  changeEvent: string
+}) {
   const { user } = useAuth()
   const [villages, setVillages] = useState<api.Village[]>([])
-  const [shares, setShares] = useState<api.RecipeShare[]>(recipe.shared_to)
+  const [shares, setShares] = useState<api.RecipeShare[]>(initialShares)
   const [picking, setPicking] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -180,13 +194,13 @@ export function ShareToVillage({ recipe }: { recipe: api.Recipe }) {
   async function shareTo(v: api.Village) {
     setError(null)
     try {
-      const entry = await api.shareRecipe(v.id, recipe.id)
+      const shareId = await doShare(v.id)
       setShares((prev) => [
         ...prev,
-        { share_id: entry.share_id, village_id: v.id, village_name: v.name },
+        { share_id: shareId, village_id: v.id, village_name: v.name },
       ])
       setPicking(false)
-      window.dispatchEvent(new Event('db:recipes-changed'))
+      window.dispatchEvent(new Event(changeEvent))
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Something went wrong')
     }
@@ -195,9 +209,9 @@ export function ShareToVillage({ recipe }: { recipe: api.Recipe }) {
   async function unshare(share: api.RecipeShare) {
     setError(null)
     try {
-      await api.unshareRecipe(share.share_id)
+      await doUnshare(share.share_id)
       setShares((prev) => prev.filter((s) => s.share_id !== share.share_id))
-      window.dispatchEvent(new Event('db:recipes-changed'))
+      window.dispatchEvent(new Event(changeEvent))
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Something went wrong')
     }
@@ -212,14 +226,16 @@ export function ShareToVillage({ recipe }: { recipe: api.Recipe }) {
         >
           <span className="flex min-w-0 items-center gap-1.5">
             <Share2 className="h-3.5 w-3.5 shrink-0 text-accent-bright" />
-            <span className="truncate">
+            {/* No truncate: the live-pointer clause is the part worth reading,
+                so the label wraps instead of hiding it at phone width. */}
+            <span>
               Shared to {sh.village_name}. Your edits show there live
             </span>
           </span>
           <button
             type="button"
             onClick={() => unshare(sh)}
-            className="shrink-0 pl-2 font-semibold text-fg/45 hover:text-fg/70"
+            className="-my-2 -mr-3 flex min-h-11 shrink-0 items-center px-3 font-semibold text-fg/45 hover:text-fg/70"
           >
             Unshare
           </button>
@@ -233,7 +249,7 @@ export function ShareToVillage({ recipe }: { recipe: api.Recipe }) {
                 key={v.id}
                 type="button"
                 onClick={() => shareTo(v)}
-                className="rounded-full border border-fg/10 bg-fg/5 px-2.5 py-1 text-xs font-semibold text-fg/70 transition-colors hover:bg-fg/10"
+                className="min-h-11 rounded-full border border-fg/10 bg-fg/5 px-3 py-1 text-xs font-semibold text-fg/70 transition-colors hover:bg-fg/10"
               >
                 {v.name}
               </button>
@@ -243,7 +259,7 @@ export function ShareToVillage({ recipe }: { recipe: api.Recipe }) {
           <Button
             type="button"
             variant="ghost"
-            className="flex w-full items-center justify-center gap-1.5"
+            className="flex min-h-11 w-full items-center justify-center gap-1.5"
             onClick={() => (remaining.length === 1 ? shareTo(remaining[0]) : setPicking(true))}
           >
             <Share2 className="h-4 w-4" /> Share to village
@@ -251,6 +267,31 @@ export function ShareToVillage({ recipe }: { recipe: api.Recipe }) {
         ))}
       <FormError message={error} />
     </div>
+  )
+}
+
+export function ShareToVillage({ recipe }: { recipe: api.Recipe }) {
+  return (
+    <VillageShareSection
+      initialShares={recipe.shared_to}
+      doShare={async (villageId) => (await api.shareRecipe(villageId, recipe.id)).share_id}
+      doUnshare={(shareId) => api.unshareRecipe(shareId)}
+      changeEvent="db:recipes-changed"
+    />
+  )
+}
+
+export function ShareFoodToVillage({ food }: { food: api.Food }) {
+  // A brand-new unsaved food has no id to share yet.
+  if (food.id == null) return null
+  const foodId = food.id
+  return (
+    <VillageShareSection
+      initialShares={food.shared_to}
+      doShare={async (villageId) => (await api.shareFood(villageId, foodId)).share_id}
+      doUnshare={(shareId) => api.unshareFood(shareId)}
+      changeEvent="db:foods-changed"
+    />
   )
 }
 
@@ -299,13 +340,15 @@ export function SharedRecipesBox() {
 
   useEffect(() => {
     refresh()
-    // Village membership changes AND shares made elsewhere (a recipe's own
-    // detail sheet) both land here without a tab-away round trip.
+    // Village membership changes AND shares made elsewhere (a recipe's or
+    // food's own detail sheet) both land here without a tab-away round trip.
     window.addEventListener('db:villages', refresh)
     window.addEventListener('db:recipes-changed', refresh)
+    window.addEventListener('db:foods-changed', refresh)
     return () => {
       window.removeEventListener('db:villages', refresh)
       window.removeEventListener('db:recipes-changed', refresh)
+      window.removeEventListener('db:foods-changed', refresh)
     }
   }, [refresh])
 
