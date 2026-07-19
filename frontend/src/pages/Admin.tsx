@@ -511,7 +511,7 @@ function InviteHouseholdSheet({ onClose }: { onClose: () => void }) {
     <Sheet onClose={onClose}>
         <div className="mb-5 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-lg font-bold">
-            <Home className="h-5 w-5 text-accent-bright" /> Invite to dailybread
+            <Home className="h-5 w-5 text-accent-bright" /> Invite to this server
           </h2>
           <button
             onClick={onClose}
@@ -549,7 +549,7 @@ function InviteHouseholdSheet({ onClose }: { onClose: () => void }) {
         ) : (
           <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
             <p className="text-xs leading-relaxed text-fg/50">
-              This invites someone to start their own family on this dailybread, with their own
+              This invites someone to start their own family on this server, with their own
               board, completely separate from yours. Use "Add family member" instead if you're
               adding someone to your own family.
             </p>
@@ -969,14 +969,14 @@ export function Admin({ onOpenProfile }: { onOpenProfile?: (id: number) => void 
             Server admin
           </p>
           <p className="mt-1 mb-3 text-sm text-fg/50">
-            Invite someone to found their own family on this dailybread with an invite code. They
+            Invite someone to found their own family on this server with an invite code. They
             run their own board; you won't see their members here.
           </p>
           <button
             onClick={() => setInviting(true)}
             className="glass flex w-full items-center gap-3 p-4 text-left font-semibold text-fg/80 transition-colors hover:text-fg"
           >
-            <Home className="h-4 w-4 text-accent-bright" /> Invite to dailybread
+            <Home className="h-4 w-4 text-accent-bright" /> Invite to this server
           </button>
           <ServerOverview />
         </div>

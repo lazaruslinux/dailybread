@@ -271,7 +271,7 @@ def mint_signup_invite(
     family — invites never join an existing one."""
     if not admin.is_owner:
         raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "Only the server admin can invite to dailybread"
+            status.HTTP_403_FORBIDDEN, "Only the server admin can invite to this server"
         )
 
     now = dt.datetime.now(dt.timezone.utc)
