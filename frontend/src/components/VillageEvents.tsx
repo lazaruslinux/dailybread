@@ -346,7 +346,11 @@ export function VillageStrip({
   if (open.length === 0) return null
   return (
     <div className="glass border border-accent-bright/25 p-3" data-village-strip>
-      <span className="mb-2 block px-1 text-xs font-semibold uppercase tracking-wide text-accent-bright">
+      {/* The needs-attention idiom: the TabBar's rose dot on the header, a
+          solid rose chip per row. A "maybe" still carries the chip — it's in
+          the strip because it still needs a final answer. */}
+      <span className="mb-2 flex items-center gap-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-accent-bright">
+        <span className="h-2 w-2 shrink-0 rounded-full bg-rose-400" />
         Village invites
       </span>
       <div className="flex flex-col gap-1">
@@ -363,6 +367,9 @@ export function VillageStrip({
                 {ev.organizer_family_name} · {whenLabel(ev)}
                 {ev.my_rsvp === 'maybe' ? ' · you said maybe' : ''}
               </span>
+            </span>
+            <span className="shrink-0 rounded-full bg-rose-500/90 px-2 py-0.5 text-[10px] font-semibold text-white">
+              RSVP
             </span>
             <ChevronRight className="h-4 w-4 shrink-0 text-fg/30" />
           </button>

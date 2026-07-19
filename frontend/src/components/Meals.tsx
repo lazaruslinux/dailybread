@@ -864,7 +864,7 @@ export function TonightCard({ onOpenKitchen }: { onOpenKitchen: () => void }) {
       <UtensilsCrossed className="h-4 w-4 shrink-0 text-accent-bright" />
       <span className="min-w-0 flex-1 truncate text-sm">
         <span className="mr-2 text-[11px] font-semibold uppercase tracking-widest text-fg/40">
-          Tonight
+          Dinner plan
         </span>
         {meal?.time_of_day && (
           <span className="mr-2 font-bold text-fg/90">{fmtMealTime(meal.time_of_day)}</span>
