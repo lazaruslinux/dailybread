@@ -154,6 +154,35 @@ class VillageRecipe(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class VillageFood(Base):
+    """One custom food shared onto one village's shelf. The row is a pointer, not
+    a copy: the owning family's food stays theirs, and "save a copy" (not this
+    table) is what puts an independent snapshot in another family's kitchen.
+
+    family_id is the owner denormalized at share time (a food never changes
+    families), buying attribution without a join and a one-query cleanup of a
+    family's shares when it leaves the village."""
+
+    __tablename__ = "village_foods"
+    __table_args__ = (
+        UniqueConstraint("village_id", "food_id", name="uq_village_food"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    village_id: Mapped[int] = mapped_column(
+        ForeignKey("villages.id", ondelete="CASCADE"), index=True
+    )
+    food_id: Mapped[int] = mapped_column(
+        ForeignKey("foods.id", ondelete="CASCADE"), index=True
+    )
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)
+    # The parent who shared it, for "Shared by Alex from Team Jam".
+    shared_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class RsvpStatus(str, enum.Enum):
     going = "going"
     maybe = "maybe"
@@ -742,6 +771,10 @@ class Food(Base):
     source_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(200))
     brand: Mapped[str] = mapped_column(String(120), default="")
+    # A family's own optional filing label for a custom food (e.g. "Panda
+    # Express"). NULL for the shared cache rows and for unfiled custom foods.
+    # Private to the owning family: it never crosses the village wall.
+    folder: Mapped[str | None] = mapped_column(String(60), nullable=True)
     # Which measure family this food is portioned in: "g" (mass, the default and
     # what every USDA/OFF food is) or "ml" (volume, for liquids a parent enters
     # by millilitres). Nutrition below is per 100 of THIS unit.
@@ -768,6 +801,13 @@ class Food(Base):
         back_populates="food",
         cascade="all, delete-orphan",
         order_by="FoodServing.position",
+    )
+
+    # Shelf entries in any villages this custom food is shared to. Deleting the
+    # food unshares it everywhere (saved copies are independent rows and
+    # survive; see routers/villages.py).
+    village_shares: Mapped[list["VillageFood"]] = relationship(
+        cascade="all, delete-orphan"
     )
 
 

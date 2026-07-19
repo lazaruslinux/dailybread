@@ -45,16 +45,22 @@ from app.models import (
     VillageEventAttendee,
     VillageEventRsvp,
     VillageFamily,
+    VillageFood,
     VillageRecipe,
 )
 from app.schemas import (
     FOOD_NUTRIENTS,
     AttendeeOut,
+    FoodOut,
+    FoodServingOut,
     KidAvatarIn,
     MoodOut,
     RecipeOut,
     RsvpIn,
     ShareEventIn,
+    ShareFoodIn,
+    SharedFoodDetailOut,
+    SharedFoodOut,
     SharedIngredientOut,
     SharedRecipeDetailOut,
     SharedRecipeOut,
@@ -435,6 +441,12 @@ def leave_village(
         )
     )
     db.execute(
+        delete(VillageFood).where(
+            VillageFood.village_id == village.id,
+            VillageFood.family_id == admin.family_id,
+        )
+    )
+    db.execute(
         delete(VillageFamily).where(
             VillageFamily.village_id == village.id,
             VillageFamily.family_id == admin.family_id,
@@ -691,6 +703,7 @@ def save_a_copy(
                     source_id=None,
                     name=food.name,
                     brand=food.brand,
+                    folder=food.folder,
                     base_unit=food.base_unit,
                     **{n_: getattr(food, n_) for n_ in FOOD_NUTRIENTS},
                 )
@@ -732,6 +745,203 @@ def save_a_copy(
         f"{copier_family.name} saved your recipe: {src.name}",
     )
     return _serialize(copy)
+
+
+# ---- the food shelf ------------------------------------------------------------------
+# Custom foods shared to a village, the recipe-shelf pattern exactly. A shelf
+# entry POINTS at the owning family's custom food (their edits show live);
+# "Save a copy" is what puts an independent snapshot in another family's
+# kitchen. The path prefix is /food-shelf, not /shelf/foods: GET /shelf/
+# {share_id} registers first and would int-parse-eat a /shelf/foods segment.
+# folder never crosses the wall — it's the owning family's private filing.
+
+
+def _food_shelf_row(
+    db: Session,
+    share: VillageFood,
+    food: Food,
+    village_name: str,
+    family_name: str,
+    viewer_family: int,
+) -> SharedFoodOut:
+    sharer = db.get(User, share.shared_by_id) if share.shared_by_id else None
+    return SharedFoodOut(
+        share_id=share.id,
+        village_id=share.village_id,
+        village_name=village_name,
+        family_id=share.family_id,
+        family_name=family_name,
+        shared_by=sharer.display_name.split()[0] if sharer else None,
+        is_own=share.family_id == viewer_family,
+        name=food.name,
+        brand=food.brand,
+        base_unit=food.base_unit,
+        serving=food.servings[0].name if food.servings else "",
+        created_at=share.created_at,
+        **{n: getattr(food, n) for n in FOOD_NUTRIENTS},
+    )
+
+
+def _get_food_share(db: Session, share_id: int, viewer_family: int) -> VillageFood:
+    """A food-shelf entry in one of the viewer's villages; anything else 404s."""
+    share = db.get(VillageFood, share_id)
+    if share is None or share.village_id not in set(
+        db.scalars(_my_village_ids(db, viewer_family))
+    ):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such shared food")
+    return share
+
+
+@router.get("/food-shelf", response_model=list[SharedFoodOut])
+def food_shelf(db: Session = Depends(get_db), user: User = Depends(require_family)):
+    rows = db.execute(
+        select(VillageFood, Food, Village.name, Family.name)
+        .join(Food, Food.id == VillageFood.food_id)
+        .join(Village, Village.id == VillageFood.village_id)
+        .join(Family, Family.id == VillageFood.family_id)
+        .where(VillageFood.village_id.in_(_my_village_ids(db, user.family_id)))
+        .order_by(VillageFood.created_at.desc(), VillageFood.id.desc())
+    ).all()
+    return [
+        _food_shelf_row(db, share, food, vname, fname, user.family_id)
+        for share, food, vname, fname in rows
+    ]
+
+
+@router.get("/food-shelf/{share_id}", response_model=SharedFoodDetailOut)
+def shared_food_detail(
+    share_id: int, db: Session = Depends(get_db), user: User = Depends(require_family)
+):
+    share = _get_food_share(db, share_id, user.family_id)
+    food = db.get(Food, share.food_id)
+    village = db.get(Village, share.village_id)
+    family = db.get(Family, share.family_id)
+    base = _food_shelf_row(db, share, food, village.name, family.name, user.family_id)
+    return SharedFoodDetailOut(
+        **base.model_dump(),
+        servings=[FoodServingOut.model_validate(s) for s in food.servings],
+    )
+
+
+@router.post(
+    "/{village_id}/foods",
+    response_model=SharedFoodOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def share_food(
+    village_id: int,
+    data: ShareFoodIn,
+    db: Session = Depends(get_db),
+    parent: User = Depends(require_parent),
+):
+    """Put one of the family's own custom foods on the village shelf."""
+    from app.routers.foods import _own_custom_food
+
+    village = _member_village(db, village_id, parent.family_id)
+    food = _own_custom_food(db, data.food_id, parent)
+    if db.scalar(
+        select(VillageFood).where(
+            VillageFood.village_id == village.id, VillageFood.food_id == food.id
+        )
+    ):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Already on the shelf")
+    share = VillageFood(
+        village_id=village.id,
+        food_id=food.id,
+        family_id=parent.family_id,
+        shared_by_id=parent.id,
+    )
+    db.add(share)
+    db.commit()
+    db.refresh(share)
+    family = db.get(Family, parent.family_id)
+    # The village's other families hear about the new shelf entry (push +
+    # inbox, "village" pref).
+    _notify_village(
+        db,
+        _village_adults(db, village.id, exclude_family=parent.family_id),
+        "village",
+        f"{parent.display_name.split()[0]} shared a food: {food.name}",
+        f"On {village.name}'s shelf",
+        f"village-food-{share.id}",
+    )
+    return _food_shelf_row(db, share, food, village.name, family.name, parent.family_id)
+
+
+@router.delete("/food-shelf/{share_id}", status_code=status.HTTP_204_NO_CONTENT)
+def unshare_food(
+    share_id: int, db: Session = Depends(get_db), parent: User = Depends(require_parent)
+):
+    """Take an own-family entry off the food shelf. Copies others saved survive."""
+    share = _get_food_share(db, share_id, parent.family_id)
+    if share.family_id != parent.family_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such shared food")
+    db.delete(share)
+    db.commit()
+
+
+@router.post(
+    "/food-shelf/{share_id}/copy",
+    response_model=FoodOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def save_a_food_copy(
+    share_id: int, db: Session = Depends(get_db), parent: User = Depends(require_parent)
+):
+    """Adopt a shared custom food: an independent snapshot in the family's own
+    kitchen (servings and all), deduped against existing customs. source_id is
+    dropped (the sharer's barcode never crosses); the sharer's folder rides
+    along only as the copier's own filing, and dedup ignores it so a match
+    keeps the copier's existing filing."""
+    share = _get_food_share(db, share_id, parent.family_id)
+    if share.family_id == parent.family_id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "It's already your food, no copy needed",
+        )
+    src = db.get(Food, share.food_id)
+    existing = _matching_custom_food(db, parent.family_id, src)
+    if existing is not None:
+        # A repeat copy: the family already has this food. Idempotent, no line.
+        return existing
+    copy = Food(
+        family_id=parent.family_id,
+        source=FoodSource.custom,
+        source_id=None,
+        name=src.name,
+        brand=src.brand,
+        folder=src.folder,
+        base_unit=src.base_unit,
+        **{n: getattr(src, n) for n in FOOD_NUTRIENTS},
+    )
+    db.add(copy)
+    db.flush()
+    for serving in src.servings:
+        db.add(
+            FoodServing(
+                food_id=copy.id,
+                name=serving.name,
+                grams=serving.grams,
+                position=serving.position,
+            )
+        )
+    db.commit()
+    db.refresh(copy)
+    # The payoff for the sharer: their family's parents hear when another family
+    # adopts their food. Inbox-only — a quiet thank-you, not a push.
+    copier_family = db.get(Family, parent.family_id)
+    sharer_parents = list(
+        db.scalars(
+            select(User).where(
+                User.family_id == share.family_id, User.role == Role.parent
+            )
+        )
+    )
+    inbox.record_all(
+        db, sharer_parents, "recipe",
+        f"{copier_family.name} saved your food: {src.name}",
+    )
+    return copy
 
 
 # ---- village events -------------------------------------------------------------

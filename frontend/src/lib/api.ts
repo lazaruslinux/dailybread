@@ -221,6 +221,61 @@ export const unshareRecipe = (shareId: number) =>
 export const saveSharedCopy = (shareId: number) =>
   request<Recipe>(`/villages/shelf/${shareId}/copy`, { method: 'POST' })
 
+// ---- the village food shelf -------------------------------------------------------
+// Custom foods shared to a village, the recipe-shelf pattern exactly. A row is a
+// live pointer at the owning family's food; "Save a copy" clones it into your own
+// kitchen. Nutrition is per 100 base units, straight off the row. folder and
+// barcode never cross the wall.
+
+export interface SharedFood {
+  share_id: number
+  village_id: number
+  village_name: string
+  family_id: number
+  family_name: string
+  // First name of the sharer: "Shared by Alex from Team Jam".
+  shared_by: string | null
+  is_own: boolean
+  name: string
+  brand: string
+  base_unit: BaseUnit
+  calories: number | null
+  protein_g: number | null
+  carbs_g: number | null
+  fat_g: number | null
+  saturated_fat_g: number | null
+  trans_fat_g: number | null
+  cholesterol_mg: number | null
+  sodium_mg: number | null
+  fiber_g: number | null
+  sugar_g: number | null
+  // The first serving's label, or "" when the food has none.
+  serving: string
+  created_at: string
+}
+
+export interface SharedFoodDetail extends SharedFood {
+  servings: FoodServing[]
+}
+
+export const villageFoodShelf = () => request<SharedFood[]>('/villages/food-shelf')
+
+export const sharedFoodDetail = (shareId: number) =>
+  request<SharedFoodDetail>(`/villages/food-shelf/${shareId}`)
+
+export const shareFood = (villageId: number, food_id: number) =>
+  request<SharedFood>(`/villages/${villageId}/foods`, {
+    method: 'POST',
+    body: JSON.stringify({ food_id }),
+  })
+
+export const unshareFood = (shareId: number) =>
+  request<void>(`/villages/food-shelf/${shareId}`, { method: 'DELETE' })
+
+// An independent snapshot into your own custom foods.
+export const saveSharedFoodCopy = (shareId: number) =>
+  request<Food>(`/villages/food-shelf/${shareId}/copy`, { method: 'POST' })
+
 // ---- server overview -----------------------------------------------------------
 
 export interface OverviewUser {
@@ -730,6 +785,9 @@ export interface Food {
   source_id: string | null
   name: string
   brand: string
+  // The family's own filing label for a custom food; null for cache rows and
+  // unfiled custom foods. Client-side grouping only.
+  folder: string | null
   base_unit: BaseUnit
   serving: string // display label for the source's serving, e.g. "1 slice (21 g)"; "" when unknown
   servings: FoodServing[]
@@ -751,6 +809,8 @@ export interface Food {
 export interface CustomFoodPayload {
   name: string
   brand?: string
+  // Optional filing label so a family can group custom foods; blank stores null.
+  folder?: string | null
   // Product barcode digits, so a later scan resolves straight to this food.
   barcode?: string | null
   base_unit?: BaseUnit
@@ -1019,7 +1079,7 @@ export const unlockDiaryDay = (date: string) =>
 
 export const getSavedFoods = () => request<Food[]>('/foods/saved')
 
-export const saveFood = (food: Omit<Food, 'id' | 'base_unit' | 'serving' | 'servings'> & { food_id?: number | null }) =>
+export const saveFood = (food: Omit<Food, 'id' | 'folder' | 'base_unit' | 'serving' | 'servings'> & { food_id?: number | null }) =>
   request<Food>('/foods/saved', { method: 'POST', body: JSON.stringify(food) })
 
 export const unsaveFood = (foodId: number) =>

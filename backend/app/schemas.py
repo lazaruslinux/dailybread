@@ -630,6 +630,9 @@ class FoodOut(BaseModel):
     source_id: str | None = None
     name: str
     brand: str = ""
+    # A family's own filing label for a custom food; None for cache rows and
+    # unfiled custom foods. Client-side grouping only.
+    folder: str | None = None
     base_unit: BaseUnit = "g"  # measure family: "g" (mass) or "ml" (volume)
     serving: str = ""  # display label for the source's serving; "" when unknown
     servings: list[FoodServingOut] = []  # structured named portions (custom foods)
@@ -655,6 +658,9 @@ class FoodIn(BaseModel):
 
     name: str = Field(min_length=1, max_length=200)
     brand: str = Field(default="", max_length=120)
+    # Optional filing label so a family can group custom foods (e.g. "Panda
+    # Express"). Stripped to None when blank; never leaves the family.
+    folder: str | None = Field(default=None, max_length=60)
     # A product barcode to remember this food by (digits as printed under the
     # bars). Scanning that code later resolves to this food directly, without
     # asking Open Food Facts — how a scanned-but-unknown product, entered once,
@@ -1129,6 +1135,47 @@ class SharedRecipeOut(BaseModel):
 class SharedRecipeDetailOut(SharedRecipeOut):
     steps: str
     ingredients: list[SharedIngredientOut]
+
+
+class ShareFoodIn(BaseModel):
+    food_id: int
+
+
+class SharedFoodOut(BaseModel):
+    """A food-shelf row: the custom food at arm's length (no food id), with
+    village and family attribution. is_own lets the sharing family see the
+    Unshare action on their entries. Nutrition is per 100 base units, straight
+    off the row. folder and barcode never cross the wall — private filing and a
+    scanner shortcut, neither the copier's business."""
+
+    share_id: int
+    village_id: int
+    village_name: str
+    family_id: int
+    family_name: str
+    # First name of the parent who shared it ("Shared by Alex from Team Jam").
+    shared_by: str | None
+    is_own: bool
+    name: str
+    brand: str
+    base_unit: BaseUnit
+    calories: float | None
+    protein_g: float | None
+    carbs_g: float | None
+    fat_g: float | None
+    saturated_fat_g: float | None
+    trans_fat_g: float | None
+    cholesterol_mg: float | None
+    sodium_mg: float | None
+    fiber_g: float | None
+    sugar_g: float | None
+    # The first serving's label, or "" when the food has none.
+    serving: str
+    created_at: dt.datetime
+
+
+class SharedFoodDetailOut(SharedFoodOut):
+    servings: list[FoodServingOut]
 
 
 # ---- server overview ---------------------------------------------------------------

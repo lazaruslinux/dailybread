@@ -322,6 +322,27 @@ def share(client, village_id, recipe_id):
     return res.json()
 
 
+def make_food(client, name="Grandma's mix", brand="", folder=None):
+    """A family's own custom food: one 100 g serving, so the stored per-100
+    nutrition equals what's entered."""
+    body = {
+        "name": name, "brand": brand, "base_unit": "g",
+        "calories": 400.0, "protein_g": 8.0,
+        "servings": [{"name": "1 serving", "grams": 100.0}],
+    }
+    if folder is not None:
+        body["folder"] = folder
+    res = client.post("/foods", json=body)
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+def share_food(client, village_id, food_id):
+    res = client.post(f"/villages/{village_id}/foods", json={"food_id": food_id})
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
 def test_shelf_shows_other_families_only(village, owner, other, child):
     recipe = make_recipe(owner)
     entry = share(owner, village, recipe["id"])
@@ -408,6 +429,184 @@ def test_shelf_is_village_scoped(owner, other):
     assert other.get("/villages/shelf").json() == []
     assert other.get(f"/villages/shelf/{entry['share_id']}").status_code == 404
     assert other.post(f"/villages/shelf/{entry['share_id']}/copy").status_code == 404
+
+
+# ---- the food shelf ---------------------------------------------------------------
+
+
+def test_food_shelf_shows_both_families_with_is_own(village, owner, other, child):
+    a = make_food(owner, name="Orange chicken", brand="Panda")
+    share_food(owner, village, a["id"])
+    b = make_food(other, name="Chow mein", brand="Panda")
+    share_food(other, village, b["id"])
+
+    shelf = owner.get("/villages/food-shelf").json()
+    assert len(shelf) == 2
+    by_name = {r["name"]: r for r in shelf}
+    assert by_name["Orange chicken"]["is_own"] is True
+    assert by_name["Chow mein"]["is_own"] is False
+    row = by_name["Orange chicken"]
+    assert row["brand"] == "Panda" and row["base_unit"] == "g"
+    assert row["calories"] == 400.0 and row["protein_g"] == 8.0
+    assert row["serving"] == "1 serving"
+    # No handles into the owning family's rows, and folder never crosses.
+    assert "food_id" not in row and "id" not in row and "folder" not in row
+
+    # Minors browse the shelf directly (no listVillages needed for them).
+    assert len(child.get("/villages/food-shelf").json()) == 2
+
+
+def test_food_share_gating(village, owner, other, child):
+    mine = make_food(owner, name="Mine")
+    theirs = make_food(other, name="Theirs")
+    # Another family's food is not the sharer's to share.
+    assert owner.post(
+        f"/villages/{village}/foods", json={"food_id": theirs["id"]}
+    ).status_code == 404
+    # A cache (USDA) food is not a custom food.
+    recipe = make_recipe(owner)
+    cache_food_id = recipe["ingredients"][0]["food_id"]
+    assert owner.post(
+        f"/villages/{village}/foods", json={"food_id": cache_food_id}
+    ).status_code == 404
+    # A village this family doesn't belong to.
+    outsider = other.post("/villages", json={"name": "Bs Own Circle"}).json()["id"]
+    assert owner.post(
+        f"/villages/{outsider}/foods", json={"food_id": mine["id"]}
+    ).status_code == 404
+    # Kids can't share.
+    assert child.post(
+        f"/villages/{village}/foods", json={"food_id": mine["id"]}
+    ).status_code == 403
+    # Duplicate.
+    share_food(owner, village, mine["id"])
+    assert owner.post(
+        f"/villages/{village}/foods", json={"food_id": mine["id"]}
+    ).status_code == 400
+
+
+def test_food_detail_is_id_free(village, owner, other):
+    food = make_food(owner, name="Detailed", folder="Secret")
+    entry = share_food(owner, village, food["id"])
+    detail = other.get(f"/villages/food-shelf/{entry['share_id']}").json()
+    assert detail["name"] == "Detailed"
+    assert "folder" not in detail and "id" not in detail
+    assert "food_id" not in detail and "source_id" not in detail and "barcode" not in detail
+    assert len(detail["servings"]) == 1
+    for s in detail["servings"]:
+        assert set(s.keys()) == {"name", "grams"}
+
+
+def test_food_copy_is_independent(village, owner, other):
+    food = make_food(owner, name="Orange chicken", folder="Panda Express")
+    entry = share_food(owner, village, food["id"])
+    copy = other.post(f"/villages/food-shelf/{entry['share_id']}/copy").json()
+    assert copy["name"] == "Orange chicken"
+    assert copy["source_id"] is None  # the sharer's barcode never crosses
+    assert copy["folder"] == "Panda Express"  # folder rides onto the clone
+    assert [s["name"] for s in copy["servings"]] == ["1 serving"]
+    assert [s["grams"] for s in copy["servings"]] == [100.0]
+
+    # A second copy dedupes to the same food id (idempotent).
+    copy2 = other.post(f"/villages/food-shelf/{entry['share_id']}/copy").json()
+    assert copy2["id"] == copy["id"]
+    assert sum(1 for f in other.get("/foods").json() if f["name"] == "Orange chicken") == 1
+
+    # Editing the copy never reaches the original.
+    other.put(
+        f"/foods/{copy['id']}",
+        json={
+            "name": "Orange chicken", "base_unit": "g", "calories": 5.0,
+            "servings": [{"name": "1 serving", "grams": 100.0}],
+        },
+    )
+    original = next(f for f in owner.get("/foods").json() if f["name"] == "Orange chicken")
+    assert original["calories"] == 400.0
+
+    # Copying your own share is nonsense, refused plainly.
+    assert owner.post(f"/villages/food-shelf/{entry['share_id']}/copy").status_code == 400
+
+
+def test_food_share_and_copy_notifications(village, owner, other):
+    food = make_food(owner, name="Kung pao")
+    entry = share_food(owner, village, food["id"])
+    # Sharing writes an inbox line to the OTHER family's parents ("village"),
+    # never to the sharer.
+    assert any(
+        r["kind"] == "village" and "Kung pao" in r["title"]
+        for r in other.get("/me/inbox").json()
+    )
+    assert not any(
+        r["kind"] == "village" and "Kung pao" in r["title"]
+        for r in owner.get("/me/inbox").json()
+    )
+    # Copying writes an inbox line to the SHARER's parents ("recipe"), never to
+    # the copier.
+    other.post(f"/villages/food-shelf/{entry['share_id']}/copy")
+    assert any(
+        r["kind"] == "recipe" and "saved your food" in r["title"]
+        for r in owner.get("/me/inbox").json()
+    )
+    assert not any(
+        r["kind"] == "recipe" and "saved your food" in r["title"]
+        for r in other.get("/me/inbox").json()
+    )
+
+
+def test_food_shelf_is_village_scoped(village, owner, other, app):
+    from tests.conftest import login
+
+    food = make_food(owner, name="Scoped")
+    entry = share_food(owner, village, food["id"])
+    # A third family in no shared village sees an empty shelf and 404s the ids.
+    creds = {"username": "cfam", "display_name": "C Fam", "password": "cfam-pass-1"}
+    owner.post("/auth/users", json={**creds, "role": "parent", "new_household": True})
+    third = login(app, creds)
+    third.post("/families", json={"name": "The Cs"})
+    assert third.get("/villages/food-shelf").json() == []
+    assert third.get(f"/villages/food-shelf/{entry['share_id']}").status_code == 404
+    # Non-owner can't unshare; owner can, and a saved copy survives.
+    other.post(f"/villages/food-shelf/{entry['share_id']}/copy")
+    assert other.delete(f"/villages/food-shelf/{entry['share_id']}").status_code == 404
+    assert owner.delete(f"/villages/food-shelf/{entry['share_id']}").status_code == 204
+    assert any(f["name"] == "Scoped" for f in other.get("/foods").json())
+
+
+def test_recipe_copy_carries_ingredient_folder(village, owner, other):
+    food = make_food(owner, name="Panda sauce", folder="Panda Express")
+    res = owner.post(
+        "/recipes",
+        json={
+            "name": "Sauce bowl", "servings": 2, "steps": "Mix.",
+            "ingredients": [
+                {"food_id": food["id"], "source": "custom", "name": "Panda sauce",
+                 "amount": 50, "unit": "g"}
+            ],
+        },
+    )
+    assert res.status_code == 201, res.text
+    entry = share(owner, village, res.json()["id"])
+    other.post(f"/villages/shelf/{entry['share_id']}/copy")
+    copied = next(f for f in other.get("/foods").json() if f["name"] == "Panda sauce")
+    assert copied["folder"] == "Panda Express"
+
+
+def test_leaving_takes_food_shares_off_the_shelf(village, owner, other):
+    food = make_food(owner, name="Departing dish")
+    share_food(owner, village, food["id"])
+    assert len(other.get("/villages/food-shelf").json()) == 1
+    # Leaving takes the family's food shares with it, like recipe shares.
+    assert owner.delete(f"/villages/{village}/membership").status_code == 204
+    assert other.get("/villages/food-shelf").json() == []
+
+
+def test_deleting_shared_food_unshares_it(village, owner, other):
+    food = make_food(owner, name="Ephemeral")
+    share_food(owner, village, food["id"])
+    assert len(other.get("/villages/food-shelf").json()) == 1
+    # delete-orphan on Food.village_shares takes the shelf entry with it.
+    assert owner.delete(f"/foods/{food['id']}").status_code == 204
+    assert other.get("/villages/food-shelf").json() == []
 
 
 # ---- presence: opt-in mood/status on the village card -----------------------------

@@ -163,6 +163,41 @@ def test_volume_custom_food_stores_per_100ml(owner):
     assert f["servings"][0]["grams"] == 240.0  # the serving size, in mL
 
 
+def test_folder_round_trips_and_normalizes(owner):
+    # Set on create, comes back verbatim.
+    made = owner.post("/foods", json=_food("Filed", calories=100, folder="Panda Express"))
+    assert made.status_code == 201, made.text
+    fid = made.json()["id"]
+    assert made.json()["folder"] == "Panda Express"
+
+    # Cleared to null when omitted on edit.
+    edited = owner.put(f"/foods/{fid}", json=_food("Filed", calories=100))
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["folder"] is None
+
+    # Whitespace-only stores NULL, not a blank string.
+    blank = owner.put(f"/foods/{fid}", json=_food("Filed", calories=100, folder="   "))
+    assert blank.json()["folder"] is None
+
+    # 61 characters is over the cap.
+    long = owner.post("/foods", json=_food("TooLong", calories=100, folder="x" * 61))
+    assert long.status_code == 422
+
+
+def test_cache_and_barcode_foods_have_null_folder(owner, monkeypatch):
+    def fake_search(query, api_key, limit=25):
+        return [foods_api.FoodResult("usda", "12345", "Ground beef", "GV", 250.0, 26.0, 0.0, 17.0)]
+
+    monkeypatch.setattr(foods_api, "search_usda", fake_search)
+    assert owner.get("/foods/search?q=beef").json()[0]["folder"] is None
+
+    def fake_barcode(code):
+        return foods_api.FoodResult("off", code, "Nutella", "Ferrero", 539.0, 6.3, 57.5, 30.9)
+
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", fake_barcode)
+    assert owner.get("/foods/barcode/3017620422003").json()["folder"] is None
+
+
 def test_custom_food_defaults_to_mass(owner):
     f = owner.post("/foods", json=_food("Solid", calories=100)).json()
     assert f["base_unit"] == "g"

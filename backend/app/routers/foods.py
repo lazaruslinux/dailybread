@@ -59,6 +59,7 @@ def _apply_custom_food(food: Food, data: FoodIn) -> None:
     means per-100 = entered * 100 / B."""
     food.name = data.name.strip()
     food.brand = data.brand.strip()
+    food.folder = (data.folder or "").strip() or None
     food.source_id = data.barcode
     food.base_unit = data.base_unit
     factor = 100.0 / data.servings[data.basis_index].grams
