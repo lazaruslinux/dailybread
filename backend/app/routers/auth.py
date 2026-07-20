@@ -521,13 +521,39 @@ def delete_user(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """Admin-only: remove a family member's account."""
-    user = _managed_user(db, user_id, admin)
+    """Admin-only: remove a family member's account. The server admin reaches
+    any account on the install; a family admin stays scoped to their own."""
+    if admin.is_owner:
+        user = db.get(User, user_id)
+        if user is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "No such user")
+    else:
+        user = _managed_user(db, user_id, admin)
 
     # Same lockout rule as above: an admin can never delete themselves, so
     # there is always a working admin account left to sign in with.
     if user.id == admin.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "You cannot delete your own account.")
+
+    # Deleting a household's only admin while other members remain would strand
+    # them: nothing else here can promote a replacement (PATCH /users and
+    # reset-password stay family-scoped, so even the server admin can't reach in
+    # to hand someone else admin). Removing the whole household is the right tool.
+    if user.is_admin and user.family_id is not None:
+        others = (
+            db.execute(
+                select(User).where(
+                    User.family_id == user.family_id, User.id != user.id
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if others and not any(u.is_admin for u in others):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "This is the household's only admin. Remove the household instead.",
+            )
 
     db.delete(user)
     db.commit()

@@ -356,6 +356,45 @@ def regenerate_invite(
     )
 
 
+@router.patch("/{village_id}", status_code=status.HTTP_204_NO_CONTENT)
+def rename_village(
+    village_id: int,
+    data: VillageIn,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Rename a village. Install-wide plumbing, so it's a SERVER-admin power
+    only — a family admin who isn't the server owner gets nothing new here
+    (403), matching the overview gate. Any village on the install, member or
+    not."""
+    if not admin.is_owner:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Server admin only")
+    village = db.get(Village, village_id)
+    if village is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such village")
+    new_name = data.name.strip()
+    if not new_name:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Give the village a name")
+    old_name = village.name
+    if new_name != old_name:
+        village.name = new_name
+        db.commit()
+        # The member families hear their circle was renamed (inbox-only; a
+        # rename is news, not an interruption). The actor's own family is
+        # excluded — a server admin outside the village excludes nobody.
+        _notify_village(
+            db,
+            _village_adults(db, village.id, exclude_family=admin.family_id),
+            "village",
+            f"Village renamed to {new_name}",
+            f"{old_name} is now {new_name}",
+            f"village-renamed-{village.id}",
+            send_push=False,
+        )
+    # No body: a full village payload would hand a non-member admin the
+    # members' presence data that GET /villages reserves for members.
+
+
 @router.delete("/{village_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_village(
     village_id: int,
@@ -363,12 +402,18 @@ def delete_village(
     admin: User = Depends(require_admin),
 ):
     """The founding family dissolves the village for everyone — the answer
-    to stale villages nobody tends. Other families may only leave."""
-    village = _member_village(db, village_id, admin.family_id)
-    if village.created_by_family_id != admin.family_id:
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "Only the founding family can delete the village"
-        )
+    to stale villages nobody tends. Other families may only leave. The server
+    admin may dissolve any village on the install, member or not."""
+    if admin.is_owner:
+        village = db.get(Village, village_id)
+        if village is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "No such village")
+    else:
+        village = _member_village(db, village_id, admin.family_id)
+        if village.created_by_family_id != admin.family_id:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "Only the founding family can delete the village"
+            )
     # Shared events die with the village; the going families' board copies
     # must go EXPLICITLY (SQLite tests run without the use_alter FK), and
     # their adults hear why. Collect before anything disappears.

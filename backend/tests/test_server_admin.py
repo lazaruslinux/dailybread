@@ -1,6 +1,7 @@
 """Server-admin powers that reach across the family wall — deliberately the
-only two that exist: rescuing a locked-out account's password, and removing
-a whole household. Both are owner-only; family admins stay walled in.
+only ones that exist: rescuing a locked-out account's password, removing a
+whole household, removing a single account, and renaming or dissolving any
+village. All are owner-only; family admins stay walled in.
 """
 
 import datetime as dt
@@ -120,3 +121,113 @@ def test_removing_a_family_is_owner_only(owner, other):
     a_family = owner.get("/families/me").json()["id"]
     assert other.delete(f"/families/{a_family}").status_code == 403
     assert owner.delete("/families/99999").status_code == 404
+
+
+# ---- removing an individual account across the wall ------------------------------
+# The server admin may remove ONE account of any family (not just a whole
+# household). Family admins stay scoped to their own members, exactly as before.
+
+
+def test_owner_removes_a_cross_family_member_with_data(app, owner, other):
+    """The server admin deletes a single member of family B who carries a push
+    subscription and a diary entry — the users.id FKs cascade them away, and
+    the rest of family B is untouched."""
+    from tests.conftest import login
+
+    creds = {"username": "bmember", "display_name": "Bea Member", "password": "bea-pass-999"}
+    assert other.post("/auth/users", json={**creds, "role": "parent"}).status_code == 201
+    member = login(app, creds)
+    member_id = user_id(member)
+
+    member.put(
+        "/push/subscription",
+        json={"endpoint": "https://push.example/bmember", "keys": {"p256dh": "k", "auth": "a"}},
+    )
+    today = dt.date.today().isoformat()
+    assert member.post(
+        "/diary",
+        json={
+            "date_for": today, "slot": "breakfast", "amount": 100, "unit": "g",
+            "source": "usda", "source_id": "111222", "name": "Rolled Oats", "brand": "",
+            "calories": 100.0, "protein_g": 10.0, "carbs_g": 20.0, "fat_g": 2.0,
+        },
+    ).status_code == 201
+
+    assert owner.delete(f"/auth/users/{member_id}").status_code == 204
+    assert member.get("/auth/me").status_code == 401  # the account is gone
+
+    # Family B itself survives, minus the one member.
+    b_family = other.get("/families/me").json()["id"]
+    tree = owner.get("/auth/overview").json()
+    b = next(
+        f for v in tree["villages"] for f in v["families"] if f["id"] == b_family
+    ) if any(f["id"] == b_family for v in tree["villages"] for f in v["families"]) else next(
+        f for f in tree["solo_families"] if f["id"] == b_family
+    )
+    assert "bmember" not in [u["username"] for u in b["users"]]
+    assert "josh" in [u["username"] for u in b["users"]]  # B's head remains
+
+
+def test_owner_cannot_delete_their_own_account(owner):
+    me = user_id(owner)
+    assert owner.delete(f"/auth/users/{me}").status_code == 400
+
+
+def test_non_owner_cross_family_delete_still_404s(owner, other):
+    """Regression: a family admin still can't reach another family's member —
+    the same 404 as for an id that doesn't exist."""
+    owner_id = user_id(owner)
+    assert other.delete(f"/auth/users/{owner_id}").status_code == 404
+
+
+def test_owner_cannot_strand_a_household_by_deleting_its_only_admin(app, owner, other):
+    """Family B has an admin (josh) plus a plain member. Removing josh would
+    leave the member with no admin — and nothing can promote a replacement
+    across the wall — so the server admin is refused and pointed at removing
+    the whole household instead."""
+    creds = {"username": "cmember", "display_name": "Cee Member", "password": "cee-pass-999"}
+    assert other.post(
+        "/auth/users", json={**creds, "role": "parent", "is_admin": False}
+    ).status_code == 201
+
+    josh_id = user_id(other)
+    res = owner.delete(f"/auth/users/{josh_id}")
+    assert res.status_code == 400
+    assert "household" in res.json()["detail"].lower()
+
+    # josh is untouched.
+    assert other.get("/auth/me").status_code == 200
+
+
+def test_owner_removes_one_of_two_admins(app, owner, other):
+    """With a co-admin present the family still has an admin afterwards, so the
+    deletion goes through."""
+    creds = {"username": "dmember", "display_name": "Dee Admin", "password": "dee-pass-999"}
+    assert other.post(
+        "/auth/users", json={**creds, "role": "parent", "is_admin": True}
+    ).status_code == 201
+
+    josh_id = user_id(other)
+    assert owner.delete(f"/auth/users/{josh_id}").status_code == 204
+    assert other.get("/auth/me").status_code == 401
+
+
+def test_owner_removes_a_sole_member_even_if_admin(app, owner, other):
+    """The last-admin guard only fires when OTHER members remain — an admin who
+    is the household's only member can still be removed (leaving an empty
+    family), preserving the emptied-family behavior."""
+    josh_id = user_id(other)
+    assert owner.delete(f"/auth/users/{josh_id}").status_code == 204
+    assert other.get("/auth/me").status_code == 401
+
+
+def test_overview_lists_a_family_emptied_of_members(app, owner, other):
+    """After the server admin removes every member of family B, the overview
+    still lists the family with an empty users array (no crash)."""
+    b_family = other.get("/families/me").json()["id"]
+    other_id = user_id(other)
+    assert owner.delete(f"/auth/users/{other_id}").status_code == 204
+
+    tree = owner.get("/auth/overview").json()
+    b = next(f for f in tree["solo_families"] if f["id"] == b_family)
+    assert b["users"] == []

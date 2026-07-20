@@ -748,3 +748,128 @@ def test_copies_carry_their_provenance(village, owner, other):
     # The original never carries one.
     mine = next(r for r in owner.get("/recipes").json() if r["id"] == recipe["id"])
     assert mine["provenance"] is None
+
+
+# ---- server-admin management: rename and delete ---------------------------------
+# Renaming a village is an INSTALL-WIDE power, so it's the server admin's alone
+# (is_owner). Family admins, even the founding family's, keep exactly what they
+# had. Deleting gains an owner path that reaches villages the owner never joined.
+
+
+def test_owner_renames_the_village(village, owner, other):
+    """The server admin renames a village they founded; the new name persists
+    across a re-read for every member family."""
+    res = owner.patch(f"/villages/{village}", json={"name": "Sourdough Circle"})
+    assert res.status_code == 204, res.text
+    assert owner.get("/villages").json()[0]["name"] == "Sourdough Circle"
+    assert other.get("/villages").json()[0]["name"] == "Sourdough Circle"
+
+
+def test_owner_renames_a_village_they_did_not_found(owner, other):
+    """Family B founds a village the owner never joins; the server admin still
+    renames it install-wide."""
+    created = _create(other, name="B Lane")
+    res = owner.patch(f"/villages/{created['id']}", json={"name": "B Boulevard"})
+    assert res.status_code == 204, res.text
+    assert other.get("/villages").json()[0]["name"] == "B Boulevard"
+
+
+def test_rename_is_server_admin_only(village, owner, other, parent, child, app):
+    """Founding-family admin, other-family admin, a plain parent, and a kid all
+    get 403 — rename is owner-only, and the name never moves."""
+    from tests.conftest import login
+
+    # A second admin in the FOUNDING family (Home) who is NOT the server owner.
+    creds = {"username": "hadmin", "display_name": "Home Admin", "password": "home-admin-1"}
+    assert owner.post(
+        "/auth/users", json={**creds, "role": "parent", "is_admin": True}
+    ).status_code == 201
+    home_admin = login(app, creds)
+
+    for client in (home_admin, other, parent, child):
+        assert client.patch(f"/villages/{village}", json={"name": "Nope"}).status_code == 403
+    assert owner.get("/villages").json()[0]["name"] == "Bread Circle"
+
+
+def test_rename_rejects_empty_and_overlong(village, owner):
+    # A single space slips past min_length=1 but is empty after strip -> 400.
+    assert owner.patch(f"/villages/{village}", json={"name": "   "}).status_code == 400
+    # 81 characters trips the 80-char cap -> 422.
+    assert owner.patch(f"/villages/{village}", json={"name": "x" * 81}).status_code == 422
+    # An empty string fails min_length outright -> 422.
+    assert owner.patch(f"/villages/{village}", json={"name": ""}).status_code == 422
+    # None of that changed the name.
+    assert owner.get("/villages").json()[0]["name"] == "Bread Circle"
+
+
+def test_rename_unknown_village_404(owner):
+    assert owner.patch("/villages/99999", json={"name": "Ghost"}).status_code == 404
+
+
+def test_rename_notifies_member_families_inbox_only(
+    village, owner, other, configured, outbox
+):
+    """The member families hear the rename in their inbox; the acting family
+    hears nothing, and the phone stays silent even with push configured."""
+    other.put(
+        "/push/subscription",
+        json={"endpoint": "https://push.example/b", "keys": {"p256dh": "k", "auth": "a"}},
+    )
+    res = owner.patch(f"/villages/{village}", json={"name": "New Circle"})
+    assert res.status_code == 204, res.text
+    assert any(
+        r["kind"] == "village" and "renamed" in r["title"].lower()
+        for r in other.get("/me/inbox").json()
+    )
+    assert not any(
+        "renamed" in r["title"].lower() for r in owner.get("/me/inbox").json()
+    )
+    assert outbox == []  # inbox-only: no push, whatever the pref
+
+
+def test_rename_to_the_same_name_is_a_quiet_noop(village, owner, other):
+    res = owner.patch(f"/villages/{village}", json={"name": "Bread Circle"})
+    assert res.status_code == 204, res.text
+    assert not any(
+        "renamed" in r["title"].lower() for r in other.get("/me/inbox").json()
+    )
+
+
+def test_owner_deletes_a_village_they_did_not_found(owner, other, app):
+    """Family B founds a village a third family joins; the server admin, never
+    a member, dissolves it and its memberships and shelf rows go with it."""
+    from tests.conftest import login
+
+    created = _create(other, name="B Lane")
+    creds = {"username": "cfam", "display_name": "C Fam", "password": "cfam-pass-1"}
+    owner.post("/auth/users", json={**creds, "role": "parent", "new_household": True})
+    third = login(app, creds)
+    third.post("/families", json={"name": "The Cs"})
+    assert third.post(
+        "/villages/join", json={"code": created["invite_code"]}
+    ).status_code == 200
+    recipe = make_recipe(other, name="B pie")
+    share(other, created["id"], recipe["id"])
+
+    assert owner.delete(f"/villages/{created['id']}").status_code == 204
+    assert other.get("/villages").json() == []
+    assert third.get("/villages").json() == []
+    assert other.get("/villages/shelf").json() == []  # shelf rows cascaded away
+    assert owner.get("/auth/overview").json()["villages"] == []
+
+
+def test_founding_family_admin_still_deletes_its_own_village(other):
+    """Regression: the non-owner founding path is unchanged."""
+    created = _create(other, name="B Lane")
+    assert other.delete(f"/villages/{created['id']}").status_code == 204
+
+
+def test_non_owner_member_who_did_not_found_still_403s(village, other):
+    """Regression: a member family that didn't found still can't delete."""
+    assert other.delete(f"/villages/{village}").status_code == 403
+
+
+def test_non_owner_non_member_delete_still_404s(owner, other):
+    """Regression: a non-member non-owner still gets the uniform 404."""
+    created = _create(owner)  # family B never joins
+    assert other.delete(f"/villages/{created['id']}").status_code == 404

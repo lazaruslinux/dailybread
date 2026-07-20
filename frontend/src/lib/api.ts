@@ -1541,7 +1541,14 @@ export const regenerateInvite = (villageId: number) =>
 export const leaveVillage = (villageId: number) =>
   request<void>(`/villages/${villageId}/membership`, { method: 'DELETE' })
 
-// Founding family only: dissolves the village for everyone.
+// Server admin only: rename any village on the install.
+export const renameVillage = (villageId: number, name: string) =>
+  request<void>(`/villages/${villageId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
+  })
+
+// Founding family (or the server admin) dissolves the village for everyone.
 export const deleteVillage = (villageId: number) =>
   request<void>(`/villages/${villageId}`, { method: 'DELETE' })
 

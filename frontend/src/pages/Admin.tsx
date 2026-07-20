@@ -435,7 +435,9 @@ function DeleteConfirm({
   onClose,
   onDeleted,
 }: {
-  member: api.User
+  // Any account with these three fields: a family member (api.User) or an
+  // overview row (OverviewUser) the server admin is removing.
+  member: Pick<api.User, 'id' | 'display_name' | 'username'>
   onClose: () => void
   onDeleted: () => void
 }) {
@@ -672,6 +674,103 @@ function RemoveFamilySheet({
   )
 }
 
+// Server-admin only: rename any village on the install. RenameFamilySheet
+// without the timezone picker (villages have no clock).
+function RenameVillageSheet({
+  village,
+  onClose,
+  onRenamed,
+}: {
+  village: api.OverviewVillage
+  onClose: () => void
+  onRenamed: () => void
+}) {
+  const [name, setName] = useState(village.name)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      await api.renameVillage(village.id, name.trim())
+      onRenamed()
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Something went wrong')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Sheet onClose={onClose}>
+      <h3 className="mb-1 text-lg font-bold">Village name</h3>
+      <p className="mb-4 text-sm text-fg/60">
+        This is how the village appears to every family linked in it.
+      </p>
+      <form onSubmit={submit} className="flex flex-col gap-4">
+        <Field
+          label="Village name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          maxLength={80}
+          required
+        />
+        <FormError message={error} />
+        <Button type="submit" disabled={busy || !name.trim()}>
+          {busy ? 'Saving…' : 'Save'}
+        </Button>
+      </form>
+    </Sheet>
+  )
+}
+
+// Server-admin only: dissolve any village on the install.
+function RemoveVillageSheet({
+  village,
+  onClose,
+  onRemoved,
+}: {
+  village: api.OverviewVillage
+  onClose: () => void
+  onRemoved: () => void
+}) {
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function confirm() {
+    setBusy(true)
+    setError(null)
+    try {
+      await api.deleteVillage(village.id)
+      onRemoved()
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Something went wrong.')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Sheet onClose={onClose}>
+      <p className="mb-1 font-bold">Dissolve {village.name}?</p>
+      <p className="mb-5 text-sm text-fg/55">
+        The village closes for every family in it, and its shared events come off their
+        boards. Recipe and food copies families already saved stay theirs. This cannot be
+        undone.
+      </p>
+      <FormError message={error} />
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <Button variant="ghost" onClick={onClose} disabled={busy}>
+          Keep it
+        </Button>
+        <Button variant="danger" onClick={confirm} disabled={busy}>
+          {busy ? 'Dissolving' : 'Dissolve'}
+        </Button>
+      </div>
+    </Sheet>
+  )
+}
+
 function ServerOverview() {
   const { user } = useAuth()
   const [tree, setTree] = useState<api.Overview | null>(null)
@@ -679,6 +778,9 @@ function ServerOverview() {
   const [error, setError] = useState<string | null>(null)
   const [rescuing, setRescuing] = useState<api.OverviewUser | null>(null)
   const [removing, setRemoving] = useState<api.OverviewFamily | null>(null)
+  const [deletingUser, setDeletingUser] = useState<api.OverviewUser | null>(null)
+  const [renamingVillage, setRenamingVillage] = useState<api.OverviewVillage | null>(null)
+  const [removingVillage, setRemovingVillage] = useState<api.OverviewVillage | null>(null)
 
   async function load() {
     try {
@@ -703,11 +805,20 @@ function ServerOverview() {
       </span>
       <button
         onClick={() => setRescuing(u)}
-        className="ml-auto shrink-0 rounded-full p-1.5 text-fg/40 transition-colors hover:bg-fg/10 hover:text-fg"
+        className="-m-[15px] ml-auto shrink-0 rounded-full p-[15px] text-fg/40 transition-colors hover:bg-fg/10 hover:text-fg"
         aria-label={`Reset ${u.display_name}'s password`}
       >
         <KeyRound className="h-3.5 w-3.5" />
       </button>
+      {u.id !== user?.id && (
+        <button
+          onClick={() => setDeletingUser(u)}
+          className="-m-[15px] shrink-0 rounded-full p-[15px] text-fg/40 transition-colors hover:bg-red-500/15 hover:text-red-400"
+          aria-label={`Remove ${u.display_name}`}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      )}
     </p>
   )
 
@@ -718,7 +829,7 @@ function ServerOverview() {
         {f.id !== user?.family_id && (
           <button
             onClick={() => setRemoving(f)}
-            className="ml-auto shrink-0 rounded-full p-1.5 text-fg/40 transition-colors hover:bg-red-500/15 hover:text-red-400"
+            className="-m-[15px] ml-auto shrink-0 rounded-full p-[15px] text-fg/40 transition-colors hover:bg-red-500/15 hover:text-red-400"
             aria-label={`Remove ${f.name}`}
           >
             <Trash2 className="h-3.5 w-3.5" />
@@ -743,8 +854,22 @@ function ServerOverview() {
           {tree === null && !error && <p className="text-sm text-fg/40">Loading</p>}
           {tree?.villages.map((v) => (
             <div key={v.id} className="flex flex-col gap-1.5">
-              <p className="text-xs font-semibold uppercase tracking-widest text-accent-bright">
-                Village · {v.name}
+              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-accent-bright">
+                <span>Village · {v.name}</span>
+                <button
+                  onClick={() => setRenamingVillage(v)}
+                  className="-m-[15px] ml-auto shrink-0 rounded-full p-[15px] text-fg/40 transition-colors hover:bg-fg/10 hover:text-fg"
+                  aria-label={`Rename ${v.name}`}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => setRemovingVillage(v)}
+                  className="-m-[15px] shrink-0 rounded-full p-[15px] text-fg/40 transition-colors hover:bg-red-500/15 hover:text-red-400"
+                  aria-label={`Dissolve ${v.name}`}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
               </p>
               {v.families.map(familyBlock)}
             </div>
@@ -781,6 +906,36 @@ function ServerOverview() {
             onClose={() => setRemoving(null)}
             onRemoved={() => {
               setRemoving(null)
+              void load()
+            }}
+          />
+        )}
+        {deletingUser && (
+          <DeleteConfirm
+            member={deletingUser}
+            onClose={() => setDeletingUser(null)}
+            onDeleted={() => {
+              setDeletingUser(null)
+              void load()
+            }}
+          />
+        )}
+        {renamingVillage && (
+          <RenameVillageSheet
+            village={renamingVillage}
+            onClose={() => setRenamingVillage(null)}
+            onRenamed={() => {
+              setRenamingVillage(null)
+              void load()
+            }}
+          />
+        )}
+        {removingVillage && (
+          <RemoveVillageSheet
+            village={removingVillage}
+            onClose={() => setRemovingVillage(null)}
+            onRemoved={() => {
+              setRemovingVillage(null)
               void load()
             }}
           />
