@@ -1509,14 +1509,20 @@ export const foldersOf = (foods: api.Food[]): string[] =>
 // tablespoons/teaspoons for a liquid. Storage stays g/mL.
 type SizeUnit = api.AmountUnit
 
-function FoodSheet({
+export function FoodSheet({
   food,
+  prefill = null,
   folders,
   barcode: barcodeProp = null,
   onClose,
   onSaved,
 }: {
   food: api.Food | null
+  // A source food (barcode/search result) to seed a NEW custom food from — the
+  // health-check "save as custom food" path. Ignored when `food` is set (an
+  // edit); seeds name/brand/measure/servings/nutrition but stays a create, so
+  // submit posts a new food instead of trying to PUT the un-saved cache row.
+  prefill?: api.Food | null
   // Existing folder names across the family's foods, for the picker's datalist.
   folders: string[]
   // Prefilled product code when the sheet opens off an unknown barcode scan.
@@ -1525,35 +1531,39 @@ function FoodSheet({
   onSaved: (saved?: api.Food) => void
 }) {
   const editing = food !== null
+  // The row whose values seed the fields: the edited food, or a prefill source
+  // for a fresh food. `editing` still keys off `food` alone, so a prefill never
+  // becomes an update.
+  const seed = food ?? prefill
   // A custom food's source_id is its barcode; keep it across edits so a food
   // scanned-and-entered once stays findable by its code.
   const barcode = food?.source_id ?? barcodeProp
   const { user } = useAuth()
-  const [name, setName] = useState(food?.name ?? '')
-  const [brand, setBrand] = useState(food?.brand ?? '')
+  const [name, setName] = useState(seed?.name ?? '')
+  const [brand, setBrand] = useState(seed?.brand ?? '')
   const [folder, setFolder] = useState(food?.folder ?? '')
   // Weight (g) or Volume (mL). A liquid's label serving is a volume, so its
   // sizes and nutrition are entered and stored against millilitres.
-  const [baseUnit, setBaseUnit] = useState<api.BaseUnit>(food?.base_unit ?? 'g')
+  const [baseUnit, setBaseUnit] = useState<api.BaseUnit>(seed?.base_unit ?? 'g')
   // The entry unit for serving sizes. An edited food ALWAYS opens in its base
   // unit (a food entered as 1 oz reopens as 28.35 g): lossless and honest,
   // where converting back to oz would only guess intent. Storage is always the
   // base unit; this just softens data entry.
-  const [sizeUnit, setSizeUnit] = useState<SizeUnit>(food?.base_unit ?? 'g')
+  const [sizeUnit, setSizeUnit] = useState<SizeUnit>(seed?.base_unit ?? 'g')
   const [servings, setServings] = useState<ServingDraft[]>(() =>
-    editing && food.servings.length
-      ? food.servings.map((s) => ({ name: s.name, grams: String(s.grams) }))
+    seed && seed.servings.length
+      ? seed.servings.map((s) => ({ name: s.name, grams: String(s.grams) }))
       : [{ name: '', grams: '' }],
   )
   const [basis, setBasis] = useState(0)
-  // Nutrition shown per the basis serving. Seed an edit from the stored per-100g
-  // figures scaled to the first serving's grams.
+  // Nutrition shown per the basis serving. Seed from the stored per-100g figures
+  // scaled to the first serving's grams (an edit, or a prefill source food).
   const [nutri, setNutri] = useState<Record<NutriKey, string>>(() => {
-    if (!editing) return emptyNutri()
-    const g = food.servings[0]?.grams ?? 100
+    if (!seed) return emptyNutri()
+    const g = seed.servings[0]?.grams ?? 100
     const out = emptyNutri()
     for (const k of NUTRI_KEYS) {
-      const v = food[k]
+      const v = seed[k]
       if (v != null) out[k] = String(round2((v * g) / 100))
     }
     return out

@@ -10,6 +10,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    SmallInteger,
     String,
     Table,
     Text,
@@ -793,6 +794,16 @@ class Food(Base):
     sodium_mg: Mapped[float | None] = mapped_column(Float, nullable=True)
     fiber_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     sugar_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Health-check fields, filled from USDA/OFF on a barcode scan (0054). None on
+    # a custom food and until a cache row has been healed. ingredients_text is the
+    # raw label ingredient string; added_sugar_g is per-100 of base_unit like the
+    # macros; additives is the OFF additives_tags list comma-joined ("en:e102,
+    # en:e211") — Text, never a JSON column (Postgres json has no equality op, a
+    # hard rule here); nova_group is the OFF NOVA processing class (1-4).
+    ingredients_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    added_sugar_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    additives: Mapped[str | None] = mapped_column(Text, nullable=True)
+    nova_group: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     # Named real-world portions (e.g. "1 slice" = 21 g). Nutrition stays per-100g;

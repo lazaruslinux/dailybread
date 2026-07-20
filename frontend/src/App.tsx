@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, ScanBarcode } from 'lucide-react'
 import { Suspense, lazy, useEffect, useState } from 'react'
 import { useAuth } from './auth/AuthContext'
 import { useInboxUnread } from './hooks/useInboxUnread'
@@ -64,6 +64,9 @@ const Profile = lazy(() =>
 )
 const Setup = lazy(() => withReload(import('./pages/Setup').then((m) => ({ default: m.Setup }))))
 const You = lazy(() => withReload(import('./pages/You').then((m) => ({ default: m.You }))))
+const HealthScan = lazy(() =>
+  withReload(import('./components/HealthScan').then((m) => ({ default: m.HealthScan })))
+)
 
 // An overlay sits on top of the current tab (a member's profile opened from
 // the family strip, or the admin dashboard opened from You). Back returns to
@@ -86,6 +89,8 @@ function AppShell() {
   // open subpage). setTab with the current tab is a no-op, so You never hears
   // about the tap on its own; this counter gives it a signal to act on.
   const [youReselect, setYouReselect] = useState(0)
+  // The barcode health check opens over any tab from the masthead icon.
+  const [scanning, setScanning] = useState(false)
   // One poller owns the unread count; the tab-bar dot and the You row badge
   // read the same number, and opening the Inbox zeroes both at once.
   const { count: inboxUnread, zero: zeroInbox } = useInboxUnread()
@@ -123,6 +128,19 @@ function AppShell() {
     setTab(next)
   }
 
+  // The scan icon rides beside the health badge in both header layouts, so a
+  // barcode check is one tap from any tab. Adults only (the endpoint 403s
+  // kids); the negative-margin slop gives it a 44px touch target.
+  const scanBtn = !isMinor ? (
+    <button
+      onClick={() => setScanning(true)}
+      aria-label="Health check a barcode"
+      className="-m-3 rounded-lg p-3 text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
+    >
+      <ScanBarcode className="h-5 w-5" />
+    </button>
+  ) : null
+
   // Flex column: the sticky tab bar rides at the end of the flow (mt-auto
   // keeps it at the screen bottom even when a page is short), so content no
   // longer needs bottom padding to clear a fixed bar.
@@ -142,7 +160,8 @@ function AppShell() {
                 </span>
               </span>
             </span>
-            <div className="absolute right-0">
+            <div className="absolute right-0 flex items-center gap-1">
+              {scanBtn}
               <HealthBadge />
             </div>
           </div>
@@ -158,7 +177,10 @@ function AppShell() {
             ) : (
               <p className="text-sm font-semibold text-fg/70">{TAB_TITLE[tab]}</p>
             )}
-            <HealthBadge />
+            <div className="flex items-center gap-1">
+              {scanBtn}
+              <HealthBadge />
+            </div>
           </div>
         )}
       </header>
@@ -203,6 +225,12 @@ function AppShell() {
       </AnimatePresence>
 
       <footer className="mt-10 text-center text-xs text-fg/30">dailybread v0.0.1</footer>
+
+      {scanning && (
+        <Suspense fallback={null}>
+          <HealthScan onClose={() => setScanning(false)} />
+        </Suspense>
+      )}
 
       <DailyGreeting />
       <TabBar

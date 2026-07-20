@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     # their nutrition from foods looked up here.
     usda_api_key: str = ""
 
+    # Barcode health check: grams of sugar per serving at or above which a food
+    # is flagged for added sugar (the alias/total-sugar fallbacks use the same
+    # bar). Per serving, not per 100 g.
+    health_added_sugar_g: float = 5.0
+
     # Web Push (reminders). Generate a VAPID key pair once per install (see
     # README); both keys are base64url strings. Leaving them empty simply
     # disables push - the app runs fine without it. The subject is a contact

@@ -650,6 +650,13 @@ class FoodOut(BaseModel):
     sodium_mg: float | None = None
     fiber_g: float | None = None
     sugar_g: float | None = None
+    # Health-check fields (barcode cache rows; None on custom foods and until a
+    # row is healed). See models.Food. Not part of FOOD_NUTRIENTS: they don't
+    # ride into DiaryEntry snapshots or recipe macros, only the health check.
+    ingredients_text: str | None = None
+    added_sugar_g: float | None = None
+    additives: str | None = None
+    nova_group: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -692,6 +699,39 @@ class FoodIn(BaseModel):
         if self.basis_index >= len(self.servings):
             raise ValueError("basis_index is out of range for the servings given")
         return self
+
+
+# ---- barcode health check ------------------------------------------------------
+
+
+class HealthFlagOut(BaseModel):
+    """One thing the health check noticed about a scanned food. severity orders
+    the display (bad, then warn, then info); label + detail are user-facing."""
+
+    category: str
+    severity: str  # "bad" | "warn" | "info"
+    label: str
+    detail: str
+
+    model_config = {"from_attributes": True}
+
+
+class HealthAssessmentOut(BaseModel):
+    """The overall read on a scanned food: a verdict tier and the flags behind
+    it. verdict is whole/clean/mixed/poor/unknown (see app.food_health)."""
+
+    verdict: str
+    flags: list[HealthFlagOut]
+
+    model_config = {"from_attributes": True}
+
+
+class FoodHealthOut(BaseModel):
+    """The health-check response: the resolved food (so the client can log it,
+    save it, or add it to a recipe) plus its assessment."""
+
+    food: FoodOut
+    assessment: HealthAssessmentOut
 
 
 # ---- the nutrition diary ---------------------------------------------------------

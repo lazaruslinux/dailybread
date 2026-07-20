@@ -30,6 +30,7 @@ _N_CHOLESTEROL = "601"  # mg
 _N_SODIUM = "307"  # mg
 _N_FIBER = "291"
 _N_SUGAR = "269"
+_N_ADDED_SUGAR = "539"  # "Sugars, added" — for the health-check added-sugar rule
 
 
 class FoodApiError(Exception):
@@ -58,6 +59,14 @@ class FoodResult:
     # gives a household phrase ("1 cup") with no fixed size to trust.
     serving_amount: float | None = None
     base_unit: str = "g"  # "g" | "ml"
+    # Health-check extras (barcode scans only; search/recipe paths ignore them).
+    # ingredients_text is the raw label string; added_sugar_g is per 100 of the
+    # base unit like the macros; additives is the OFF additives_tags list comma-
+    # joined ("en:e102,en:e211"); nova_group is the OFF NOVA class (1-4).
+    ingredients_text: str = ""
+    added_sugar_g: float | None = None
+    additives: str = ""
+    nova_group: int | None = None
 
 
 def _num(v) -> float | None:
@@ -65,6 +74,16 @@ def _num(v) -> float | None:
         return round(float(v), 2)
     except (TypeError, ValueError):
         return None
+
+
+def _nova(v) -> int | None:
+    """The NOVA processing class as a clean 1-4 int, or None. Sources sometimes
+    carry it as a float ("4.0") or a string; anything outside 1-4 is noise."""
+    try:
+        n = int(float(v))
+    except (TypeError, ValueError):
+        return None
+    return n if 1 <= n <= 4 else None
 
 
 def _energy_kcal(kcal, kj) -> float | None:
@@ -278,6 +297,11 @@ def _usda_food_result(f: dict) -> FoodResult:
         sodium_mg=_num(by_number.get(_N_SODIUM)),
         fiber_g=_num(by_number.get(_N_FIBER)),
         sugar_g=_num(by_number.get(_N_SUGAR)),
+        # Health check: Branded FDC hits carry a top-level ingredients string and
+        # (when analysed) an added-sugars nutrient. USDA has no additives list or
+        # NOVA class, so those stay empty here — OFF supplies them.
+        ingredients_text=(f.get("ingredients") or "").strip(),
+        added_sugar_g=_num(by_number.get(_N_ADDED_SUGAR)),
         serving=_usda_serving(f),
         **_serving_fields(
             f.get("servingSize"),
@@ -399,7 +423,10 @@ def lookup_barcode_off(barcode: str) -> FoodResult | None:
             OFF_PRODUCT_URL.format(barcode=barcode),
             params={
                 "fields": "product_name,brands,nutriments,serving_size,"
-                "serving_quantity,serving_quantity_unit"
+                "serving_quantity,serving_quantity_unit,"
+                # Health check: the label ingredient text, the additive e-number
+                # tags, and the NOVA processing class.
+                "ingredients_text,additives_tags,nova_group"
             },
             headers={"User-Agent": _UA},
             timeout=_TIMEOUT,
@@ -430,6 +457,13 @@ def lookup_barcode_off(barcode: str) -> FoodResult | None:
         sodium_mg=_scale(nut.get("sodium_100g"), 1000),
         fiber_g=_num(nut.get("fiber_100g")),
         sugar_g=_num(nut.get("sugars_100g")),
+        # Health check. added-sugars_100g is hyphenated like saturated-fat_100g;
+        # additives_tags is a list of "en:eNNN" strings we store comma-joined;
+        # nova_group is the 1-4 processing class.
+        ingredients_text=(p.get("ingredients_text") or "").strip(),
+        added_sugar_g=_num(nut.get("added-sugars_100g")),
+        additives=",".join(p.get("additives_tags") or []),
+        nova_group=_nova(p.get("nova_group")),
         serving=(p.get("serving_size") or "").strip(),
         # serving_quantity is normalized (grams, or millilitres for drinks).
         # When the unit is missing the serving_size text decides (a volume there

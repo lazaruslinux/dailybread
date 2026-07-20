@@ -804,7 +804,39 @@ export interface Food {
   sodium_mg: number | null
   fiber_g: number | null
   sugar_g: number | null
+  // Health-check extras, filled from the source when available (null when the
+  // database had none). ingredients_text is the raw ingredient list; additives
+  // is a comma-joined list of OFF e-number tags; nova_group is the 1-4 NOVA
+  // processing class. added_sugar_g is per 100 base units.
+  ingredients_text?: string | null
+  added_sugar_g?: number | null
+  additives?: string | null
+  nova_group?: number | null
 }
+
+// The barcode health check: a verdict tier plus the flags behind it.
+export type HealthVerdict = 'whole' | 'clean' | 'mixed' | 'poor' | 'unknown'
+export type HealthSeverity = 'bad' | 'warn' | 'info'
+
+export interface HealthFlag {
+  category: string
+  severity: HealthSeverity
+  label: string
+  detail: string
+}
+
+export interface HealthAssessment {
+  verdict: HealthVerdict
+  flags: HealthFlag[]
+}
+
+export interface FoodHealth {
+  food: Food
+  assessment: HealthAssessment
+}
+
+// Adults only; 400 on a malformed code, 404 when no source knows the product.
+export const healthCheck = (code: string) => request<FoodHealth>(`/foods/health/${code}`)
 
 // Creating/editing a custom food: the parent enters one or more named servings
 // and the Nutrition Facts as printed for one chosen serving (`basis_index`); the

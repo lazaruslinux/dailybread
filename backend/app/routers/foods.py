@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app import foods_api
+from app import food_health, foods_api
 from app.config import settings
 from app.db import get_db
 from app.deps import require_adult, require_family, require_parent
@@ -20,9 +20,11 @@ from app.models import (
 )
 from app.schemas import (
     FOOD_NUTRIENTS,
+    FoodHealthOut,
     FoodIn,
     FoodOut,
     FoodServingOut,
+    HealthAssessmentOut,
     RecipeShareOut,
     SavedFoodIn,
 )
@@ -44,6 +46,12 @@ def _result_out(r: foods_api.FoodResult) -> FoodOut:
         serving=r.serving,
         base_unit=r.base_unit,
         servings=_result_servings(r, FoodServingOut),
+        # The health-check fields ride along on the result but aren't part of
+        # FOOD_NUTRIENTS (they never enter diary snapshots or recipe macros).
+        ingredients_text=r.ingredients_text or None,
+        added_sugar_g=r.added_sugar_g,
+        additives=r.additives or None,
+        nova_group=r.nova_group,
         **{n: getattr(r, n) for n in FOOD_NUTRIENTS},
     )
 
@@ -251,18 +259,14 @@ def _heal_liquid_unit(db: Session, food: Food) -> None:
         db.commit()
 
 
-@router.get("/barcode/{code}", response_model=FoodOut)
-def lookup_barcode(
-    code: str,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_adult),
-):
-    """Resolve a scanned barcode, checking home before asking the internet:
-    first the family's own custom foods (a product they entered by hand after
-    an unknown scan), then foods already cached from earlier lookups, and only
-    then the internet — USDA's Branded dataset first (label-accurate for US
-    products), Open Food Facts as the fallback. Scanning something you've
-    scanned before never leaves the server."""
+def _resolve_barcode(db: Session, user: User, code: str) -> Food:
+    """Resolve a scanned barcode to a stored Food, checking home before asking
+    the internet: first the family's own custom foods (a product they entered by
+    hand after an unknown scan), then foods already cached from earlier lookups,
+    and only then the internet — USDA's Branded dataset first (label-accurate for
+    US products), Open Food Facts as the fallback. Scanning something you've
+    scanned before never leaves the server. Raises HTTPException on a bad code,
+    an unreachable database, or no match."""
     # Real printed codes are 8 digits at the shortest (EAN-8; UPC-E includes its
     # number-system and check digits) and 14 at the longest (GTIN-14).
     if not code.isdigit() or not (8 <= len(code) <= 14):
@@ -326,6 +330,13 @@ def lookup_barcode(
         name=result.name,
         brand=result.brand,
         base_unit=result.base_unit,
+        # Health-check fields ride along; a successful fetch stores "" for an
+        # absent list rather than NULL, so a later health check reads the row as
+        # already enriched instead of refetching it (see _heal_health_fields).
+        ingredients_text=result.ingredients_text,
+        added_sugar_g=result.added_sugar_g,
+        additives=result.additives,
+        nova_group=result.nova_group,
         **{n: getattr(result, n) for n in FOOD_NUTRIENTS},
     )
     food.servings = [
@@ -336,6 +347,80 @@ def lookup_barcode(
     db.commit()
     db.refresh(food)
     return food
+
+
+@router.get("/barcode/{code}", response_model=FoodOut)
+def lookup_barcode(
+    code: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_adult),
+):
+    """Resolve a scanned barcode to a food (the picker's scan path)."""
+    return _resolve_barcode(db, user, code)
+
+
+def _heal_health_fields(db: Session, food: Food) -> None:
+    """Backfill the health-check fields on a shared-cache row that predates them
+    (all three of ingredients_text/additives/nova_group NULL — a row cached
+    before 0054, like the migration didn't touch existing data). One refetch
+    (USDA then Open Food Facts); a successful fetch backfills in place and
+    commits, writing "" for an absent list so it's never refetched again; a
+    network failure or a code that no longer resolves leaves the row untouched,
+    and the assessment simply falls back to the nutrition numbers. Custom foods
+    and a family's own rows are never touched."""
+    if food.family_id is not None or food.source == FoodSource.custom:
+        return
+    if not (
+        food.ingredients_text is None
+        and food.additives is None
+        and food.nova_group is None
+    ):
+        return
+    code = food.source_id or ""
+    result = None
+    try:
+        result = foods_api.lookup_barcode_usda(code, settings.usda_api_key)
+    except foods_api.FoodApiError:
+        result = None
+    if result is not None and not (
+        result.ingredients_text or result.additives or result.nova_group
+    ):
+        # USDA answered but brought no label data; give Open Food Facts a shot
+        # before marking the row enriched-but-empty.
+        result = None
+    if result is None:
+        try:
+            result = foods_api.lookup_barcode_off(code)
+        except foods_api.FoodApiError:
+            result = None
+    if result is None:
+        return
+    food.ingredients_text = result.ingredients_text or ""
+    food.added_sugar_g = result.added_sugar_g
+    food.additives = result.additives or ""
+    food.nova_group = result.nova_group
+    db.commit()
+    db.refresh(food)
+
+
+@router.get("/health/{code}", response_model=FoodHealthOut)
+def health_check(
+    code: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_adult),
+):
+    """The barcode health check: resolve the scanned code to a food, backfill its
+    label data if this is an older cache row, and run the ingredient/nutrient
+    rule engine. Adults only, like every other food lookup. Returns the resolved
+    food (so the client can then log, save, or add it to a recipe) plus a verdict
+    and the flags behind it."""
+    food = _resolve_barcode(db, user, code)
+    _heal_health_fields(db, food)
+    result = food_health.assess(food, settings.health_added_sugar_g)
+    return FoodHealthOut(
+        food=FoodOut.model_validate(food),
+        assessment=HealthAssessmentOut.model_validate(result),
+    )
 
 
 @router.get("", response_model=list[FoodOut])
