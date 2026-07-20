@@ -1263,6 +1263,22 @@ export interface DiaryDay {
 // Logging something eaten: a recipe by servings (recipe_id + amount), or a
 // food carried whole like a recipe ingredient line (id when saved, else
 // source/name/nutrition to find-or-create). The server computes totals.
+// Absolute per-entry macro totals, sent only when the member corrected or
+// completed the macros in the add sheet (e.g. carbs a barcode lookup was
+// missing). Null means "unknown", same as a missing source value.
+export interface DiaryTotals {
+  calories: number | null
+  protein_g: number | null
+  carbs_g: number | null
+  fat_g: number | null
+  saturated_fat_g: number | null
+  trans_fat_g: number | null
+  cholesterol_mg: number | null
+  sodium_mg: number | null
+  fiber_g: number | null
+  sugar_g: number | null
+}
+
 export interface DiaryEntryPayload extends Partial<Omit<RecipeIngredientPayload, 'amount' | 'unit'>> {
   date_for: string
   slot: DiarySlot
@@ -1271,6 +1287,7 @@ export interface DiaryEntryPayload extends Partial<Omit<RecipeIngredientPayload,
   unit?: AmountUnit
   label?: string | null
   recipe_id?: number
+  totals?: DiaryTotals
 }
 
 export interface DiaryEntryPatch {

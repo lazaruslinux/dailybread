@@ -697,12 +697,34 @@ class FoodIn(BaseModel):
 # ---- the nutrition diary ---------------------------------------------------------
 
 
+class DiaryTotalsIn(BaseModel):
+    """An explicit per-entry nutrition override, as absolute totals for the
+    portion (not per-100). Normally the server scales the food's stored per-100
+    nutrition to the amount; but a scanned product's database entry can be
+    incomplete (Open Food Facts often has energy/protein/fat but no carbs) or
+    plain wrong, so the add sheet lets the member fill the numbers in from the
+    package. When present these replace the computed totals verbatim; a null
+    field records "unknown", exactly as a missing source value would."""
+
+    calories: float | None = Field(default=None, ge=0, le=1_000_000)
+    protein_g: float | None = Field(default=None, ge=0, le=100000)
+    carbs_g: float | None = Field(default=None, ge=0, le=100000)
+    fat_g: float | None = Field(default=None, ge=0, le=100000)
+    saturated_fat_g: float | None = Field(default=None, ge=0, le=100000)
+    trans_fat_g: float | None = Field(default=None, ge=0, le=100000)
+    cholesterol_mg: float | None = Field(default=None, ge=0, le=100_000_000)
+    sodium_mg: float | None = Field(default=None, ge=0, le=100_000_000)
+    fiber_g: float | None = Field(default=None, ge=0, le=100000)
+    sugar_g: float | None = Field(default=None, ge=0, le=100000)
+
+
 class DiaryEntryIn(BaseModel):
     """Logging one thing you ate: a recipe by servings (recipe_id + amount), or
     a food with the same carried-payload contract as recipe ingredient lines —
     an id when it's already saved, otherwise source/source_id/name/nutrition to
-    find-or-create. The server computes the entry's nutrition; the client never
-    supplies totals."""
+    find-or-create. The server computes the entry's nutrition from the portion,
+    unless the client sends an explicit `totals` override (used to fill in or
+    fix incomplete scanned data)."""
 
     date_for: dt.date
     slot: DiarySlot
@@ -710,6 +732,9 @@ class DiaryEntryIn(BaseModel):
     amount: float = Field(gt=0, le=100000)
     unit: AmountUnit = "g"  # ignored for recipe entries (they're in servings)
     label: str | None = Field(default=None, max_length=60)
+    # When set, these absolute per-entry totals replace the scaled nutrition
+    # (the member corrected or completed the macros in the add sheet).
+    totals: DiaryTotalsIn | None = None
 
     recipe_id: int | None = None
 

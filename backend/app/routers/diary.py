@@ -311,12 +311,20 @@ def create_entry(
 
     if data.recipe_id is not None:
         recipe = _own_recipe(db, data.recipe_id, user.family_id)
-        totals = _recipe_totals(recipe, data.amount)
+        computed = _recipe_totals(recipe, data.amount)
         name, brand, food_id, unit = recipe.name, "", None, "srv"
     else:
         food = _resolve_food(db, user.family_id, data)
-        totals = _food_totals(food, data.amount, data.unit)
+        computed = _food_totals(food, data.amount, data.unit)
         name, brand, food_id, unit = food.name, food.brand, food.id, data.unit
+
+    # An explicit override (member filled in or corrected the macros in the add
+    # sheet) is the entry's nutrition verbatim; otherwise use the scaled totals.
+    totals = (
+        {n: getattr(data.totals, n) for n in _NUTRIENTS}
+        if data.totals is not None
+        else computed
+    )
 
     entry = DiaryEntry(
         family_id=user.family_id,
@@ -378,15 +386,22 @@ def update_entry(
                 else _scaled(entry, new_amount / entry.amount)
             )
         else:
+            # Nutrition is linear in the base amount, so scaling the entry's own
+            # snapshot is exact — and, unlike recomputing from the food, it keeps
+            # a manual macro override (the whole point of the add-sheet editor)
+            # and honours the diary's snapshot rule (a later food edit never
+            # rewrites logged history). Still reject a cross-measure unit switch
+            # while the source food is around to name the family.
             food = db.get(Food, entry.food_id) if entry.food_id else None
-            if food is not None:
-                totals = _food_totals(food, new_amount, new_unit)
-            else:
-                # The food is gone; nutrition is linear in the base amount, so
-                # scaling the snapshot is exact.
-                old_base = entry.amount * UNIT_TO_BASE.get(entry.unit, 1.0)
-                new_base = new_amount * UNIT_TO_BASE.get(new_unit, 1.0)
-                totals = _scaled(entry, new_base / old_base)
+            if food is not None and base_unit_of(new_unit) != food.base_unit:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    f"'{food.name}' is measured by "
+                    f"{'volume' if food.base_unit == 'ml' else 'weight'}",
+                )
+            old_base = entry.amount * UNIT_TO_BASE.get(entry.unit, 1.0)
+            new_base = new_amount * UNIT_TO_BASE.get(new_unit, 1.0)
+            totals = _scaled(entry, new_base / old_base)
         entry.amount = new_amount
         entry.unit = new_unit
         for n, v in totals.items():

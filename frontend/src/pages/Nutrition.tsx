@@ -7,6 +7,7 @@ import {
   Lock,
   Flame,
   Footprints,
+  Pencil,
   Plus,
   SlidersHorizontal,
   Trash2,
@@ -335,17 +336,64 @@ function portionMacros(pick: Picked, amount: number, unit: string): api.RecipeMa
     }
     return out
   }
-  const si = servingIndex(unit)
-  const base =
-    si != null && pick.food.servings[si]
-      ? amount * pick.food.servings[si].grams
-      : amount * (UNIT_TO_BASE[unit as api.AmountUnit] ?? 1)
-  const factor = base / 100
+  const factor = foodBase(pick.food, amount, unit) / 100
   for (const k of keys) {
     const v = pick.food[k as keyof api.Food] as number | null
     out[k] = v != null ? v * factor : null
   }
   return out
+}
+
+// Grams (or mL) the chosen amount + unit resolves to for a food.
+function foodBase(food: api.Food, amount: number, unit: string): number {
+  const si = servingIndex(unit)
+  return si != null && food.servings[si]
+    ? amount * food.servings[si].grams
+    : amount * (UNIT_TO_BASE[unit as api.AmountUnit] ?? 1)
+}
+
+// All ten nutrients scaled to the portion, the base for a per-entry override.
+const ENTRY_NUTRIENTS = [
+  'calories', 'protein_g', 'carbs_g', 'fat_g', 'saturated_fat_g',
+  'trans_fat_g', 'cholesterol_mg', 'sodium_mg', 'fiber_g', 'sugar_g',
+] as const
+
+function foodTotals(food: api.Food, amount: number, unit: string): api.DiaryTotals {
+  const factor = foodBase(food, amount, unit) / 100
+  const out = {} as api.DiaryTotals
+  for (const k of ENTRY_NUTRIENTS) {
+    const v = food[k] as number | null
+    out[k] = v != null ? v * factor : null
+  }
+  return out
+}
+
+// The four macros the add sheet lets you edit (calories + the big three).
+const EDIT_MACROS = [
+  { key: 'calories', label: 'Calories', unit: '' },
+  { key: 'protein_g', label: 'Protein', unit: 'g' },
+  { key: 'carbs_g', label: 'Carbs', unit: 'g' },
+  { key: 'fat_g', label: 'Fat', unit: 'g' },
+] as const
+
+type MacroValues = Record<(typeof EDIT_MACROS)[number]['key'], string>
+
+// Seed the editable fields from computed macros: a rounded number, or empty
+// when the source didn't have it (so a missing value reads as a blank to fill).
+function seedMacros(m: api.RecipeMacros): MacroValues {
+  const one = (v: number | null) => (v != null ? String(Math.round(v)) : '')
+  return { calories: one(m.calories), protein_g: one(m.protein_g), carbs_g: one(m.carbs_g), fat_g: one(m.fat_g) }
+}
+
+function missingPrimary(m: api.RecipeMacros): boolean {
+  return EDIT_MACROS.some((f) => m[f.key] == null)
+}
+
+const parseMacro = (s: string): number | null => {
+  const t = s.trim()
+  if (t === '') return null
+  const n = Number(t)
+  return Number.isFinite(n) ? n : null
 }
 
 function MacroLine({ m }: { m: api.RecipeMacros }) {
@@ -389,6 +437,37 @@ function PortionSheet({
     [pick, amt, unit],
   )
 
+  // Editable per-entry macros (foods only). Barcode/search data is sometimes
+  // incomplete (Open Food Facts often has no carbs) or wrong, so the member can
+  // fill in or correct the numbers; a touched editor sends an explicit override.
+  const editable = pick.kind === 'food'
+  const [macroValues, setMacroValues] = useState<MacroValues>(() =>
+    seedMacros(portionMacros(pick, amt, unit)),
+  )
+  const [macrosTouched, setMacrosTouched] = useState(false)
+  const [editingMacros, setEditingMacros] = useState(
+    () => editable && missingPrimary(portionMacros(pick, amt, unit)),
+  )
+
+  // The portion is the base: changing amount/unit re-seeds the fields to the
+  // freshly scaled values and drops any edit (edits sit on top of a set base).
+  useEffect(() => {
+    setMacroValues(seedMacros(portionMacros(pick, amt, unit)))
+    setMacrosTouched(false)
+  }, [pick, amt, unit])
+
+  const editMacro = (key: keyof MacroValues, raw: string) => {
+    // Digits and a single decimal point (a second dot would make Number() NaN,
+    // which would silently drop the macro to "unknown" with the field looking
+    // filled).
+    let s = raw.replace(/[^0-9.]/g, '')
+    const dot = s.indexOf('.')
+    if (dot !== -1) s = s.slice(0, dot + 1) + s.slice(dot + 1).replace(/\./g, '')
+    setMacroValues((prev) => ({ ...prev, [key]: s }))
+    setMacrosTouched(true)
+  }
+  const missingMacros = editable && EDIT_MACROS.some((f) => macroValues[f.key] === '')
+
   // What the chosen portion resolves to, so a serving pick shows its weight.
   const resolved = useMemo(() => {
     if (!food) return null
@@ -423,6 +502,18 @@ function PortionSheet({
         const f = pick.kind === 'food' ? pick.food : null
         const si = servingIndex(unit)
         const serving = si != null ? f!.servings[si] : null
+        // Only send a totals override when the member actually edited the
+        // macros; otherwise the server scales the food's stored nutrition as
+        // before. Edited fields win; untouched ones ride the scaled values.
+        const totals = macrosTouched
+          ? {
+              ...foodTotals(f!, amt, unit),
+              calories: parseMacro(macroValues.calories),
+              protein_g: parseMacro(macroValues.protein_g),
+              carbs_g: parseMacro(macroValues.carbs_g),
+              fat_g: parseMacro(macroValues.fat_g),
+            }
+          : undefined
         await api.createDiaryEntry({
           ...common,
           amount: serving ? amt * serving.grams : amt,
@@ -443,6 +534,7 @@ function PortionSheet({
           sodium_mg: f!.sodium_mg,
           fiber_g: f!.fiber_g,
           sugar_g: f!.sugar_g,
+          ...(totals ? { totals } : {}),
         })
       }
       onSaved()
@@ -546,7 +638,55 @@ function PortionSheet({
         </div>
 
         <div className="rounded-xl border border-fg/10 bg-fg/5 px-3.5 py-2.5">
-          <MacroLine m={macros} />
+          {editable && editingMacros ? (
+            <div className="flex flex-col gap-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wide text-fg/50">
+                  This entry
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setEditingMacros(false)}
+                  className="-m-2 rounded-lg p-2 text-xs font-semibold text-accent-bright"
+                >
+                  Done
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {EDIT_MACROS.map((f) => (
+                  <label key={f.key} className="block">
+                    <span className="mb-1 block text-[11px] font-medium text-fg/55">
+                      {f.label}
+                      {f.unit ? ` (${f.unit})` : ''}
+                    </span>
+                    <input
+                      inputMode="decimal"
+                      value={macroValues[f.key]}
+                      placeholder="Add"
+                      onChange={(e) => editMacro(f.key, e.target.value)}
+                      className={`field ${macroValues[f.key] === '' ? 'ring-1 ring-amber-400/60' : ''}`}
+                    />
+                  </label>
+                ))}
+              </div>
+              {missingMacros && (
+                <p className="text-[11px] leading-snug text-amber-500">
+                  The highlighted macros weren't in the scan. Add them from the package label if you have it.
+                </p>
+              )}
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => editable && setEditingMacros(true)}
+              className={`flex min-h-[24px] w-full items-center justify-between gap-2 text-left ${
+                editable ? '' : 'cursor-default'
+              }`}
+            >
+              <MacroLine m={macros} />
+              {editable && <Pencil className="h-4 w-4 shrink-0 text-fg/40" />}
+            </button>
+          )}
         </div>
 
         <FormError message={error} />

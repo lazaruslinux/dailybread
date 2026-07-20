@@ -57,6 +57,57 @@ def test_logging_a_food_snapshots_served_nutrition(parent):
     assert len(d["entries"]) == 1
 
 
+def test_totals_override_fills_in_missing_macros(parent):
+    # A scanned product whose source has no carbs (the Open Food Facts gap):
+    # the member fills it in from the label and the sheet sends explicit totals.
+    res = log(
+        parent,
+        amount=52,
+        carbs_g=None,
+        totals={"calories": 100.0, "protein_g": 3.0, "carbs_g": 22.0, "fat_g": 0.0},
+    )
+    assert res.status_code == 201, res.text
+    entry = res.json()
+    assert entry["carbs_g"] == 22.0
+    assert entry["calories"] == 100.0
+    assert entry["fat_g"] == 0.0
+    d = day(parent)
+    assert d["consumed"]["carbs_g"] == 22.0
+
+
+def test_totals_override_is_verbatim_not_scaled(parent):
+    # The override is absolute per-entry totals, not per-100 to scale by amount.
+    res = log(parent, amount=200, totals={"calories": 999.0, "protein_g": 1.0, "carbs_g": 2.0, "fat_g": 3.0})
+    assert res.status_code == 201, res.text
+    entry = res.json()
+    assert entry["calories"] == 999.0  # not 200 (2x the label)
+    assert entry["carbs_g"] == 2.0
+
+
+def test_totals_override_omitted_field_records_unknown(parent):
+    # A macro left blank in the editor stays None, same as a missing source value.
+    res = log(parent, totals={"calories": 100.0, "protein_g": 3.0, "fat_g": 0.0})
+    assert res.status_code == 201, res.text
+    assert res.json()["carbs_g"] is None
+
+
+def test_editing_a_corrected_entrys_portion_keeps_the_override(parent):
+    # Fill in a scan's missing carbs, then resize the portion: the override must
+    # scale with the snapshot, not revert to the food's (still empty) value.
+    entry = log(
+        parent,
+        amount=52,
+        carbs_g=None,
+        totals={"calories": 100.0, "protein_g": 3.0, "carbs_g": 22.0, "fat_g": 0.0},
+    ).json()
+    assert entry["carbs_g"] == 22.0
+    res = parent.patch(f"/diary/{entry['id']}", json={"amount": 104})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["carbs_g"] == 44.0  # scaled, not reverted to null
+    assert body["calories"] == 200.0
+
+
 def test_totals_sum_across_entries_and_days_stay_separate(parent):
     log(parent, amount=100)
     log(parent, amount=50, slot="lunch")
