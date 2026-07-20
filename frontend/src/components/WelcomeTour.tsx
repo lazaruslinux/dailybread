@@ -4,6 +4,7 @@ import {
   HeartPulse,
   House,
   Palette,
+  ScanBarcode,
   ShoppingBasket,
   Trees,
   Users,
@@ -77,6 +78,12 @@ const TOUR: {
     title: 'Nutrition',
     Icon: Utensils,
     body: 'A private, personal food diary that sets your calorie target from your health profile and auto-adjusts as you weigh in. Scan barcodes for immediate entry, save foods you eat often, log exercise to earn back calories, and lock in a finished day. Not even admins can see it.',
+    adultOnly: true,
+  },
+  {
+    title: 'Health check any food',
+    Icon: ScanBarcode,
+    body: 'The little "Scan a food" button at the top of every screen. Point it at a barcode and get an honest read of the label: seed oils, dyes, sweeteners, preservatives, and added sugar, summed up in one verdict. From there you can log it to your diary, save it, or drop it into a recipe.',
     adultOnly: true,
   },
   {

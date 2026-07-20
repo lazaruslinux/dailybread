@@ -135,9 +135,10 @@ function AppShell() {
     <button
       onClick={() => setScanning(true)}
       aria-label="Health check a barcode"
-      className="-m-3 rounded-lg p-3 text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
+      className="-mx-2 -my-1.5 flex min-h-11 flex-col items-center justify-center rounded-lg px-2 py-1.5 text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
     >
       <ScanBarcode className="h-5 w-5" />
+      <span className="text-[9px] font-semibold leading-tight">Scan a food</span>
     </button>
   ) : null
 
