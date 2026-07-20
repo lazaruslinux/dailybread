@@ -1,8 +1,10 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-// Self-hosted variable fonts (bundled, no runtime CDN — stays offline/private):
-// Fraunces (a warm editorial serif) for hero moments, Hanken Grotesk for the UI.
-import '@fontsource-variable/fraunces'
+// Self-hosted fonts (bundled, no runtime CDN — stays offline/private):
+// SN Pro (a clean humanist sans) for the display/hero type, Hanken Grotesk for
+// the UI. Only the two display weights we actually use are pulled in.
+import '@fontsource/sn-pro/400.css'
+import '@fontsource/sn-pro/600.css'
 import '@fontsource-variable/hanken-grotesk'
 import '@fontsource-variable/newsreader'
 // Caveat (handwriting) marks the one line that's purely the family's: the team name.

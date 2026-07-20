@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { BreadIcon } from './BreadIcon'
+import { Coin } from './BreadIcon'
 
 // The little "+n" that drifts up when breadcrumbs land — a warm nod, not a
 // damage number. Mount it with a fresh key per award inside a relatively
@@ -15,7 +15,7 @@ export function CrumbFloat({ amount }: { amount: number }) {
       className="pointer-events-none absolute -top-2 right-0 z-10 flex items-center gap-0.5 rounded-full border border-gold/40 bg-[var(--bg-base)] px-1.5 py-0.5 text-[11px] font-bold text-gold shadow-sm"
       aria-hidden
     >
-      <BreadIcon className="h-3 w-3" strokeWidth={2.5} />
+      <Coin className="h-3 w-3" />
       +{amount}
     </motion.span>
   )

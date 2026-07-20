@@ -29,7 +29,7 @@
 /* ---- Default theme: Light Amber (warm near-white paper, deep-amber accents) - */
 :root {
   --font-body: 'Hanken Grotesk Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-display: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
+  --font-display: 'SN Pro', 'Hanken Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
   --font-reading: 'Newsreader Variable', Georgia, serif;
   --font-team: 'Caveat Variable', 'Comic Sans MS', cursive;
 
@@ -177,6 +177,22 @@ body {
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* The bread token (Coin). Full-colour artwork swapped by theme: light is the
+   bare root, dark carries the data-theme attribute. Sized by the caller's
+   width/height utility (h-3 w-3, etc.); flex:none keeps it from shrinking in
+   the crumb rows it lives in. */
+.db-coin {
+  display: inline-block;
+  flex: none;
+  background-image: url('/breadtoken-light.svg');
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+:root[data-theme='dark'] .db-coin {
+  background-image: url('/breadtoken-dark.svg');
 }
 
 /* Opaque dialog surface. Same geometry as .glass but solid, so a modal over the

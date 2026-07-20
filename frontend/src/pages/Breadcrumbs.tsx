@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { BookOpen, CalendarCheck, Dumbbell, Lock, Sparkles, Sun } from 'lucide-react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
-import { BreadIcon } from '../components/BreadIcon'
+import { Coin } from '../components/BreadIcon'
 import { LevelBadge, TIER_META, tierOf } from '../components/LevelBadge'
 
 // The one place the economy explains itself: how crumbs are earned, what
@@ -90,7 +90,7 @@ export function BreadcrumbsPage() {
             />
           </div>
           <p className="flex items-center gap-1 text-xs text-fg/45">
-            <BreadIcon className="h-3.5 w-3.5 text-gold" strokeWidth={2.5} /> {me.total} earned ·{' '}
+            <Coin className="h-3.5 w-3.5" /> {me.total} earned ·{' '}
             {me.next_level_cost - me.level_progress} to level {me.level + 1}
           </p>
         </div>
@@ -113,7 +113,7 @@ export function BreadcrumbsPage() {
                 </span>
               </span>
               <span className="flex shrink-0 items-center gap-1 text-sm font-bold text-gold">
-                <BreadIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
+                <Coin className="h-3.5 w-3.5" />
                 {earn.amount}
               </span>
             </div>

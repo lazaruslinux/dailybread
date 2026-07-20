@@ -14,7 +14,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import * as api from '../lib/api'
-import { BreadIcon } from '../components/BreadIcon'
+import { Coin } from '../components/BreadIcon'
 
 // The You tab's Inbox: the history behind the notifications. Rows arrive
 // newest first from the server (capped there, so no pagination). Opening the
@@ -23,7 +23,7 @@ import { BreadIcon } from '../components/BreadIcon'
 // reset on the next visit.
 
 const KIND_ICON: Record<string, { Icon: LucideIcon; tint: string }> = {
-  crumb: { Icon: BreadIcon as unknown as LucideIcon, tint: 'text-gold' },
+  crumb: { Icon: Coin as unknown as LucideIcon, tint: 'text-gold' },
   board: { Icon: CalendarCheck, tint: 'text-fg/60' },
   dinner: { Icon: Utensils, tint: 'text-fg/60' },
   workout: { Icon: Dumbbell, tint: 'text-fg/60' },

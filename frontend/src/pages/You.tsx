@@ -22,7 +22,7 @@ import { JournalCard } from '../components/JournalCard'
 import { NotificationsCard } from '../components/Notifications'
 import { VillagesCard } from '../components/Villages'
 import { getTheme, setTheme, THEMES, type Theme } from '../lib/theme'
-import { BreadIcon } from '../components/BreadIcon'
+import { Coin } from '../components/BreadIcon'
 import { HealthSettings } from '../components/Health'
 import { WelcomeTour } from '../components/WelcomeTour'
 import { ChangePasswordSheet } from './Password'
@@ -310,7 +310,7 @@ export function You({
 
       <div className="flex flex-col gap-2">
         <SettingsRow Icon={Inbox} page="inbox" onOpen={openSub} badge={inboxUnread} />
-        <SettingsRow Icon={BreadIcon as unknown as LucideIcon} page="crumbs" onOpen={openSub} />
+        <SettingsRow Icon={Coin as unknown as LucideIcon} page="crumbs" onOpen={openSub} />
         {/* Minors get no notifications (the server sends them none, so the
             page would be empty), no health area, and no village roster; the
             API 403s the latter two anyway. */}

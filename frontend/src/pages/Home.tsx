@@ -8,7 +8,7 @@ import { canCheckItem } from '../lib/items'
 import { timeGreeting } from '../lib/moods'
 import { Avatar } from '../components/Avatar'
 import { DayTimeline } from '../components/DayTimeline'
-import { BreadIcon } from '../components/BreadIcon'
+import { Coin } from '../components/BreadIcon'
 import { FamilyStrip } from '../components/FamilyStrip'
 import { ItemCard, SectionDivider } from '../components/ItemCard'
 import { ItemDetail } from '../components/ItemDetail'
@@ -176,7 +176,7 @@ function WelcomeCrumb() {
       className="mb-3 flex items-center gap-2 rounded-xl border border-gold/30 bg-gold/10 px-3 py-2"
       data-welcome-crumb
     >
-      <BreadIcon className="h-4 w-4 shrink-0 text-gold" strokeWidth={2.5} />
+      <Coin className="h-4 w-4 shrink-0" />
       <span className="min-w-0 flex-1 text-sm font-medium text-fg/80">
         +1 breadcrumb earned · welcome back
       </span>

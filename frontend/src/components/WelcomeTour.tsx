@@ -14,7 +14,7 @@ import { useEffect, useState } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { applyTheme, THEMES, type Theme } from '../lib/theme'
-import { BreadIcon } from './BreadIcon'
+import { Coin } from './BreadIcon'
 import { AuthShell, Brand, Button } from './ui'
 
 // The feature tour (his copy, 2026-07-12). Shown to invite arrivals before
@@ -100,7 +100,7 @@ const TOUR: {
   },
   {
     title: 'Earn Breadcrumbs',
-    Icon: BreadIcon as unknown as LucideIcon,
+    Icon: Coin as unknown as LucideIcon,
     iconClass: 'text-gold',
     body: 'Completing things in dailybread earns breadcrumbs, or XP for the gamers. The whole family can climb the ladder together. More information is available in You.',
     kidBody:

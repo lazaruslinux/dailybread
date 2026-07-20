@@ -4,7 +4,7 @@ import { type ChangeEvent, useCallback, useEffect, useState } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { Avatar } from '../components/Avatar'
-import { BreadIcon } from '../components/BreadIcon'
+import { Coin } from '../components/BreadIcon'
 import { LevelBadge, TIER_META, tierOf } from '../components/LevelBadge'
 import { AvatarCrop } from '../components/AvatarCrop'
 import { Button, FormError } from '../components/ui'
@@ -215,7 +215,7 @@ export function Profile({
               className="flex items-center gap-1 font-semibold text-gold"
               title={`${profile.crumbs} breadcrumb${profile.crumbs === 1 ? '' : 's'} earned`}
             >
-              <BreadIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
+              <Coin className="h-3.5 w-3.5" />
               {profile.crumbs}
             </span>
             · {profile.next_level_cost - profile.level_progress} to level {profile.level + 1}

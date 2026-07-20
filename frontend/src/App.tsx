@@ -5,7 +5,7 @@ import { useAuth } from './auth/AuthContext'
 import { useInboxUnread } from './hooks/useInboxUnread'
 import { applyTheme, getTheme } from './lib/theme'
 import { resyncPushSubscription } from './lib/push'
-import { BreadIcon } from './components/BreadIcon'
+import { LoafMark } from './components/BreadIcon'
 import { DailyGreeting } from './components/Greeting'
 import { HealthBadge } from './components/HealthBadge'
 import { TabBar, type Tab } from './components/TabBar'
@@ -134,7 +134,7 @@ function AppShell() {
           // kept reachable at the row's edge. The greeting lives in Home now.
           <div className="relative flex items-center justify-center py-0.5">
             <span className="flex items-center gap-2 font-display text-xl font-semibold tracking-[-0.02em]">
-              <BreadIcon className="h-6 w-6 text-gold" strokeWidth={2.2} />
+              <LoafMark className="h-[38px] w-[38px] text-gold" />
               <span>
                 daily
                 <span className="bg-gradient-to-r from-accent-bright to-accent-strong bg-clip-text text-transparent">
