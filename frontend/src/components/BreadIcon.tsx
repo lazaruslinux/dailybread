@@ -1,36 +1,5 @@
 import { useId } from 'react'
 
-// A tiny loaf of bread, drawn to sit beside lucide icons (24-unit grid,
-// stroke-current, round caps): a domed loaf on a board with two score marks.
-// The breadcrumb economy's own mark — a wheat stalk said "field", this says
-// "kitchen".
-export function BreadIcon({
-  className = '',
-  strokeWidth = 2,
-}: {
-  className?: string
-  strokeWidth?: number
-}) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={strokeWidth}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden
-    >
-      {/* the loaf: flat base, domed top */}
-      <path d="M4 17v-4a8 5.5 0 0 1 16 0v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1Z" />
-      {/* score marks across the crust */}
-      <path d="M9 8.6v2.4" />
-      <path d="M13.5 8.2v2.4" />
-    </svg>
-  )
-}
-
 // The brand loaf for the Home masthead: the same filled dome that sits inside
 // the login badge, lifted out to stand alone beside the wordmark. The score
 // marks are cut through to the background (like they cut to the navy tile on
@@ -58,7 +27,7 @@ export function LoafMark({ className = '' }: { className?: string }) {
 // The bread token: the shiny coin designed in Canva, shown wherever
 // breadcrumbs are counted (the +N float, profile and Breadcrumbs tallies, the
 // Inbox crumb row, the You crumbs entry, the welcome tour). It is full-colour
-// and self-lit, so unlike BreadIcon it ignores currentColor and any tint
+// and self-lit, so unlike a stroke icon it ignores currentColor and any tint
 // class. The light and dark artwork live in public/; the root data-theme
 // attribute swaps them in CSS (see .db-coin in index.css). Sized by the
 // className the caller passes (h-3 w-3, etc.), same as the icons it replaces.

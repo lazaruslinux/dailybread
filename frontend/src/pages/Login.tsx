@@ -3,7 +3,7 @@ import { checkInvite, ApiError } from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { AuthShell, Brand, Button, Field, FormError } from '../components/ui'
 
-// The sign-in screen, plus the far side of "Invite to dailybread": someone
+// The sign-in screen, plus the far side of "Invite to this server": someone
 // holding an invite code enters it here, is greeted by name, picks their own
 // password, and lands in the create-your-family wizard.
 export function Login() {

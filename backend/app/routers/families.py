@@ -15,6 +15,7 @@ from app.models import (
     Meal,
     Recipe,
     Role,
+    SavedFood,
     User,
     Village,
     VillageFamily,
@@ -116,6 +117,10 @@ def delete_family(
     db.execute(delete(GroceryItem).where(GroceryItem.family_id == family_id))
     db.execute(delete(GroceryList).where(GroceryList.family_id == family_id))
     db.execute(delete(Recipe).where(Recipe.family_id == family_id))
+    # Saved-food shelf rows must go explicitly: their family_id FK has no cascade,
+    # and a shelf entry pointing at a shared-cache food (family_id NULL, which we
+    # never delete) wouldn't fall away with the family's own foods below.
+    db.execute(delete(SavedFood).where(SavedFood.family_id == family_id))
     db.execute(delete(User).where(User.family_id == family_id))
     # After users: their diary rows (which point at foods) are gone.
     db.execute(delete(Food).where(Food.family_id == family_id))
