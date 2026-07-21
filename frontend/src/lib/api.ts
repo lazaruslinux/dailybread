@@ -690,11 +690,16 @@ export const uncancelItem = (id: number, date: string) =>
 // forUserId lets a parent check a routine off on another member's behalf. date
 // defaults to today (the board); the calendar passes the day being viewed so a
 // missed item is marked on its actual day.
-const completePath = (id: number, forUserId?: number, date?: string) =>
-  `/items/${id}/complete?date=${date ?? localDate()}${forUserId != null ? `&for=${forUserId}` : ''}`
+// approvedOn is the parent's local day when they approve a kid's waiting mark;
+// the backend re-dates a dated one-off's completion to it so the card shows in
+// Done on the approval day. It only affects the approval path and dated one-offs.
+const completePath = (id: number, forUserId?: number, date?: string, approvedOn?: string) =>
+  `/items/${id}/complete?date=${date ?? localDate()}` +
+  (forUserId != null ? `&for=${forUserId}` : '') +
+  (approvedOn != null ? `&approved=${approvedOn}` : '')
 
-export const completeItem = (id: number, forUserId?: number, date?: string) =>
-  request<FeedItem>(completePath(id, forUserId, date), { method: 'POST' })
+export const completeItem = (id: number, forUserId?: number, date?: string, approvedOn?: string) =>
+  request<FeedItem>(completePath(id, forUserId, date, approvedOn), { method: 'POST' })
 
 export const uncompleteItem = (id: number, forUserId?: number, date?: string) =>
   request<FeedItem>(completePath(id, forUserId, date), { method: 'DELETE' })

@@ -1284,10 +1284,15 @@ def complete_item(
     item_id: int,
     date_for: dt.date = Query(alias="date"),
     for_user: int | None = Query(default=None, alias="for"),
+    approved_on: dt.date | None = Query(default=None, alias="approved"),
     db: Session = Depends(get_db),
     user: User = Depends(require_family),
 ):
     _check_complete_date(date_for)
+    # The approval day is "now" on the parent's device, so hold it to the same
+    # today +/- 1 clamp as the board rather than trusting an arbitrary date.
+    if approved_on is not None:
+        _check_date(approved_on)
     item = _get_item(db, item_id, user.family_id)
     _require_visible(item, user)
     # A materialized copy is the organizer's to complete; the attendee family
@@ -1359,10 +1364,23 @@ def complete_item(
         # made it official.
         exists.pending = False
         exists.approved_by_id = user.id
+        tap_day = exists.date_for
+        # A dated one-off's Done slot is keyed to the completion's day. Re-date
+        # the promoted row to the approval day so the card lands in Done then and
+        # clears the next day, just like a card ticked directly. Routines and
+        # undated tasks are day-keyed and keep the kid's tap day; a client that
+        # omits `approved` (older builds) leaves the row where it was. The single
+        # completion row of a dated one-off can't collide on re-date: for such an
+        # item this endpoint keeps at most one Completion (item-wide `exists`).
+        if approved_on is not None and item.date_for is not None and item.repeat_type is None:
+            exists.date_for = approved_on
         db.commit()
         doer = db.get(User, exists.user_id)
         if doer is not None:
-            awarded = crumbs.award_completion(db, doer, item.id, exists.date_for)
+            # Crumbs stay keyed to the tap day, so the ledger source key and the
+            # daily cap are byte-identical whether or not the row moved and the
+            # award can never double-pay across the re-date.
+            awarded = crumbs.award_completion(db, doer, item.id, tap_day)
             # The payoff moment: the kid hears the approval by name even when
             # the daily cap zeroes the crumb — being seen IS the reward.
             _record_kid_payoff(db, doer, user, "approved", item.title, awarded)

@@ -52,11 +52,27 @@ def card(client, item_id, date=TODAY.isoformat()):
     return None
 
 
-def complete(client, item_id, date=TODAY.isoformat(), for_user=None):
+def complete(client, item_id, date=TODAY.isoformat(), for_user=None, approved=None):
     url = f"/items/{item_id}/complete?date={date}"
     if for_user is not None:
         url += f"&for={for_user}"
+    if approved is not None:
+        url += f"&approved={approved}"
     return client.post(url)
+
+
+def completion_dates(app, item_id):
+    """Every completion row's date_for for an item, read straight from the DB."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import sessionmaker
+
+    from app.models import Completion
+
+    Session = sessionmaker(bind=app.state.test_engine)
+    with Session() as db:
+        return sorted(
+            db.scalars(select(Completion.date_for).where(Completion.item_id == item_id))
+        )
 
 
 def uncomplete(client, item_id, date=TODAY.isoformat(), for_user=None):
@@ -153,6 +169,123 @@ def test_parent_completing_a_one_shot_with_a_pending_mark_approves_it(owner, chi
     assert body["completed"] is True
     assert body["pending"] is False
     assert owner.get("/items/pending").json() == []
+
+
+def test_dated_oneoff_approval_redates_the_row_to_the_approval_day(app, owner, child):
+    # A kid taps a future one-off on day D; a parent approves on D+1. The
+    # promoted row moves to the approval day so the card shows in Done then and
+    # clears the next day, exactly like a card ticked directly. Here D is
+    # YESTERDAY so both feed days stay inside the board's today +/- 1 window.
+    kid_id = user_id(child)
+    due = (TODAY + dt.timedelta(days=1)).isoformat()  # D+2, still ahead at approval
+    task = make_item(owner, assignee_ids=[kid_id], date_for=due)
+
+    complete(child, task["id"], date=YESTERDAY.isoformat())  # tap on day D
+    assert completion_dates(app, task["id"]) == [YESTERDAY]
+
+    res = complete(
+        owner, task["id"], date=YESTERDAY.isoformat(), for_user=kid_id,
+        approved=TODAY.isoformat(),
+    )
+    assert res.status_code == 200 and res.json()["completed"] is True
+    assert completion_dates(app, task["id"]) == [TODAY]  # re-dated to the approval day
+
+    # D+1 (the approval day): the card sits in Done. D+2 (its due day): gone.
+    shown = card(owner, task["id"], date=TODAY.isoformat())
+    assert shown is not None and shown["completed"] is True
+    assert card(owner, task["id"], date=due) is None
+
+
+def test_same_day_approval_leaves_the_completion_on_that_day(app, owner, child):
+    # Approving on the tap day is a no-op re-date: the card is in Done today and
+    # gone tomorrow, the unchanged baseline.
+    kid_id = user_id(child)
+    task = make_item(owner, assignee_ids=[kid_id], date_for=TODAY.isoformat())
+
+    complete(child, task["id"])
+    complete(owner, task["id"], for_user=kid_id, approved=TODAY.isoformat())
+    assert completion_dates(app, task["id"]) == [TODAY]
+
+    shown = card(owner, task["id"], date=TODAY.isoformat())
+    assert shown is not None and shown["completed"] is True
+    tomorrow = (TODAY + dt.timedelta(days=1)).isoformat()
+    assert card(owner, task["id"], date=tomorrow) is None
+
+
+def test_routine_approval_on_a_later_day_keeps_the_tap_day(app, owner, child):
+    # Routines are day-keyed: re-dating would mark the wrong slot done, so the
+    # promoted row keeps the kid's tap day even when `approved` is sent.
+    kid_id = user_id(child)
+    routine = daily_routine(owner, assignee_ids=[kid_id])
+    complete(child, routine["id"], date=YESTERDAY.isoformat())
+
+    complete(
+        owner, routine["id"], date=YESTERDAY.isoformat(), for_user=kid_id,
+        approved=TODAY.isoformat(),
+    )
+    assert completion_dates(app, routine["id"]) == [YESTERDAY]
+
+
+def test_approval_without_the_approved_param_leaves_the_date_unchanged(app, owner, child):
+    # Older clients omit `approved`; the row stays on the tap day rather than
+    # being guessed with server time.
+    kid_id = user_id(child)
+    due = (TODAY + dt.timedelta(days=1)).isoformat()
+    task = make_item(owner, assignee_ids=[kid_id], date_for=due)
+
+    complete(child, task["id"], date=YESTERDAY.isoformat())
+    complete(owner, task["id"], date=YESTERDAY.isoformat(), for_user=kid_id)
+    assert completion_dates(app, task["id"]) == [YESTERDAY]
+
+
+def test_board_checkbox_approval_without_for_redates(app, owner, child):
+    # A parent tapping a kid's pending dated one-off directly on the board sends
+    # no `for`; the item-wide lookup still finds the pending row and the parent
+    # promotes it, so the re-date must fire on this shape too.
+    kid_id = user_id(child)
+    due = (TODAY + dt.timedelta(days=1)).isoformat()
+    task = make_item(owner, assignee_ids=[kid_id], date_for=due)
+    complete(child, task["id"], date=YESTERDAY.isoformat())
+
+    res = complete(owner, task["id"], date=YESTERDAY.isoformat(), approved=TODAY.isoformat())
+    assert res.status_code == 200 and res.json()["completed"] is True
+    assert completion_dates(app, task["id"]) == [TODAY]
+
+
+def test_approval_rejects_a_far_off_approved_date(owner, child):
+    # `approved` is the parent's clock, clamped to today +/- 1 like `date`: a
+    # bogus far date is refused rather than parking the row in another year.
+    kid_id = user_id(child)
+    task = make_item(owner, assignee_ids=[kid_id], date_for=TODAY.isoformat())
+    complete(child, task["id"])
+    far = (TODAY + dt.timedelta(days=400)).isoformat()
+    assert complete(owner, task["id"], for_user=kid_id, approved=far).status_code == 400
+
+
+def test_kid_passing_approved_on_a_retap_has_no_effect(app, owner, child):
+    # A minor can't promote, so an `approved` on their own re-tap changes nothing:
+    # the mark stays pending on the tap day.
+    kid_id = user_id(child)
+    task = make_item(owner, assignee_ids=[kid_id], date_for=TODAY.isoformat())
+    complete(child, task["id"])
+
+    tomorrow = (TODAY + dt.timedelta(days=1)).isoformat()
+    complete(child, task["id"], approved=tomorrow)
+    assert completion_dates(app, task["id"]) == [TODAY]
+    assert owner.get("/items/pending").json() != []  # still waiting
+
+
+def test_undated_task_approval_keeps_the_tap_day(app, owner, child):
+    # Undated tasks are day-keyed like routines, so `approved` never moves them.
+    kid_id = user_id(child)
+    task = make_item(owner, assignee_ids=[kid_id])  # no date_for
+    complete(child, task["id"], date=YESTERDAY.isoformat())
+
+    complete(
+        owner, task["id"], date=YESTERDAY.isoformat(), for_user=kid_id,
+        approved=TODAY.isoformat(),
+    )
+    assert completion_dates(app, task["id"]) == [YESTERDAY]
 
 
 def test_reject_deletes_and_the_kid_can_try_again(owner, child):

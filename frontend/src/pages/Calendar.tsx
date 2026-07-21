@@ -315,7 +315,9 @@ export function Calendar() {
     const done = !item.completed
     patch(dayISO, item.id, (it) => ({ ...it, completed: done }))
     try {
-      if (done) await api.completeItem(item.id, undefined, markDay(dayISO))
+      // Approving a kid's pending one-off from the calendar still lands its Done
+      // slot on the approval day (now), not the day being viewed.
+      if (done) await api.completeItem(item.id, undefined, markDay(dayISO), api.localDate())
       else await api.uncompleteItem(item.id, undefined, markDay(dayISO))
       refresh()
     } catch (err) {
@@ -334,7 +336,9 @@ export function Calendar() {
     })
     patch(dayISO, item.id, set(done))
     try {
-      if (done) await api.completeItem(item.id, userId, dayISO)
+      // Per-person routine rows never re-date, but carry the approval day for
+      // parity with every other approval path (the backend ignores it here).
+      if (done) await api.completeItem(item.id, userId, dayISO, api.localDate())
       else await api.uncompleteItem(item.id, userId, dayISO)
       refresh()
     } catch (err) {

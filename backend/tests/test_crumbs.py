@@ -182,6 +182,41 @@ def test_kid_completions_cap_at_three_a_day(owner, child):
     assert crumbs_total(child) >= 3
 
 
+def test_dated_oneoff_crumbs_stay_keyed_to_the_tap_day(owner, child):
+    # A dated one-off's completion re-dates to the approval day, but its crumb
+    # source key and daily cap stay keyed to the tap day. So four cards tapped
+    # today and approved onto three different days (never more than two on any
+    # one day, well under the cap) still pay only the day's cap of three. Were
+    # the crumb keyed to the re-dated day, the caps would spread and a fourth
+    # coin would slip through.
+    kid_id = user_id(child)
+    due = (TODAY + dt.timedelta(days=1)).isoformat()
+    cards = [_make(owner, title=f"Errand {i}", assignee_ids=[kid_id], date_for=due)
+             for i in range(4)]
+    for c in cards:
+        child.post(f"/items/{c['id']}/complete?date={TODAY.isoformat()}")
+
+    before = crumbs_total(child)
+    approve_days = [-1, 0, 1, -1]  # kept inside the today +/- 1 approval clamp
+    awarded = 0
+    for offset, c in zip(approve_days, cards):
+        res = owner.post(
+            f"/items/{c['id']}/complete?date={TODAY.isoformat()}&for={kid_id}"
+            f"&approved={(TODAY + dt.timedelta(days=offset)).isoformat()}"
+        )
+        awarded += res.json()["crumbs_awarded"]
+    assert awarded == 3
+    assert crumbs_total(child) == before + 3
+
+    # The rows are no longer pending, so a second approval is a plain no-op.
+    again = owner.post(
+        f"/items/{cards[0]['id']}/complete?date={TODAY.isoformat()}&for={kid_id}"
+        f"&approved={TODAY.isoformat()}"
+    )
+    assert again.json()["crumbs_awarded"] == 0
+    assert crumbs_total(child) == before + 3
+
+
 def test_a_kids_crumb_lands_on_approval(owner, child):
     kid_id = user_id(child)
     item = _make(

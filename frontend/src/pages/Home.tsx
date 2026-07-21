@@ -418,7 +418,10 @@ export function Home({
     const next = !item.completed
     setItemCompleted(item.id, next)
     try {
-      if (next) celebrate(item.id, await api.completeItem(item.id))
+      // A parent tapping a kid's pending card here approves it; the approval day
+      // is always now, so a dated one-off re-dates into today's Done. Harmless on
+      // an ordinary complete (the backend uses it only on the approval branch).
+      if (next) celebrate(item.id, await api.completeItem(item.id, undefined, undefined, api.localDate()))
       else await api.uncompleteItem(item.id)
       if (next) showUndoToast(item)
       refresh()
@@ -456,7 +459,9 @@ export function Home({
       setItemPending(item.id, false)
       setItemCompleted(item.id, done)
       try {
-        if (done) celebrate(item.id, await api.completeItem(item.id, userId))
+        // Approving a one-shot from the detail sheet: pass the approval day so a
+        // dated one-off lands in Done today (undated/routines ignore it).
+        if (done) celebrate(item.id, await api.completeItem(item.id, userId, undefined, api.localDate()))
         else await api.uncompleteItem(item.id, userId)
         refresh()
       } catch (err) {
@@ -467,7 +472,9 @@ export function Home({
     }
     setAssigneeCompleted(item.id, userId, done)
     try {
-      if (done) celebrate(item.id, await api.completeItem(item.id, userId))
+      // Completing for another member can promote their pending mark, so carry
+      // the approval day (ignored by the backend on a plain complete).
+      if (done) celebrate(item.id, await api.completeItem(item.id, userId, undefined, api.localDate()))
       else await api.uncompleteItem(item.id, userId)
       refresh()
     } catch (err) {
@@ -538,7 +545,7 @@ export function Home({
       ),
     )
     try {
-      if (approve) await api.completeItem(a.item_id, a.user.id, a.date_for)
+      if (approve) await api.completeItem(a.item_id, a.user.id, a.date_for, api.localDate())
       else await api.uncompleteItem(a.item_id, a.user.id, a.date_for)
       refresh()
     } catch (err) {
