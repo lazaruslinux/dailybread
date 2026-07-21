@@ -86,6 +86,13 @@ def _apply_custom_food(food: Food, data: FoodIn) -> None:
         FoodServing(name=s.name.strip(), grams=s.grams, position=i)
         for i, s in enumerate(data.servings)
     ]
+    # Health-check label data, stored as given (already per-100, not per basis
+    # serving). Carries a scanned food's ingredients through "save as custom food"
+    # so a later scan of the same barcode still judges the real label.
+    food.ingredients_text = (data.ingredients_text or "").strip() or None
+    food.added_sugar_g = data.added_sugar_g
+    food.additives = (data.additives or "").strip() or None
+    food.nova_group = data.nova_group
 
 
 # Recent search results, kept briefly so retyping a query (or two members

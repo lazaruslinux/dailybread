@@ -866,6 +866,13 @@ export interface CustomFoodPayload {
   sodium_mg?: number | null
   fiber_g?: number | null
   sugar_g?: number | null
+  // Health-check label data, carried through from a scanned source food so a
+  // later scan of the same barcode still judges the real ingredients. Per 100
+  // base units for added_sugar_g; null on hand-made foods.
+  ingredients_text?: string | null
+  added_sugar_g?: number | null
+  additives?: string | null
+  nova_group?: number | null
 }
 
 export const searchFoods = (q: string) =>

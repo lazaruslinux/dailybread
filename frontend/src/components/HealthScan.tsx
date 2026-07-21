@@ -209,6 +209,18 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
     hasServing ? 1 : noServingAmt,
     hasServing ? 'serving:0' : food.base_unit,
   )
+  // When the member typed a serving size for a food that carried none, carry it
+  // into the three actions as one synthetic client-side serving so the app
+  // remembers it: a saved custom food seeds this row (rename-able), and the
+  // diary/recipe pickers default to it. An untouched 100 means they told us
+  // nothing, so the raw food rides through unchanged.
+  const actionFood: api.Food =
+    !hasServing && noServingAmt !== 100
+      ? {
+          ...food,
+          servings: [{ name: '1 serving', grams: noServingAmt }],
+        }
+      : food
 
   return (
     <>
@@ -283,7 +295,7 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
 
       {action === 'diary' && (
         <PortionSheet
-          pick={{ kind: 'food', food }}
+          pick={{ kind: 'food', food: actionFood }}
           date={api.localDate()}
           slot={slotByHour()}
           onClose={() => setAction(null)}
@@ -296,7 +308,7 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
       {action === 'custom' && (
         <FoodSheet
           food={null}
-          prefill={food}
+          prefill={actionFood}
           folders={folders}
           barcode={food.source_id}
           onClose={() => setAction(null)}
@@ -309,7 +321,7 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
       )}
       {action === 'recipe' && (
         <RecipePickSheet
-          food={food}
+          food={actionFood}
           onClose={() => setAction(null)}
           onDone={() => {
             setAction(null)

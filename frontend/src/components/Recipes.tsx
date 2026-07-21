@@ -1677,6 +1677,15 @@ export function FoodSheet({
       base_unit: baseUnit,
       servings: cleaned,
       basis_index: basis,
+      // Carry the source's health-check label data straight through (already
+      // per-100), so a food saved from a scan still judges its real ingredients
+      // when its barcode is scanned again. Null for hand-made foods. Sliced to
+      // the FoodIn caps: source strings are uncapped and an over-long OFF
+      // ingredient list must not 422 a field the member can't see.
+      ingredients_text: seed?.ingredients_text?.slice(0, 4000) ?? null,
+      added_sugar_g: seed?.added_sugar_g ?? null,
+      additives: seed?.additives?.slice(0, 1000) ?? null,
+      nova_group: seed?.nova_group ?? null,
       ...(Object.fromEntries(NUTRI_KEYS.map((k) => [k, numOrNull(nutri[k])])) as Record<NutriKey, number | null>),
     }
     try {

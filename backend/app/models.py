@@ -794,8 +794,9 @@ class Food(Base):
     sodium_mg: Mapped[float | None] = mapped_column(Float, nullable=True)
     fiber_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     sugar_g: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # Health-check fields, filled from USDA/OFF on a barcode scan (0054). None on
-    # a custom food and until a cache row has been healed. ingredients_text is the
+    # Health-check fields, filled from USDA/OFF on a barcode scan (0054), and
+    # carried onto a custom food saved from one. None on hand-made foods and
+    # until a cache row has been healed. ingredients_text is the
     # raw label ingredient string; added_sugar_g is per-100 of base_unit like the
     # macros; additives is the OFF additives_tags list comma-joined ("en:e102,
     # en:e211") — Text, never a JSON column (Postgres json has no equality op, a

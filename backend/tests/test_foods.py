@@ -163,6 +163,69 @@ def test_volume_custom_food_stores_per_100ml(owner):
     assert f["servings"][0]["grams"] == 240.0  # the serving size, in mL
 
 
+def test_custom_food_persists_health_fields(owner):
+    # The label data a scan carries into "save as custom food" round-trips on the
+    # food. The 21 g basis serving proves added_sugar_g is stored as given (it is
+    # already per-100) while the printed macros DO go through the basis
+    # conversion: sugar 17 per 21 g serving becomes ~80.95 per-100.
+    owner.post(
+        "/foods",
+        json=_food(
+            "Labelled snack",
+            servings=[{"name": "1 bar", "grams": 21}],
+            sugar_g=17,
+            ingredients_text="Oats, Honey, Salt",
+            added_sugar_g=8, additives="en:e322", nova_group=3,
+        ),
+    )
+    f = next(f for f in owner.get("/foods").json() if f["name"] == "Labelled snack")
+    assert f["ingredients_text"] == "Oats, Honey, Salt"
+    assert f["added_sugar_g"] == 8.0 and f["additives"] == "en:e322"
+    assert f["nova_group"] == 3
+    assert f["sugar_g"] is not None and abs(f["sugar_g"] - 80.95) < 0.1
+
+
+def test_update_custom_food_preserves_health_fields(owner):
+    fid = owner.post("/foods", json=_food("Draft", calories=100)).json()["id"]
+    edited = owner.put(
+        f"/foods/{fid}",
+        json=_food(
+            "Final", calories=100,
+            ingredients_text="Honey.", nova_group=2, added_sugar_g=0,
+        ),
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["ingredients_text"] == "Honey."
+    assert edited.json()["nova_group"] == 2 and edited.json()["added_sugar_g"] == 0.0
+
+
+def test_custom_food_without_health_fields_stores_null(owner):
+    f = owner.post("/foods", json=_food("Plain", calories=50)).json()
+    assert f["ingredients_text"] is None and f["added_sugar_g"] is None
+    assert f["additives"] is None and f["nova_group"] is None
+
+
+def test_saved_honey_custom_food_still_reads_clean(owner):
+    # The regression this fixes: honey saved from a scan keeps its label, so a
+    # later scan of the same barcode resolves to the custom food and still reads
+    # "clean" (the single-ingredient sweetener exemption fires) instead of
+    # warning "High in sugar" off the total-sugar fallback.
+    made = owner.post(
+        "/foods",
+        json=_food(
+            "Raw Honey", barcode="0096619222841",
+            servings=[{"name": "1 tbsp", "grams": 21}],
+            sugar_g=80.95, ingredients_text="Honey.", nova_group=2,
+        ),
+    )
+    assert made.status_code == 201, made.text
+    body = owner.get("/foods/health/0096619222841").json()
+    assert body["food"]["ingredients_text"] == "Honey."
+    assert body["assessment"]["verdict"] == "clean"
+    cats = {f["category"] for f in body["assessment"]["flags"]}
+    assert "added_sugar" not in cats and "sugar" not in cats
+
+
 def test_folder_round_trips_and_normalizes(owner):
     # Set on create, comes back verbatim.
     made = owner.post("/foods", json=_food("Filed", calories=100, folder="Panda Express"))

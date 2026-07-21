@@ -650,9 +650,10 @@ class FoodOut(BaseModel):
     sodium_mg: float | None = None
     fiber_g: float | None = None
     sugar_g: float | None = None
-    # Health-check fields (barcode cache rows; None on custom foods and until a
-    # row is healed). See models.Food. Not part of FOOD_NUTRIENTS: they don't
-    # ride into DiaryEntry snapshots or recipe macros, only the health check.
+    # Health-check fields (barcode cache rows, and custom foods saved from a
+    # scan; None on hand-made foods and until a cache row is healed). See
+    # models.Food. Not part of FOOD_NUTRIENTS: they don't ride into DiaryEntry
+    # snapshots or recipe macros, only the health check.
     ingredients_text: str | None = None
     added_sugar_g: float | None = None
     additives: str | None = None
@@ -693,6 +694,15 @@ class FoodIn(BaseModel):
     sodium_mg: float | None = Field(default=None, ge=0, le=10_000_000)
     fiber_g: float | None = Field(default=None, ge=0, le=100000)
     sugar_g: float | None = Field(default=None, ge=0, le=100000)
+    # Health-check fields (see models.Food / FoodOut). Stored as given, per-100 of
+    # the base unit like the macros' stored form: they carry a scanned food's
+    # label data through "save as custom food" so a later scan of the same barcode
+    # still judges the real ingredients. None on hand-made foods. Not scaled by
+    # the basis conversion (they arrive per-100, from FoodOut).
+    ingredients_text: str | None = Field(default=None, max_length=4000)
+    added_sugar_g: float | None = Field(default=None, ge=0, le=100000)
+    additives: str | None = Field(default=None, max_length=1000)
+    nova_group: int | None = Field(default=None, ge=1, le=4)
 
     @model_validator(mode="after")
     def _basis_in_range(self) -> "FoodIn":
