@@ -186,11 +186,13 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
   const servingName =
     food.servings.length > 0 ? food.servings[0].name : `per 100 ${food.base_unit === 'ml' ? 'mL' : 'g'}`
   // All ten nutrients for one serving, so the panel's expandable rows (sat
-  // fat, sodium, fiber) back up the flags above it.
+  // fat, sodium, fiber) back up the flags above it. With no named serving the
+  // panel is per 100 of the base unit, matching the "per 100 g/mL" header.
+  const hasServing = food.servings.length > 0
   const perServe = foodTotals(
     food,
-    1,
-    food.servings.length > 0 ? 'serving:0' : food.base_unit,
+    hasServing ? 1 : 100,
+    hasServing ? 'serving:0' : food.base_unit,
   )
 
   return (
