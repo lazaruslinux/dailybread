@@ -185,7 +185,7 @@ def test_a_family_founds_once_but_joins_many(app, village, owner, other):
     assert cathy.post("/families", json={"name": "The Cs"}).status_code == 201
     fresh = other.post(f"/villages/{created['id']}/invite").json()
     assert cathy.post("/villages/join", json={"code": fresh["invite_code"]}).status_code == 200
-    third = _create(cathy, name="Cs Circle") if False else None  # cathy founded none; she may later
+    # cathy founded no village of her own; she may later
     assert len(other.get("/villages").json()) == 2  # Bread Circle + her own
 
 
@@ -396,7 +396,7 @@ def test_save_a_copy_is_an_independent_snapshot(village, owner, other):
     entry = share(owner, village, recipe["id"])
     copy = other.post(f"/villages/shelf/{entry['share_id']}/copy").json()
     assert copy["name"] == "Pancakes"
-    assert {l["name"] for l in copy["ingredients"]} == {"Flour", "Grandma's mix"}
+    assert {ing["name"] for ing in copy["ingredients"]} == {"Flour", "Grandma's mix"}
 
     # The sharer's later edits and unshares never reach the copy.
     owner.patch(f"/recipes/{recipe['id']}", json={"name": "Renamed"})

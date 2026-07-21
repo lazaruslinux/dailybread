@@ -19,7 +19,7 @@ def test_everyone_can_read_only_parents_can_write(owner, child):
 
     # The child sees everything...
     state = child.get("/grocery").json()
-    assert [l["name"] for l in state["lists"]] == ["Walmart"]
+    assert [lst["name"] for lst in state["lists"]] == ["Walmart"]
     assert [i["title"] for i in state["items"]] == ["Milk"]
 
     # ...and can change nothing.

@@ -8,8 +8,6 @@ SessionLocal at the same engine the API fixtures use.
 import datetime as dt
 from types import SimpleNamespace
 
-import pytest
-from sqlalchemy.orm import sessionmaker
 
 import app.push as push_engine
 from tests.conftest import user_id

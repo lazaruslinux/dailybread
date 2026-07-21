@@ -8,7 +8,7 @@ import pytest
 
 from app import throttle
 from app.clock import shift_schedule
-from tests.conftest import CHILD, user_id
+from tests.conftest import user_id
 
 TODAY = dt.date.today()
 TOMORROW = TODAY + dt.timedelta(days=1)
@@ -252,7 +252,6 @@ def test_second_parent_overwrites_the_family_answer(village, owner, other, app):
     out = share(owner, village, item["id"])
     rsvp(other, out["event_id"], "going", [user_id(other)])
     ev = rsvp(beth, out["event_id"], "cant")
-    mine = [r for r in ev["rsvps"] if r["family_id"] == user_id(beth) or True]
     ours = next(r for r in ev["rsvps"] if r["status"] == "cant")
     assert ours["set_by"] == "Beth"
     # one row per family: no lingering going entry
@@ -264,7 +263,6 @@ def test_second_parent_overwrites_the_family_answer(village, owner, other, app):
 
 
 def test_attendees_ship_shaped_by_the_kid_flag(village, owner, other, app):
-    from tests.conftest import login
 
     kid = {"username": "bkid", "display_name": "Kenny B", "password": "bkid-pass-1234"}
     assert other.post("/auth/users", json={**kid, "role": "child"}).status_code == 201

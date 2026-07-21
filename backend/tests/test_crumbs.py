@@ -4,7 +4,6 @@ so absolute numbers would couple every test to fixture setup order."""
 
 import datetime as dt
 
-import pytest
 
 from app.crumbs import TIERS, level_of, tier_of
 from app.models import VerseCheck
@@ -102,7 +101,8 @@ def test_streak_milestones_pay_a_bonus_once(owner, engine_db):
 
 
 def _payload(duration_s: int, day: dt.date = TODAY) -> dict:
-    stamp = lambda hhmmss: f"{day.isoformat()} {hhmmss} -0700"
+    def stamp(hhmmss):
+        return f"{day.isoformat()} {hhmmss} -0700"
     return {
         "data": {
             "workouts": [

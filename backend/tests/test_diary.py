@@ -7,7 +7,6 @@ Everything here is self-only: family members never see each other's diaries.
 
 import datetime as dt
 
-from tests.conftest import login, user_id, CHILD
 
 TODAY = dt.date.today().isoformat()
 

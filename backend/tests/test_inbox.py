@@ -111,7 +111,8 @@ def test_dinner_lock_writes_a_line_for_the_family_adults(owner, parent, child):
 
 
 def _workout_payload(duration_s: int) -> dict:
-    stamp = lambda hhmmss: f"{TODAY.isoformat()} {hhmmss} -0700"
+    def stamp(hhmmss):
+        return f"{TODAY.isoformat()} {hhmmss} -0700"
     return {
         "data": {
             "workouts": [

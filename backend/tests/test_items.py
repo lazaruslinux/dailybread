@@ -172,7 +172,8 @@ def test_next7_has_a_horizon(owner):
                   time_of_day="09:00", end_time="10:00")
 
     feed = owner.get(f"/items/feed?date={TODAY}").json()
-    ids = lambda bucket: {i["id"] for i in feed[bucket]}
+    def ids(bucket):
+        return {i["id"] for i in feed[bucket]}
     assert a["id"] in ids("next7")
     assert b["id"] not in ids("next7") | ids("today") | ids("overdue")
 
@@ -714,7 +715,6 @@ def test_cancel_an_appointment(owner):
 
 
 def test_cancel_replaces_a_done_mark_and_is_parent_only(owner, child):
-    kid_id = None
     appt = make_item(owner, kind="appointment", title="Recital", date_for=TODAY,
                      time_of_day="14:00", end_time="15:00", visibility="family")
     owner.post(f"/items/{appt['id']}/complete?date={TODAY}")

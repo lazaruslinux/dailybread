@@ -10,7 +10,7 @@ import re
 
 from fastapi.testclient import TestClient
 
-from tests.conftest import CHILD, OWNER, PARENT, login, user_id
+from tests.conftest import CHILD, PARENT, login, user_id
 
 # What security.generate_password() promises: two lowercase words and two
 # digits, dash-separated — readable over a shoulder, typeable on a phone.

@@ -12,7 +12,6 @@ from zoneinfo import ZoneInfo
 
 import app.push as push_engine
 from app.clock import family_now
-from tests.conftest import user_id
 
 SUB = {
     "endpoint": "https://push.example/dad-phone",

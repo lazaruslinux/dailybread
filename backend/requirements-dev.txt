@@ -1,3 +1,4 @@
 # Test-only dependencies; production images never install these.
 pytest
 httpx
+ruff

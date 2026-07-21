@@ -83,7 +83,7 @@ def test_owner_removes_a_family_and_everything_it_owned(owner, other, village):
     owner's family is still in it; B's session and data are gone."""
     recipe = _fill_household(other)
     entry = share(other, village, recipe["id"])
-    copy = owner.post(f"/villages/shelf/{entry['share_id']}/copy").json()
+    owner.post(f"/villages/shelf/{entry['share_id']}/copy").json()
 
     b_family = other.get("/families/me").json()["id"]
     res = owner.delete(f"/families/{b_family}")
@@ -104,7 +104,7 @@ def test_owner_removes_a_family_and_everything_it_owned(owner, other, village):
 
 
 def test_removing_the_last_family_turns_off_a_villages_lights(owner, other):
-    created = _create(other, name="B Lane")  # B founds a village, alone
+    _create(other, name="B Lane")  # B founds a village, alone
     b_family = other.get("/families/me").json()["id"]
     assert owner.delete(f"/families/{b_family}").status_code == 204
 

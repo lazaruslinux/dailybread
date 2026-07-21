@@ -1,8 +1,8 @@
 import datetime as dt
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import delete, select
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy import select
+from sqlalchemy.orm import Session, joinedload
 
 from app import inbox
 from app.db import get_db

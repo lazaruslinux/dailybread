@@ -9,7 +9,6 @@ target (and its gram targets), Cronometer's "expenditure above baseline".
 
 import datetime as dt
 
-from tests.conftest import user_id
 from tests.test_health import PROFILE, setup_profile
 
 TODAY = dt.date.today().isoformat()
