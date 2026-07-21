@@ -225,7 +225,7 @@ function AppShell() {
         </motion.div>
       </AnimatePresence>
 
-      <footer className="mt-10 text-center text-xs text-fg/30">dailybread v0.0.1</footer>
+      <footer className="mt-10 text-center text-xs text-fg/30">dailybread v{__APP_VERSION__}</footer>
 
       {scanning && (
         <Suspense fallback={null}>
