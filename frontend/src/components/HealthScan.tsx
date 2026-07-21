@@ -74,6 +74,15 @@ function slotByHour(): api.DiarySlot {
   return 'snack'
 }
 
+// Digits and a single decimal point (a second dot would make Number() NaN),
+// matching the add-sheet's amount input.
+function sanitizeAmount(raw: string): string {
+  let s = raw.replace(/[^0-9.]/g, '')
+  const dot = s.indexOf('.')
+  if (dot !== -1) s = s.slice(0, dot + 1) + s.slice(dot + 1).replace(/\./g, '')
+  return s
+}
+
 type Phase = 'scan' | 'loading' | 'result' | 'unknown' | 'error'
 type Action = 'diary' | 'custom' | 'recipe' | null
 
@@ -83,6 +92,9 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [action, setAction] = useState<Action>(null)
+  // The serving size the member types when the scanned food carries none, so
+  // the nutrition panel can show per-serving facts off the label they're holding.
+  const [servingAmt, setServingAmt] = useState('100')
   // Existing custom-food folders, so "Save as custom food" offers the same
   // datalist the Kitchen entry point does.
   const [folders, setFolders] = useState<string[]>([])
@@ -98,6 +110,7 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
     setCode(c)
     setPhase('loading')
     setError(null)
+    setServingAmt('100')
     try {
       setResult(await api.healthCheck(c))
       setPhase('result')
@@ -183,15 +196,17 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
   const { verdict, flags } = result.assessment
   const v = VERDICT[verdict]
   const sorted = [...flags].sort((a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity])
-  const servingName =
-    food.servings.length > 0 ? food.servings[0].name : `per 100 ${food.base_unit === 'ml' ? 'mL' : 'g'}`
-  // All ten nutrients for one serving, so the panel's expandable rows (sat
-  // fat, sodium, fiber) back up the flags above it. With no named serving the
-  // panel is per 100 of the base unit, matching the "per 100 g/mL" header.
   const hasServing = food.servings.length > 0
+  const unitLabel = food.base_unit === 'ml' ? 'mL' : 'g'
+  // With no named serving the member types the label's serving size and the
+  // panel rescales live; empty/invalid/zero falls back to 100.
+  const typedAmt = Number(servingAmt) || 0
+  const noServingAmt = typedAmt > 0 ? typedAmt : 100
+  // All ten nutrients for one serving, so the panel's expandable rows (sat
+  // fat, sodium, fiber) back up the flags above it.
   const perServe = foodTotals(
     food,
-    hasServing ? 1 : 100,
+    hasServing ? 1 : noServingAmt,
     hasServing ? 'serving:0' : food.base_unit,
   )
 
@@ -230,9 +245,26 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
         )}
 
         <div className="mt-5">
-          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
-            {servingName}
-          </p>
+          {hasServing ? (
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
+              {food.servings[0].name}
+            </p>
+          ) : (
+            <>
+              <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
+                <span>Per</span>
+                <input
+                  inputMode="decimal"
+                  value={servingAmt}
+                  onChange={(e) => setServingAmt(sanitizeAmount(e.target.value))}
+                  aria-label="Serving size"
+                  className="min-h-11 w-16 rounded-lg border border-fg/15 bg-transparent px-2 text-center text-sm font-semibold normal-case tracking-normal text-fg focus:border-accent-bright focus:outline-none"
+                />
+                <span>{unitLabel}</span>
+              </div>
+              <p className="mb-2 text-xs text-fg/50">Type the serving size from the label.</p>
+            </>
+          )}
           <NutritionPanel m={perServe} />
         </div>
 
