@@ -232,6 +232,25 @@ def _text_hit(patterns: tuple[re.Pattern, ...], haystack: str) -> bool:
     return any(p.search(haystack) for p in patterns)
 
 
+_INGREDIENT_SEPARATORS = re.compile(
+    r"[,;\n，،]|\band\b", re.IGNORECASE
+)
+
+
+def _sole_ingredient(text: str) -> str | None:
+    """The single ingredient an ingredient list names, or None when it names
+    more than one. Ignores a trailing period ("HONEY.") and any parenthesized
+    qualifiers ("Honey (raw, unfiltered)"); a comma, semicolon, newline, the
+    word "and", or a unicode comma all mark more than one ingredient. Returns
+    the paren-stripped body so callers judge the ingredient itself, not its
+    parenthesized sub-ingredients ("Milk chocolate (sugar, cocoa butter)" must
+    not read as sugar)."""
+    body = re.sub(r"\([^)]*\)", " ", text or "").strip().rstrip(".")
+    if not body or _INGREDIENT_SEPARATORS.search(body) is not None:
+        return None
+    return body
+
+
 # ---- additive e-number tags ----------------------------------------------------
 # Open Food Facts reports additives as "en:eNNN" tags. Map the ones we care about
 # to the same categories the text rules use, so a tag hit and a text hit collapse.
@@ -285,15 +304,16 @@ def _fmt(n: float) -> str:
     return f"{round(n, 1):g}"
 
 
-def _serving_grams(food) -> float:
-    """The grams (or mL) one serving weighs, for scaling per-100 nutrition. The
-    first named serving when there is one, else 100 (per-100 read as-is)."""
+def _serving_grams(food) -> tuple[float, bool]:
+    """The grams (or mL) one serving weighs, for scaling per-100 nutrition, and
+    whether that came from a named serving. The first named serving when there
+    is one, else 100 (per-100 read as-is) with has_serving False."""
     servings = getattr(food, "servings", None) or []
     if servings:
         grams = getattr(servings[0], "grams", None)
         if grams:
-            return float(grams)
-    return 100.0
+            return float(grams), True
+    return 100.0, False
 
 
 # ---- the assessment ------------------------------------------------------------
@@ -329,8 +349,16 @@ def assess(food, added_sugar_threshold: float) -> Assessment:
         if _text_hit(patterns, haystack) or rule.category in tag_categories:
             add(rule.category, rule.severity, rule.label, rule.detail)
 
-    # Nutrient thresholds, evaluated per serving.
-    scale = _serving_grams(food) / 100.0
+    # Nutrient thresholds, evaluated per serving (or per 100 when the food has
+    # no named serving, in which case the detail says so).
+    serving_g, has_serving = _serving_grams(food)
+    scale = serving_g / 100.0
+    if has_serving:
+        per = "per serving"
+    elif getattr(food, "base_unit", "g") == "ml":
+        per = "per 100 mL"
+    else:
+        per = "per 100 g"
     trans = getattr(food, "trans_fat_g", None)
     if trans is not None and trans * scale > 0:
         add(
@@ -345,7 +373,7 @@ def assess(food, added_sugar_threshold: float) -> Assessment:
             "sat_fat",
             "warn",
             "High in saturated fat",
-            f"About {_fmt(sat * scale)} g of saturated fat per serving.",
+            f"About {_fmt(sat * scale)} g of saturated fat {per}.",
         )
     sodium = getattr(food, "sodium_mg", None)
     if sodium is not None and sodium * scale >= 460:
@@ -353,19 +381,29 @@ def assess(food, added_sugar_threshold: float) -> Assessment:
             "sodium",
             "warn",
             "High in sodium",
-            f"About {_fmt(sodium * scale)} mg of sodium per serving.",
+            f"About {_fmt(sodium * scale)} mg of sodium {per}.",
         )
 
     # Added sugar: the reported nutrient when present, else the ingredient
     # aliases (a "bad" without a quantity), else a weak warning on total sugar.
+    # The product IS the sweetener (a jar of honey, a bag of cane sugar) when its
+    # sole ingredient is itself an added-sugar alias: nothing was added, so skip
+    # the whole chain regardless of a reported nutrient (US labels still declare
+    # honey's own sugars as "added").
+    sole = _sole_ingredient(ingredients_text)
+    is_the_sweetener = sole is not None and _text_hit(
+        _ADDED_SUGAR_PATTERNS, _normalize(sole)
+    )
     added = getattr(food, "added_sugar_g", None)
-    if added is not None:
+    if is_the_sweetener:
+        pass
+    elif added is not None:
         if added * scale >= added_sugar_threshold:
             add(
                 "added_sugar",
                 "bad",
                 "Added sugar",
-                f"About {_fmt(added * scale)} g of added sugar per serving, over "
+                f"About {_fmt(added * scale)} g of added sugar {per}, over "
                 f"the {_fmt(added_sugar_threshold)} g limit.",
             )
     elif _text_hit(_ADDED_SUGAR_PATTERNS, haystack):
@@ -383,7 +421,7 @@ def assess(food, added_sugar_threshold: float) -> Assessment:
                 "sugar",
                 "warn",
                 "High in sugar",
-                f"About {_fmt(total * scale)} g of total sugar per serving; the "
+                f"About {_fmt(total * scale)} g of total sugar {per}; the "
                 "label does not separate added from natural sugar.",
             )
 

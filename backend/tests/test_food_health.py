@@ -27,6 +27,7 @@ def _food(serving_g=None, **fields):
         saturated_fat_g=fields.get("saturated_fat_g"),
         sodium_mg=fields.get("sodium_mg"),
         sugar_g=fields.get("sugar_g"),
+        base_unit=fields.get("base_unit", "g"),
         servings=[_serv(serving_g)] if serving_g else [],
     )
     return ns
@@ -178,6 +179,67 @@ def test_added_sugar_alias_fallback_without_a_quantity():
     assert not any(ch.isdigit() for ch in flag.detail)
 
 
+def test_added_sugar_present_and_zero_is_no_flag():
+    # A reported added-sugar nutrient of 0 flags nothing, even with sugar in the
+    # ingredients naming the alias would otherwise catch.
+    r = _assess(ingredients_text="Cream", added_sugar_g=0, sugar_g=3)
+    assert "added_sugar" not in _cats(r)
+    assert "sugar" not in _cats(r)
+
+
+def test_pure_honey_is_the_sweetener_not_added_sugar():
+    # A jar of honey: single ingredient that IS an added-sugar alias, high total
+    # sugar, NOVA 2, no serving. Nothing was added, so no sugar flags at all.
+    r = _assess(ingredients_text="Honey.", sugar_g=80.95, nova_group=2)
+    assert "added_sugar" not in _cats(r)
+    assert "sugar" not in _cats(r)
+    assert r.verdict == "clean"
+
+
+def test_single_ingredient_cane_sugar_is_exempt():
+    # A bag of cane sugar: the sole ingredient is the sweetener itself.
+    r = _assess(ingredients_text="Pure Cane Sugar", sugar_g=100)
+    assert "added_sugar" not in _cats(r)
+    assert "sugar" not in _cats(r)
+
+
+def test_multi_ingredient_with_honey_still_flags_added_sugar():
+    # Honey listed alongside other ingredients WAS added: the exemption is only
+    # for a single-ingredient sweetener.
+    r = _assess(ingredients_text="Rolled oats, honey, salt")
+    assert _by_cat(r, "added_sugar").severity == "bad"
+
+
+def test_the_word_and_marks_more_than_one_ingredient():
+    # "and" separates ingredients, so honey here WAS added, not the whole product.
+    r = _assess(ingredients_text="Peanuts and honey", sugar_g=20)
+    assert _by_cat(r, "added_sugar").severity == "bad"
+
+
+def test_parenthesized_qualifiers_do_not_break_the_exemption():
+    # A single ingredient with qualifiers in parentheses is still one ingredient.
+    r = _assess(ingredients_text="Honey (raw, unfiltered)", sugar_g=80, nova_group=2)
+    assert "added_sugar" not in _cats(r)
+    assert "sugar" not in _cats(r)
+    assert r.verdict == "clean"
+
+
+def test_compound_ingredient_with_sugar_in_parens_still_flags():
+    # One compound ingredient whose parenthesized sub-ingredients carry the
+    # sugar is not itself a sweetener; the alias fallback must still fire.
+    r = _assess(ingredients_text="Milk chocolate (sugar, cocoa butter)", sugar_g=50)
+    assert "added_sugar" in _cats(r)
+
+
+def test_pure_sweetener_with_a_reported_added_sugar_nutrient_is_exempt():
+    # US OFF entries often declare honey's own sugars as "added"; the product is
+    # still the sweetener, so a reported nutrient must not flag it either.
+    r = _assess(ingredients_text="Honey.", added_sugar_g=80, sugar_g=80, nova_group=2)
+    assert "added_sugar" not in _cats(r)
+    assert "sugar" not in _cats(r)
+    assert r.verdict == "clean"
+
+
 def test_total_sugar_is_a_weak_warning_when_added_is_unknown():
     # No added-sugar nutrient and no sugar aliases, but 20 g total sugar/serving.
     r = _assess(ingredients_text="Cream", sugar_g=20)
@@ -204,6 +266,25 @@ def test_saturated_fat_at_and_below_threshold():
 def test_sodium_at_and_below_threshold():
     assert "sodium" in _cats(_assess(ingredients_text="Broth", sodium_mg=460))
     assert "sodium" not in _cats(_assess(ingredients_text="Broth", sodium_mg=459))
+
+
+def test_threshold_detail_says_per_100_without_a_named_serving():
+    # No serving: the numbers are per 100, so the wording must not claim "per
+    # serving".
+    r = _assess(ingredients_text="Broth", sodium_mg=600)
+    detail = _by_cat(r, "sodium").detail
+    assert "per 100 g" in detail and "per serving" not in detail
+    # With a named serving the wording stays "per serving".
+    r2 = food_health.assess(
+        _food(serving_g=240, ingredients_text="Broth", sodium_mg=600), THRESHOLD
+    )
+    assert "per serving" in _by_cat(r2, "sodium").detail
+
+
+def test_threshold_detail_says_per_100_ml_for_a_liquid_base():
+    # A liquid food with no serving reports its numbers per 100 mL.
+    r = _assess(ingredients_text="Broth", sodium_mg=600, base_unit="ml")
+    assert "per 100 mL" in _by_cat(r, "sodium").detail
 
 
 def test_nova_four_is_an_ultra_processed_warning():
