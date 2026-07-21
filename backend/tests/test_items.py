@@ -178,26 +178,91 @@ def test_next7_has_a_horizon(owner):
     assert b["id"] not in ids("next7") | ids("today") | ids("overdue")
 
 
-def test_future_task_can_be_checked_ahead_and_stays_done_on_its_due_day(owner):
-    # Tasks are reminders: you can tick one off before its due date. The
-    # completion lands on today, but the card must still read done when its due
-    # day arrives (checking by that day's date would make it reappear undone).
+def test_future_task_checked_ahead_shows_in_done_only_on_its_completion_day(owner):
+    # Tasks are reminders: you can tick one off before its due date. It shows in
+    # Done on the day you tick it (today, riding in next7), then leaves the board
+    # entirely. The future branch keeps a completed card only on its own
+    # completion day, so any later day it is gone.
     tomorrow = (dt.date.today() + dt.timedelta(days=1)).isoformat()
-    task = make_item(owner, title="Return library books", date_for=tomorrow)
+    day_after = (dt.date.today() + dt.timedelta(days=2)).isoformat()
+    task = make_item(owner, title="Return library books", date_for=day_after)
 
     feed = owner.get(f"/items/feed?date={TODAY}").json()
     assert any(i["id"] == task["id"] for i in feed["next7"])
 
     res = owner.post(f"/items/{task['id']}/complete?date={TODAY}")
     assert res.status_code == 200 and res.json()["completed"] is True
+
+    # Today: shows in next7, crossed out, the "I did it" payoff for the day.
     feed = owner.get(f"/items/feed?date={TODAY}").json()
     done = [i for i in feed["next7"] if i["id"] == task["id"]]
     assert done and done[0]["completed"] is True
 
-    # The due day rolls around: still done, on the strength of yesterday's check.
+    # Tomorrow (a day later, still ahead of the due day): gone from the board.
     feed = owner.get(f"/items/feed?date={tomorrow}").json()
-    today_card = [i for i in feed["today"] if i["id"] == task["id"]]
-    assert today_card and today_card[0]["completed"] is True
+    assert not any(
+        i["id"] == task["id"] for i in feed["overdue"] + feed["today"] + feed["next7"]
+    )
+
+    # The calendar still carries it on its own day, the recovery path for
+    # un-checking an accidental early completion.
+    cal = owner.get(f"/items/calendar?start={day_after}&end={day_after}").json()
+    on_day = [i for i in cal["days"][0]["items"] if i["id"] == task["id"]]
+    assert on_day and on_day[0]["completed"] is True
+
+
+def test_task_checked_ahead_is_absent_when_its_due_day_arrives(owner):
+    # A one-off due tomorrow, ticked today. On its due day (tomorrow) it has
+    # already had its moment in Done, so the today branch drops it; the calendar
+    # keeps it on its date as the recovery path.
+    tomorrow = (dt.date.today() + dt.timedelta(days=1)).isoformat()
+    task = make_item(owner, title="Vet visit", date_for=tomorrow)
+
+    res = owner.post(f"/items/{task['id']}/complete?date={TODAY}")
+    assert res.status_code == 200 and res.json()["completed"] is True
+
+    feed = owner.get(f"/items/feed?date={tomorrow}").json()
+    assert not any(
+        i["id"] == task["id"] for i in feed["overdue"] + feed["today"] + feed["next7"]
+    )
+
+    cal = owner.get(f"/items/calendar?start={tomorrow}&end={tomorrow}").json()
+    on_day = [i for i in cal["days"][0]["items"] if i["id"] == task["id"]]
+    assert on_day and on_day[0]["completed"] is True
+
+
+def test_task_due_today_checked_today_shows_done_today_then_drops(owner):
+    # A one-off due today, checked today, sits in Done today (unchanged), then
+    # leaves the board on the following day (existing past-branch behavior).
+    tomorrow = (dt.date.today() + dt.timedelta(days=1)).isoformat()
+    task = make_item(owner, kind="appointment", title="Dentist", date_for=TODAY,
+                     time_of_day="09:00", end_time="09:30")
+
+    owner.post(f"/items/{task['id']}/complete?date={TODAY}")
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    mine = [i for i in feed["today"] if i["id"] == task["id"]]
+    assert mine and mine[0]["completed"] is True
+
+    feed = owner.get(f"/items/feed?date={tomorrow}").json()
+    assert not any(
+        i["id"] == task["id"] for i in feed["overdue"] + feed["today"] + feed["next7"]
+    )
+
+
+def test_future_task_with_pending_kid_mark_stays_on_the_board(owner, child):
+    # A kid's tap on a future card is pending, not done. The guard keys strictly
+    # on the completed state, so a pending future card is never skipped.
+    tomorrow = (dt.date.today() + dt.timedelta(days=1)).isoformat()
+    task = make_item(owner, title="Pack your bag", date_for=tomorrow,
+                     assignee_ids=[user_id(child)])
+
+    res = child.post(f"/items/{task['id']}/complete?date={TODAY}")
+    assert res.status_code == 200 and res.json()["completed"] is False
+
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    mine = [i for i in feed["next7"] if i["id"] == task["id"]]
+    assert mine and mine[0]["completed"] is False
+    assert mine[0]["pending_by"] == user_id(child)
 
 
 def test_overdue_carries_past_due_oneoffs_forward(owner):

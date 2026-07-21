@@ -67,8 +67,8 @@ def events(client):
     return res.json()
 
 
-def feed_ids(client):
-    feed = client.get(f"/items/feed?date={TODAY.isoformat()}").json()
+def feed_ids(client, date=TODAY):
+    feed = client.get(f"/items/feed?date={date.isoformat()}").json()
     return {
         i["id"]: i
         for bucket in ("overdue", "today", "next7")
@@ -389,9 +389,12 @@ def test_organizer_done_mirrors_onto_copies_without_leaking(village, owner, othe
     ev = rsvp(other, out["event_id"], "going", [user_id(other)])
     copy_id = ev["my_item_id"]
 
-    # the organizer marks their source done -> the copy shows done
+    # the organizer marks their source done -> the copy shows done on its own
+    # day (the mirror lands on the event's date, TOMORROW, not on today)
     assert owner.post(f"/items/{item['id']}/complete?date={TODAY.isoformat()}").status_code == 200
-    assert feed_ids(other)[copy_id]["completed"] is True
+    assert feed_ids(other, TOMORROW)[copy_id]["completed"] is True
+    # but NOT in the attendee family's feed today (the mirror day is the event day)
+    assert copy_id not in feed_ids(other, TODAY)
     # and the copy's completion carries NO cross-family user id
     rows = _completions(app, copy_id)
     assert len(rows) == 1 and rows[0].user_id is None and rows[0].cancelled is False
@@ -400,7 +403,7 @@ def test_organizer_done_mirrors_onto_copies_without_leaking(village, owner, othe
     assert owner.request(
         "DELETE", f"/items/{item['id']}/complete?date={TODAY.isoformat()}"
     ).status_code == 200
-    assert feed_ids(other)[copy_id]["completed"] is False
+    assert feed_ids(other, TOMORROW)[copy_id]["completed"] is False
     assert _completions(app, copy_id) == []
 
 
@@ -411,7 +414,8 @@ def test_rsvp_after_source_done_is_born_done(village, owner, other, app):
     assert owner.post(f"/items/{item['id']}/complete?date={TODAY.isoformat()}").status_code == 200
     ev = rsvp(other, out["event_id"], "going", [user_id(other)])
     copy_id = ev["my_item_id"]
-    assert feed_ids(other)[copy_id]["completed"] is True
+    # born done, shown on the event's own day (TOMORROW)
+    assert feed_ids(other, TOMORROW)[copy_id]["completed"] is True
     rows = _completions(app, copy_id)
     assert len(rows) == 1 and rows[0].user_id is None and rows[0].cancelled is False
 

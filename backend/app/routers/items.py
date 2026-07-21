@@ -329,7 +329,7 @@ def _feed_item(
 # One item's completion rows, prefetched:
 # (user_id, date_for, pending, cancelled) quadruples.
 # A pending row is a minor's tap awaiting a parent — it must never read as done.
-CompletionRows = list[tuple[int | None, dt.date, bool]]
+CompletionRows = list[tuple[int | None, dt.date, bool, bool]]
 
 
 def _completions_by_item(db: Session, items: list[Item]) -> dict[int, CompletionRows]:
@@ -463,6 +463,14 @@ def _build_feed_item(
     )
 
 
+def _completed_on(completions: CompletionRows, date: dt.date) -> bool:
+    """Whether a valid completion landed on this exact day. Same validity rule
+    _build_feed_item uses for a dated card's `done` (non-pending, non-cancelled),
+    but day-specific: a mirrored village copy's user_id=None row counts like any
+    other, and a kid's pending tap never does."""
+    return any(day == date and not pend and not canc for _, day, pend, canc in completions)
+
+
 # One-off cards keep nagging for this long after their date before they fall
 # off the board for good; past that they live only in the calendar's history.
 _MAX_OVERDUE_LOOKBACK = dt.timedelta(days=90)
@@ -527,7 +535,13 @@ def feed(
             continue
 
         if item.date_for == date_for:
-            today.append(_build_feed_item(db, item, user, date_for, comps[item.id], item.id in shared))
+            fi = _build_feed_item(db, item, user, date_for, comps[item.id], item.id in shared)
+            # Its due day has arrived. A card checked off ahead of time already
+            # had its day in Done on the day it was ticked, so it doesn't come
+            # back now; one done on its own day stays put, crossed out, today.
+            if fi.completed and not _completed_on(comps[item.id], date_for):
+                continue
+            today.append(fi)
         elif item.date_for is None:
             fi = _build_feed_item(db, item, user, date_for, comps[item.id], item.id in shared)
             # An undated task finished on an earlier day is archived off the
@@ -551,7 +565,13 @@ def feed(
                 continue
             overdue.append(fi)
         else:  # date_for in (today, today + 7]
-            next7.append(_build_feed_item(db, item, user, date_for, comps[item.id], item.id in shared))
+            fi = _build_feed_item(db, item, user, date_for, comps[item.id], item.id in shared)
+            # A future one-off ticked off ahead of schedule belongs in Done only
+            # on the day it was ticked (today's Done pulls from next7). Any other
+            # day it reads completed, it has left the board and stays gone.
+            if fi.completed and not _completed_on(comps[item.id], date_for):
+                continue
+            next7.append(fi)
 
     # All-day events first, then timed cards in day order; untimed sink to the end.
     late = dt.time(23, 59)
