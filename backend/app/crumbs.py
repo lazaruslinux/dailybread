@@ -49,7 +49,7 @@ def level_cost(level: int) -> int:
     return 10 + 5 * (level - 1)
 
 
-# The five tiers, by level band of 10. His names.
+# The five tiers, by level band of 10.
 TIERS = ["slice", "roll", "loaf", "baker", "breadmaster"]
 
 

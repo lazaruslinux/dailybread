@@ -7,8 +7,8 @@ import { Sheet } from './Recipes'
 
 // The first open of the day says hello and offers to set today's mood and
 // status. Once is once: saving, a mood already set on another device, or
-// "I'll set it later" all quiet it until tomorrow (his call 2026-07-12 -- it
-// used to re-offer on every visit and read as nagging).
+// "I'll set it later" all quiet it until tomorrow. Re-offering on every
+// visit read as nagging.
 
 const dayKey = (id: number) => `db_greet_${id}`
 

@@ -1049,10 +1049,9 @@ def _notify_village(
     body carries per-family text (each family's own wall clock); a str is the
     same for all.
 
-    send_push=False makes the line inbox-only. His policy (2026-07-18): the
-    phone buzzes ONLY for event invitations and changes to events the family
-    RSVP'd going to — joins, shelf shares, and RSVP replies are history, not
-    interruptions."""
+    send_push=False makes the line inbox-only. The phone buzzes ONLY for
+    event invitations and changes to events the family RSVP'd going to. Joins,
+    shelf shares, and RSVP replies are history, not interruptions."""
     if not users:
         return
 
@@ -1335,7 +1334,7 @@ def share_event(
 
     recipients = _village_adults(db, village.id, exclude_family=parent.family_id)
     first = parent.display_name.split()[0]
-    # Invitations are one of the two things that still PUSH (his policy).
+    # Invitations are one of the two things that still PUSH.
     _notify_village(
         db,
         recipients,
@@ -1433,7 +1432,7 @@ def set_rsvp(
         label = f"Going · {len(attendee_ids)}"
     family_name = db.scalar(select(Family.name).where(Family.id == parent.family_id))
     # RSVP replies are history for the organizer, not an interruption:
-    # inbox-only (his policy).
+    # inbox-only.
     _notify_village(
         db,
         [u for u in db.scalars(select(User).where(User.family_id == event.family_id, User.role == Role.parent))],
@@ -1475,7 +1474,7 @@ def clear_rsvp(
     src = db.get(Item, event.item_id)
     family_name = db.scalar(select(Family.name).where(Family.id == parent.family_id))
     title = src.title if src else ""
-    # Withdrawals are history too: inbox-only (his policy).
+    # Withdrawals are history too: inbox-only.
     _notify_village(
         db,
         [u for u in db.scalars(select(User).where(User.family_id == event.family_id, User.role == Role.parent))],

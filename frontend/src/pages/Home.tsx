@@ -226,8 +226,8 @@ export function Home({
   // Parent-only board lens: which members' cards to show. Empty means everyone's.
   const [filter, setFilter] = useState<number[]>([])
   // How today's timed cards are drawn: stacked list, or laid on a day timeline.
-  // Always opens on List; Timeline lasts only until the page is left (his call
-  // 2026-07-12 — the board should greet everyone the same way every time).
+  // Always opens on List; Timeline lasts only until the page is left, so the
+  // board greets everyone the same way every time.
   const [view, setView] = useState<'list' | 'timeline'>('list')
   // The day the timeline shows. null = today (the live board); any other day
   // is a read-only peek fetched from the calendar endpoint.

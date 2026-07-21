@@ -947,8 +947,8 @@ function ServerOverview() {
 
 // ---- rename the family ---------------------------------------------------------
 
-// US zones only for the family-clock picker (his call 2026-07-12): the
-// 400-entry every-zone list was noise. The create-family wizard still sends
+// US zones only for the family-clock picker: the 400-entry every-zone list
+// was noise. The create-family wizard still sends
 // the browser's own zone, whatever it is.
 const TIMEZONES: { id: string; label: string }[] = [
   { id: 'America/New_York', label: 'Eastern (New York)' },
