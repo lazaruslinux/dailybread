@@ -75,6 +75,40 @@ so recipe and diary math never cares where a food came from. Diary entries
 snapshot their nutrition at log time; editing a recipe later never rewrites
 anyone's history.
 
+## Food health check
+
+Scanning a barcode can also grade the product. Migration `0054` adds four
+nullable columns to `foods`: `ingredients_text` (the raw label ingredient
+string), `added_sugar_g` (per 100 of the base unit, alongside the macros),
+`additives` (Open Food Facts additive tags as comma-joined text, for example
+`en:e102,en:e211`), and `nova_group` (the 1-4 NOVA
+processing class). They fill from the same lookup path every food uses: USDA
+supplies the ingredient string and the added-sugars nutrient (number 539) but
+no additives or NOVA; Open Food Facts supplies all four (`ingredients_text`,
+`additives_tags`, `nova_group`, `added-sugars_100g`).
+
+`app/food_health.py` is the rule engine: pure functions over those label
+fields, no database and no network. It matches ingredient terms on letter and
+digit boundaries (so olive or coconut oil never trips the seed-oil rule, and a
+leading "non-" defuses "hydrogenated") across seed oils, hydrogenated oils,
+artificial sweeteners and dyes, sugar alcohols, and preservatives split into
+bad and warn sets. Open Food Facts e-number tags map onto the same categories,
+so a tag hit and an ingredient hit for one concern collapse to a single line.
+On top of the terms sit per-serving nutrient thresholds (trans fat, saturated
+fat, sodium, and added sugar, the last against the `HEALTH_ADDED_SUGAR_G`
+config default of 5 g) and NOVA flags. The result is a list of severity-ranked
+flags and a verdict tier: `whole`, `clean`, `mixed`, `poor`, or `unknown`. Any
+hydrogenated oil, or two or more serious concerns, forces `poor`.
+
+`GET /foods/health/{code}` (adults only, like every food lookup) reuses the
+same barcode resolution the scan path uses, then heals on read: a shared-cache
+row from before `0054`, with `ingredients_text`, `additives`, and `nova_group`
+all still NULL, gets one refetch (USDA then Open Food Facts) to fill the new
+columns. A successful fetch writes an empty string for an absent list rather
+than NULL, so the row reads as already enriched and is never refetched again; a
+failed fetch leaves it untouched and the assessment falls back to the nutrition
+numbers alone.
+
 ## Push notifications
 
 Standard Web Push with VAPID (`app/push.py`). The server sends reminders
@@ -123,7 +157,7 @@ explicitly.
 
 `POST /api/ingest/health` accepts two dialects on one endpoint, sniffed from
 the payload shape: the JSON that Health Auto Export (iOS) sends, and the JSON
-that HC Webhook (Android, reading Health Connect — Pixel Watch, Fitbit,
+that HC Webhook (Android, reading Health Connect: Pixel Watch, Fitbit,
 Samsung) sends. Both authenticate with a per-member bearer token (stored
 hashed, mintable and revocable from the app) instead of the session cookie,
 so the endpoint a phone automation hits has no CSRF surface. Imports are

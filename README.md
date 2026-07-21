@@ -9,14 +9,14 @@ control.
   <img src="docs/screenshots/home-dark.png" alt="The same board in the dark theme" width="200">
   <img src="docs/screenshots/kitchen-light.png" alt="Kitchen tab: tonight's dinner plan and per-store grocery lists" width="200">
   <img src="docs/screenshots/health-light.png" alt="Health tab: steps, active calories, distance, exercise, and resting heart rate" width="200">
+  <img src="docs/screenshots/scan-light.png" alt="Scan result: a packaged food's label checked, with a verdict and flagged ingredients" width="200">
 </p>
 
 The screens show a fictional family; none of it is real data.
 
 ## Status
 
-In daily use by a real family. See [ROADMAP.md](ROADMAP.md) for what exists
-and what's next.
+In daily use by a real family, and in active development.
 
 ## What it does
 
@@ -36,6 +36,15 @@ and what's next.
   that auto-adjust a daily calorie target, and an exercise log that earns
   calories back. A finished day can be locked, and any food can be pinned to a
   saved-foods shelf for quick logging.
+- Barcode Health Check: an adult-only "Scan a food" button in the masthead on
+  every tab. Scan a packaged food's barcode (or type the code) and the app
+  checks the label against the same OpenFoodFacts and USDA lookups it already
+  uses, then shows a verdict from Whole food down to Highly processed with
+  severity-sorted flags: seed and hydrogenated oils, artificial sweeteners and
+  dyes, common preservatives, high sodium, added sugar, ultra-processed NOVA
+  marks, and more, alongside per-serving nutrition. A thin label reads Limited
+  data instead of pretending the food is clean. From a result you can add the
+  food to your diary, save it as a custom food, or add it to a recipe.
 - Health: your own phone pushes fitness data to your server (Apple Health or
   Health Connect), and nothing is ever fetched from a cloud service. The Health
   tab shows daily steps, active calories, and distance with time-of-day
@@ -58,9 +67,9 @@ and what's next.
   parents see. Kids can still cast their dinner vote.
 - Villages: private circles of linked families, invitation-only and
   undiscoverable, for sharing across households without any social-media
-  mechanics. Families share recipes and share events with per-family RSVPs that
-  land on each attending family's board in their own timezone. No feed, no
-  likes, ever.
+  mechanics. Families share recipes and custom foods, and share events with
+  per-family RSVPs that land on each attending family's board in their own
+  timezone. No feed, no likes, ever.
 - Onboarding by invite code: the server admin mints a short-lived code; the
   invitee picks their own username and password and founds their own family.
 - Per-member themes, daily moods rendered as weather, and a private journal.
@@ -113,7 +122,9 @@ proxies `/api` to the backend) and the backend separately at `127.0.0.1:8000`
 for development. You use the app through `8080` alone.
 
 Backend tests: `cd backend && python -m pytest`. Frontend build:
-`cd frontend && npm run build`. Both run in CI on every push.
+`cd frontend && npm run build`. Both run in CI on every push. The backend
+carries a large pytest suite (713 backend tests), while the frontend is
+type-checked with tsc and built in CI, with UI changes verified manually.
 
 ## Built with AI assistance
 
