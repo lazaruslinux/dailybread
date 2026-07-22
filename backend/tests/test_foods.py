@@ -976,3 +976,118 @@ def test_cache_hit_never_heals_on_a_bare_household_name(owner, monkeypatch):
     again = owner.get("/foods/barcode/4333333333333").json()
     assert again["base_unit"] == "g"
     assert again["servings"][0]["grams"] == 30.0
+
+
+def test_usda_serving_drops_junk_household_and_maps_unece_codes():
+    # A scraped label header as the household text is dropped, and the UNECE
+    # unit code becomes a display unit: the soup entry yields just "120 mL".
+    assert (
+        foods_api._usda_serving(
+            {"householdServingFullText": "Amount/serving", "servingSize": 120.0, "servingSizeUnit": "MLT"}
+        )
+        == "120 mL"
+    )
+    # GRM maps to g.
+    assert (
+        foods_api._usda_serving(
+            {"householdServingFullText": "", "servingSize": 30.0, "servingSizeUnit": "GRM"}
+        )
+        == "30 g"
+    )
+    # A real household text is kept alongside the mapped size.
+    assert (
+        foods_api._usda_serving(
+            {"householdServingFullText": "1/2 cup", "servingSize": 120.0, "servingSizeUnit": "ml"}
+        )
+        == "1/2 cup (120 mL)"
+    )
+    # An unrecognised unit code passes through unchanged.
+    assert (
+        foods_api._usda_serving(
+            {"householdServingFullText": "", "servingSize": 1.0, "servingSizeUnit": "IU"}
+        )
+        == "1 IU"
+    )
+
+
+def test_clean_serving_name_behaviour_and_idempotence():
+    cases = {
+        "Amount/serving (120 MLT)": "120 mL",
+        "2 Tbsp (30mL)": "2 Tbsp (30mL)",
+        "28.3g": "28.3g",
+        "1 serving (28.3 g)": "1 serving (28.3 g)",
+        "0.75 cup": "0.75 cup",
+        "1 cup (240 MLT)": "1 cup (240 mL)",
+        # A vulgar fraction counts as a number: not a junk household header.
+        "½ cup serving (120 mL)": "½ cup serving (120 mL)",
+    }
+    for raw, want in cases.items():
+        assert foods_api._clean_serving_name(raw) == want
+        # Idempotent: applying twice equals once.
+        assert foods_api._clean_serving_name(want) == want
+
+
+def test_cache_hit_heals_junk_serving_names(owner, monkeypatch):
+    # A pre-fix row cached with a raw USDA serving name ("Amount/serving (120
+    # MLT)") is rewritten to its display form ("120 mL") on the next scan.
+    def off_hit(code):
+        return foods_api.FoodResult(
+            "off", code, "Chicken Soup", "Campbell's",
+            40.0, 2.0, 5.0, 1.0,
+            serving="Amount/serving (120 MLT)", serving_amount=120.0, base_unit="ml",
+        )
+
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", off_hit)
+    first = owner.get("/foods/barcode/4444444444444").json()
+    assert first["servings"][0]["name"] == "Amount/serving (120 MLT)"
+
+    def must_not_be_called(code):
+        raise AssertionError("the heal must not re-hit the network")
+
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", must_not_be_called)
+    again = owner.get("/foods/barcode/4444444444444").json()
+    assert again["id"] == first["id"]
+    assert again["servings"][0]["name"] == "120 mL"
+
+    # Idempotent: a third scan leaves the healed name in place.
+    third = owner.get("/foods/barcode/4444444444444").json()
+    assert third["servings"][0]["name"] == "120 mL"
+
+
+def test_cache_hit_name_heal_enables_liquid_heal_same_request(owner, monkeypatch):
+    # A row cached as grams whose serving name is only a junk-wrapped UNECE
+    # code heals the NAME to "120 mL" first, which then carries the unambiguous
+    # metric mark the liquid heal needs, so the same scan also flips the unit.
+    def off_hit(code):
+        return foods_api.FoodResult(
+            "off", code, "Broth", "Swanson",
+            30.0, 1.0, 2.0, 0.5,
+            serving="Amount/serving (120 MLT)", serving_amount=120.0, base_unit="g",
+        )
+
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", off_hit)
+    first = owner.get("/foods/barcode/4555555555555").json()
+    assert first["base_unit"] == "g"  # cached wrong, as a pre-fix scan would
+
+    def must_not_be_called(code):
+        raise AssertionError("the heal must not re-hit the network")
+
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", must_not_be_called)
+    again = owner.get("/foods/barcode/4555555555555").json()
+    assert again["servings"][0]["name"] == "120 mL"
+    assert again["base_unit"] == "ml"
+
+
+def test_scan_never_renames_a_custom_food(owner):
+    # A family's own custom food resolves before the heal, so a weird serving
+    # name is left exactly as entered (the heal touches shared cache rows only).
+    made = owner.post(
+        "/foods",
+        json=_food(
+            "Homemade Broth", barcode="4666666666666",
+            servings=[{"name": "Amount/serving (120 MLT)", "grams": 120}],
+        ),
+    )
+    assert made.status_code == 201, made.text
+    scanned = owner.get("/foods/barcode/4666666666666").json()
+    assert scanned["servings"][0]["name"] == "Amount/serving (120 MLT)"

@@ -264,15 +264,55 @@ def _rank_usda(query: str, foods: list[dict]) -> list[dict]:
     return sorted((by_key[k] for k in order), key=sort_key)
 
 
+# USDA branded entries ship serving-size units as UNECE codes (GRM = grams,
+# MLT = millilitres, and so on). Map the codes we see to the display units the
+# app uses; an unrecognised code passes through unchanged.
+_UNIT_DISPLAY = {
+    "grm": "g", "g": "g",
+    "mlt": "mL", "ml": "mL",
+    "mg": "mg", "kg": "kg",
+    "oz": "oz", "onz": "oz",
+    "l": "L", "ltr": "L",
+}
+
+
+def _junk_household(text: str) -> bool:
+    """A USDA householdServingFullText that's a scraped label-table header
+    ("Amount/serving", "AMOUNT PER SERVING") rather than a real portion. The
+    numeral guard keeps genuine portions ("1 serving", "2 Tbsp", "½ cup
+    serving" — isnumeric covers vulgar fractions), which always carry a
+    number."""
+    return not any(c.isnumeric() for c in text) and re.search(r"amount|serving", text, re.I) is not None
+
+
+def _clean_serving_name(name: str) -> str:
+    """Normalise a serving name for display, idempotently. Standalone UNECE unit
+    tokens GRM/MLT become g/mL; and when the whole name is a junk household
+    header wrapping a real size ("Amount/serving (120 MLT)"), only the size is
+    kept ("120 mL")."""
+    step1 = re.sub(r"\bGRM\b", "g", name, flags=re.I)
+    step1 = re.sub(r"\bMLT\b", "mL", step1, flags=re.I)
+    m = re.match(r"^\s*([^()]*?)\s*\(([^()]+)\)\s*$", step1)
+    if m and _junk_household(m.group(1)):
+        return m.group(2).strip()
+    return step1
+
+
 def _usda_serving(f: dict) -> str:
     """A display serving from a USDA search hit. Branded foods carry a household
     text ("1 slice") and/or a gram size; we show whichever we have, both when we
-    can. Foundation/SR Legacy items usually have neither, so this returns ""."""
+    can. USDA ships UNECE unit codes (GRM/MLT), rendered here as display units,
+    and sometimes a scraped label header ("Amount/serving") in place of a real
+    household text, dropped here. Foundation/SR Legacy items usually have
+    neither, so this returns ""."""
     household = (f.get("householdServingFullText") or "").strip()
+    if _junk_household(household):
+        household = ""
     grams = ""
     size = _num(f.get("servingSize"))
     if size is not None:
-        unit = (f.get("servingSizeUnit") or "").strip()
+        raw_unit = (f.get("servingSizeUnit") or "").strip()
+        unit = _UNIT_DISPLAY.get(raw_unit.lower(), raw_unit)
         grams = f"{size:g} {unit}".strip()
     if household and grams:
         return f"{household} ({grams})"

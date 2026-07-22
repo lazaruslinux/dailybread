@@ -9,7 +9,7 @@ import {
   Sheet,
   foldersOf,
 } from './Recipes'
-import { PortionSheet, foodTotals } from './PortionSheet'
+import { PortionSheet, foodTotals, trim } from './PortionSheet'
 import { Button } from './ui'
 
 // The health-check scanner: a masthead entry point that scans a barcode, reads
@@ -74,15 +74,6 @@ function slotByHour(): api.DiarySlot {
   return 'snack'
 }
 
-// Digits and a single decimal point (a second dot would make Number() NaN),
-// matching the add-sheet's amount input.
-function sanitizeAmount(raw: string): string {
-  let s = raw.replace(/[^0-9.]/g, '')
-  const dot = s.indexOf('.')
-  if (dot !== -1) s = s.slice(0, dot + 1) + s.slice(dot + 1).replace(/\./g, '')
-  return s
-}
-
 type Phase = 'scan' | 'loading' | 'result' | 'unknown' | 'error'
 type Action = 'diary' | 'custom' | 'recipe' | null
 
@@ -92,9 +83,6 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [action, setAction] = useState<Action>(null)
-  // The serving size the member types when the scanned food carries none, so
-  // the nutrition panel can show per-serving facts off the label they're holding.
-  const [servingAmt, setServingAmt] = useState('100')
   // Existing custom-food folders, so "Save as custom food" offers the same
   // datalist the Kitchen entry point does.
   const [folders, setFolders] = useState<string[]>([])
@@ -110,7 +98,6 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
     setCode(c)
     setPhase('loading')
     setError(null)
-    setServingAmt('100')
     try {
       setResult(await api.healthCheck(c))
       setPhase('result')
@@ -196,31 +183,18 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
   const { verdict, flags } = result.assessment
   const v = VERDICT[verdict]
   const sorted = [...flags].sort((a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity])
-  const hasServing = food.servings.length > 0
+  // A zero-gram serving row can't measure a portion, so treat it as no serving
+  // and read per-100 rather than render "PER SERVING (0 g)".
+  const hasServing = food.servings.length > 0 && food.servings[0].grams > 0
   const unitLabel = food.base_unit === 'ml' ? 'mL' : 'g'
-  // With no named serving the member types the label's serving size and the
-  // panel rescales live; empty/invalid/zero falls back to 100.
-  const typedAmt = Number(servingAmt) || 0
-  const noServingAmt = typedAmt > 0 ? typedAmt : 100
-  // All ten nutrients for one serving, so the panel's expandable rows (sat
-  // fat, sodium, fiber) back up the flags above it.
+  // All ten nutrients for one serving (or per 100 base units when the database
+  // lists none), so the panel's expandable rows (sat fat, sodium, fiber) back
+  // up the flags above it.
   const perServe = foodTotals(
     food,
-    hasServing ? 1 : noServingAmt,
+    hasServing ? 1 : 100,
     hasServing ? 'serving:0' : food.base_unit,
   )
-  // When the member typed a serving size for a food that carried none, carry it
-  // into the three actions as one synthetic client-side serving so the app
-  // remembers it: a saved custom food seeds this row (rename-able), and the
-  // diary/recipe pickers default to it. An untouched 100 means they told us
-  // nothing, so the raw food rides through unchanged.
-  const actionFood: api.Food =
-    !hasServing && noServingAmt !== 100
-      ? {
-          ...food,
-          servings: [{ name: '1 serving', grams: noServingAmt }],
-        }
-      : food
 
   return (
     <>
@@ -259,22 +233,20 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
         <div className="mt-5">
           {hasServing ? (
             <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
-              {food.servings[0].name}
+              Per serving{' '}
+              <span className="normal-case">
+                ({trim(food.servings[0].grams)} {unitLabel})
+              </span>
             </p>
           ) : (
             <>
-              <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
-                <span>Per</span>
-                <input
-                  inputMode="decimal"
-                  value={servingAmt}
-                  onChange={(e) => setServingAmt(sanitizeAmount(e.target.value))}
-                  aria-label="Serving size"
-                  className="min-h-11 w-16 rounded-lg border border-fg/15 bg-transparent px-2 text-center text-sm font-semibold normal-case tracking-normal text-fg focus:border-accent-bright focus:outline-none"
-                />
-                <span>{unitLabel}</span>
-              </div>
-              <p className="mb-2 text-xs text-fg/50">Type the serving size from the label.</p>
+              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
+                Per <span className="normal-case">100 {unitLabel}</span>
+              </p>
+              <p className="mb-2 text-xs text-fg/50">
+                The food database lists no serving size for this product, so these figures are per
+                100 {unitLabel}.
+              </p>
             </>
           )}
           <NutritionPanel m={perServe} />
@@ -295,7 +267,7 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
 
       {action === 'diary' && (
         <PortionSheet
-          pick={{ kind: 'food', food: actionFood }}
+          pick={{ kind: 'food', food }}
           date={api.localDate()}
           slot={slotByHour()}
           onClose={() => setAction(null)}
@@ -308,7 +280,7 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
       {action === 'custom' && (
         <FoodSheet
           food={null}
-          prefill={actionFood}
+          prefill={food}
           folders={folders}
           barcode={food.source_id}
           onClose={() => setAction(null)}
@@ -321,7 +293,7 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
       )}
       {action === 'recipe' && (
         <RecipePickSheet
-          food={actionFood}
+          food={food}
           onClose={() => setAction(null)}
           onDone={() => {
             setAction(null)

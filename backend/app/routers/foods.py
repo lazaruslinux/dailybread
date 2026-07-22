@@ -266,6 +266,27 @@ def _heal_liquid_unit(db: Session, food: Food) -> None:
         db.commit()
 
 
+def _heal_serving_names(db: Session, food: Food) -> None:
+    """A barcode scanned before the serving-name fix can sit in the shared cache
+    with a raw USDA serving name: a scraped label header wrapping a UNECE unit
+    code ("Amount/serving (120 MLT)"). Rewrite each cached serving name to its
+    display form ("120 mL") in place on the next scan. Must run BEFORE
+    _heal_liquid_unit: a name healed to "120 mL" newly carries the unambiguous
+    metric mark the liquid heal requires, so a wrong-unit row gets both heals in
+    one scan. Barcode cache rows only (family_id None, USDA/OFF source); a
+    family's own custom food is never touched."""
+    if food.family_id is not None or food.source == FoodSource.custom:
+        return
+    changed = False
+    for s in food.servings:
+        cleaned = foods_api._clean_serving_name(s.name)
+        if cleaned != s.name:
+            s.name = cleaned
+            changed = True
+    if changed:
+        db.commit()
+
+
 def _resolve_barcode(db: Session, user: User, code: str) -> Food:
     """Resolve a scanned barcode to a stored Food, checking home before asking
     the internet: first the family's own custom foods (a product they entered by
@@ -310,6 +331,7 @@ def _resolve_barcode(db: Session, user: User, code: str) -> Food:
         .limit(1)
     )
     if cached is not None:
+        _heal_serving_names(db, cached)
         _heal_liquid_unit(db, cached)
         return cached
 
