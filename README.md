@@ -123,7 +123,7 @@ for development. You use the app through `8080` alone.
 
 Backend tests: `cd backend && python -m pytest`. Frontend build:
 `cd frontend && npm run build`. Both run in CI on every push. The backend
-carries a large pytest suite (713 backend tests), while the frontend is
+carries a large pytest suite (744 backend tests), while the frontend is
 type-checked with tsc and built in CI, with UI changes verified manually.
 
 ## Built with AI assistance
@@ -131,6 +131,10 @@ type-checked with tsc and built in CI, with UI changes verified manually.
 I build this project with the help of Claude, Anthropic's AI assistant. It
 contributes to the code, architecture, and documentation. I direct the work,
 review it, and decide what ships.
+
+## About
+
+dailybread is built and maintained by [Lazarus Labs](https://lazaruslabsllc.com).
 
 ## License
 
