@@ -64,6 +64,7 @@ PREF_KINDS = frozenset(
         "village",  # anything crossing the family wall: event invites, RSVPs,
         # changes, call-offs — a separate consent surface from "family",
         # which only ever means your own household's board.
+        "household",  # an invited household finished setting up (server owner only)
     }
 )
 

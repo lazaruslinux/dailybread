@@ -41,17 +41,28 @@ public catalog data, never anything a family typed in; custom foods are
 family-scoped like everything else.
 
 Villages are the only structure that spans families: private, invitation-only
-circles for sharing between linked households. There is no discovery, no
-feed, and no like button, by design.
+circles for sharing between linked households. Recipes, custom foods and
+events can be put on a village shelf, and shared foods keep the folder they
+were filed under. There is no discovery, no feed, and no like button, by
+design.
 
 ## Roles and privacy
 
 Two roles: parent and child. Children get a simplified, parent-supervised
 app: no nutrition area, a narrowed board, and check-offs that wait for parent
 approval. Some surfaces are self-only even among adults, with no parent
-override: the journal, the food diary, and the fitness data. The permission
-matrix is enforced in route dependencies (`app/deps.py`) and pinned down by
-tests per surface.
+override: the journal, the food diary, and the fitness data.
+
+Two admin flags sit orthogonally to the roles. `is_admin` is family-scoped and
+can be held by more than one parent; it covers managing that family's members.
+`is_owner` marks the single server admin, the account the setup wizard created,
+and covers install-wide powers: minting invite codes, the server overview, and
+the only actions that reach across the family wall, namely removing a household
+and resetting any account's password.
+
+Most of the permission matrix is enforced in route dependencies
+(`app/deps.py`) and pinned down by tests per surface. The `is_owner` checks are
+the exception and sit inline in the routers that need them.
 
 ## Food data
 
@@ -60,7 +71,9 @@ The server proxies all food lookups so phones never call a third party:
 - **Search** goes to USDA FoodData Central (`app/foods_api.py`). Results are
   deduped (duplicate branded listings collapse on barcode or brand+name) and
   reranked by how well they match the typed words, since FDC's own relevance
-  is poor. Good answers are cached in memory for a few minutes.
+  is poor. Good answers are cached in memory for 15 minutes, up to 200 queries.
+  Search has no fallback source: with no `USDA_API_KEY` configured it returns
+  an error rather than degrading.
 - **Barcodes** resolve in order: the family's own custom foods, then the
   shared cache, then USDA's branded dataset (label-accurate for US products),
   then Open Food Facts. A product scanned once is cached, so scanning it
@@ -73,7 +86,13 @@ The server proxies all food lookups so phones never call a third party:
 Nutrition is stored per 100 g (or 100 mL for liquids), whatever the source,
 so recipe and diary math never cares where a food came from. Diary entries
 snapshot their nutrition at log time; editing a recipe later never rewrites
-anyone's history.
+anyone's history. A diary entry can also carry a per-entry macro override, for
+when a source's own numbers are incomplete: the override travels with that
+entry and never edits the shared food.
+
+Custom foods can be shared across a village the same way recipes are, through
+a pointer table rather than a copy. Saving a shared food makes a real copy in
+the saving family, which then belongs to them.
 
 ## Food health check
 

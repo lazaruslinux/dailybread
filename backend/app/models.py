@@ -1342,7 +1342,7 @@ class InboxEntry(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    kind: Mapped[str] = mapped_column(String(12))  # crumb/board/dinner/workout/pending/approved/invite/rsvp/village/grocery/recipe/member
+    kind: Mapped[str] = mapped_column(String(12))  # crumb/board/dinner/workout/pending/approved/invite/rsvp/village/grocery/recipe/member/household
     title: Mapped[str] = mapped_column(String(200))
     body: Mapped[str] = mapped_column(String(200), default="")
     read: Mapped[bool] = mapped_column(Boolean, default=False)

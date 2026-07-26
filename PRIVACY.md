@@ -13,6 +13,8 @@ your information anywhere unless you explicitly connect an outside service.
 
 - Everything you enter (routines, to-dos, schedule, food logs, family accounts)
   is stored in your own PostgreSQL database, on your own hardware.
+- Profile photos are files on the server's own disk, in a separate volume from
+  the database. Back them up separately if you want to keep them.
 - Backups, if you set them up, are written wherever you choose, on your own
   storage.
 
@@ -49,6 +51,9 @@ reporting, no ads, and no tracking.
 
 - Traffic between your device and the server is encrypted with TLS.
 - Passwords are stored hashed with Argon2, never in plain text.
-- Accounts are created by an administrator. There is no public sign-up.
+- There is no public sign-up. The first account is created by whoever runs the
+  first-run setup wizard, and every account after it needs either an admin or a
+  short-lived invite code from the server admin. An invited person picks their
+  own username and password.
 - On the private family instance, the database is meant to sit on an encrypted
   disk, so the stored data is unreadable without the key.

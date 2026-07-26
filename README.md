@@ -31,7 +31,8 @@ In daily use by a real family, and in active development.
   a short window. Standard Web Push with encrypted payloads, so the server
   needs no inbound exposure. An in-app Inbox keeps a history of family activity
   even when pushes are off.
-- Nutrition: a private per-member food diary (search, barcodes, custom foods),
+- Nutrition: a private per-member food diary (barcodes, custom foods, and
+  search by name once you add a free USDA API key),
   recipes with computed per-serving nutrition, a weight log and health profile
   that auto-adjust a daily calorie target, and an exercise log that earns
   calories back. A finished day can be locked, and any food can be pinned to a
@@ -71,7 +72,11 @@ In daily use by a real family, and in active development.
   per-family RSVPs that land on each attending family's board in their own
   timezone. No feed, no likes, ever.
 - Onboarding by invite code: the server admin mints a short-lived code; the
-  invitee picks their own username and password and founds their own family.
+  invitee picks their own username and password and founds their own family,
+  and the admin gets a notification when they arrive. A server overview lists
+  every family, village and member on the install, with the controls to remove
+  a household, rename or dissolve a village, remove a member, and reset any
+  account's password.
 - Per-member themes, daily moods rendered as weather, and a private journal.
 
 ## Privacy
@@ -105,9 +110,11 @@ Step-by-step instructions for standing up your own instance are in
 ## Repository layout
 
 ```
-backend/    FastAPI service
-frontend/   React PWA
-docs/       architecture and decisions
+backend/           FastAPI service
+frontend/          React PWA
+docs/              architecture, self-hosting and fitness-sync guides
+docs/screenshots/  the images used in this README
+.github/           CI workflow
 ```
 
 ## Development
@@ -122,9 +129,10 @@ proxies `/api` to the backend) and the backend separately at `127.0.0.1:8000`
 for development. You use the app through `8080` alone.
 
 Backend tests: `cd backend && python -m pytest`. Frontend build:
-`cd frontend && npm run build`. Both run in CI on every push. The backend
-carries a large pytest suite (744 backend tests), while the frontend is
-type-checked with tsc and built in CI, with UI changes verified manually.
+`cd frontend && npm run build`. CI runs both on every push to `main` and on
+every pull request, along with `ruff check`. The backend carries a large pytest
+suite (750 backend tests), while the frontend is type-checked with tsc and
+built in CI, with UI changes verified manually.
 
 ## Built with AI assistance
 

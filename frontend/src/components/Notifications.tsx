@@ -35,10 +35,11 @@ type State =
 
 // The per-kind switches, grouped the way a person thinks about their day.
 // Kind names must match the server's PREF_KINDS. The streak row appears only
-// for members who receive daily verses at all.
+// for members who receive daily verses at all, and the Server row only for the
+// single server owner.
 const PREF_GROUPS: {
   name: string
-  rows: { kind: string; label: string; hint: string; verses?: boolean }[]
+  rows: { kind: string; label: string; hint: string; verses?: boolean; owner?: boolean }[]
 }[] = [
   {
     name: 'Reminders',
@@ -89,6 +90,17 @@ const PREF_GROUPS: {
         kind: 'village',
         label: 'Village Events',
         hint: 'Invitations and changes to events you are going to',
+      },
+    ],
+  },
+  {
+    name: 'Server',
+    rows: [
+      {
+        kind: 'household',
+        label: 'New Households',
+        hint: 'When someone you invited finishes setting up their own family here',
+        owner: true,
       },
     ],
   },
@@ -344,7 +356,9 @@ export function NotificationsCard() {
           {on && prefs && (
             <div className="mt-4 flex flex-col gap-3" data-push-prefs>
               {PREF_GROUPS.map((group) => {
-                const rows = group.rows.filter((row) => !row.verses || versesOn)
+                const rows = group.rows.filter(
+                  (row) => (!row.verses || versesOn) && (!row.owner || user?.is_owner),
+                )
                 if (rows.length === 0) return null
                 return (
                   <div key={group.name} className="flex flex-col gap-1.5">

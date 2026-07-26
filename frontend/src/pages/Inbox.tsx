@@ -4,6 +4,7 @@ import {
   CalendarCheck,
   CookingPot,
   Dumbbell,
+  Home,
   Hourglass,
   Mailbox,
   ShoppingCart,
@@ -35,6 +36,7 @@ const KIND_ICON: Record<string, { Icon: LucideIcon; tint: string }> = {
   grocery: { Icon: ShoppingCart, tint: 'text-fg/60' },
   recipe: { Icon: CookingPot, tint: 'text-fg/60' },
   member: { Icon: UserPlus, tint: 'text-accent-bright' },
+  household: { Icon: Home, tint: 'text-accent-bright' },
 }
 
 // "Just now" through short dates: enough to place a row without a timestamp

@@ -5,6 +5,7 @@ import datetime as dt
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app import throttle
 from app.routers import auth as auth_router
@@ -194,6 +195,96 @@ def test_redeemed_account_founds_its_own_family(app, owner):
     assert me["family_id"] is not None
     assert me["is_admin"] is True
     assert me["is_owner"] is False
+
+
+# ---- the owner hears about it --------------------------------------------------
+
+SUB = {
+    "endpoint": "https://push.example/owner-phone",
+    "keys": {"p256dh": "k1", "auth": "a1"},
+}
+
+
+def found_household(
+    app, owner, name="The Carls", display_name="Cousin Carl", username="cousin"
+):
+    """The whole funnel: the owner mints, a stranger redeems and names their
+    family. Returns the new household's client."""
+    invite = mint(owner, display_name=display_name)
+    anon = TestClient(app)
+    res = anon.post(
+        "/auth/invites/redeem",
+        json={"code": invite["code"], "username": username, "password": REDEEM["password"]},
+    )
+    assert res.status_code == 201, res.text
+    res = anon.post("/families", json={"name": name})
+    assert res.status_code == 201, res.text
+    return anon
+
+
+def household_rows(client):
+    return [r for r in client.get("/me/inbox").json() if r["kind"] == "household"]
+
+
+def test_founding_a_household_writes_the_owner_one_inbox_line(app, owner):
+    # Deliberately without the `configured` fixture: the inbox is history and
+    # does not depend on push being set up at all.
+    found_household(app, owner)
+    rows = household_rows(owner)
+    assert len(rows) == 1
+    assert rows[0]["title"] == "Cousin Carl set up their family"
+    assert rows[0]["body"] == "The Carls is now on this server"
+    assert rows[0]["read"] is False
+
+
+def test_the_new_household_hears_nothing(app, owner):
+    anon = found_household(app, owner)
+    assert household_rows(anon) == []
+
+
+def test_bootstrap_alone_notifies_nobody(owner):
+    # The owner founding the install is not an arrival.
+    assert household_rows(owner) == []
+
+
+def test_the_owner_founding_a_family_notifies_nobody(app, owner):
+    # Pins the owner.id == founder.id guard directly. Unreachable through the
+    # API today (bootstrap builds its Family inline and POST /families 400s an
+    # account that already has one), so the helper is called head-on: without
+    # the guard this writes the owner a line about themselves.
+    from sqlalchemy.orm import Session
+
+    from app.models import Family, User
+    from app.routers.families import _notify_new_household
+
+    with Session(app.state.test_engine) as db:
+        me = db.scalar(select(User).where(User.is_owner))
+        _notify_new_household(db, me, db.get(Family, me.family_id))
+    assert household_rows(owner) == []
+
+
+def test_only_the_owner_hears_it_not_their_co_parent(app, owner, parent):
+    # Server news, not family news: this is the one family-activity line that
+    # does NOT fan out through inbox.other_adults.
+    found_household(app, owner)
+    assert len(household_rows(owner)) == 1
+    assert household_rows(parent) == []
+
+
+def test_household_push_respects_the_switch(app, owner, configured, push_outbox):
+    owner.put("/push/subscription", json=SUB)
+    found_household(app, owner)
+    assert len(push_outbox) == 1
+    _ep, payload = push_outbox[0]
+    assert payload["title"] == "Cousin Carl set up their family"
+    assert payload["tag"].startswith("household-")
+
+    owner.put("/push/prefs", json={"prefs": {"household": False}})
+    push_outbox.clear()
+    found_household(app, owner, name="The Dins", display_name="Cousin Din", username="dinny")
+    assert push_outbox == []  # switched off
+    assert len(household_rows(owner)) == 2  # but the history still lands
+
 
 def test_signup_birthdate_prefills_the_health_profile(app, owner):
     invite = mint(owner)

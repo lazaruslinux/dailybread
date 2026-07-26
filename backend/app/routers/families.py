@@ -1,7 +1,10 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from app import inbox, push
 from app.clock import valid_timezone
 from app.db import get_db
 from app.deps import get_current_user, require_admin, require_family
@@ -24,6 +27,43 @@ from app.models import (
 from app.schemas import FamilyIn, FamilyOut
 
 router = APIRouter(prefix="/families", tags=["families"])
+
+log = logging.getLogger("dailybread.families")
+
+
+def _notify_new_household(db: Session, founder: User, family: Family) -> None:
+    """Tell the server owner that an invited household finished setting up.
+    Called after create_family commits. This is the only moment the invite
+    funnel is observable: the code redemption itself happens on a family-less
+    account, so there is no family_id to hang an inbox line on yet.
+
+    Both doors into create_family are owner-only (code redemption and
+    POST /auth/users with new_household), so "the owner invited this person"
+    is implied without reading SignupInvite.invited_by_id, which redeem has
+    already deleted by now."""
+    owner = db.scalar(select(User).where(User.is_owner))
+    if owner is None or owner.id == founder.id or owner.family_id is None:
+        # No owner on a hand-built DB; the owner founding their own family is
+        # unreachable today (bootstrap builds its Family inline) but pins the
+        # invariant; a family-less owner would fail InboxEntry's NOT NULL.
+        return
+
+    title = f"{founder.display_name} set up their family"
+    body = f"{family.name} is now on this server"
+    inbox.record_all(db, [owner], "household", title, body)
+
+    if not push.enabled() or not push.wants(owner, "household"):
+        return
+    try:
+        payload = {
+            "title": title,
+            "body": body,
+            "tag": f"household-{family.id}",
+            "url": "/",
+        }
+        push.send_to_user(db, owner.id, payload)
+    except Exception:
+        log.exception("household push failed (the household itself is saved)")
 
 
 def _checked_timezone(data: FamilyIn) -> str | None:
@@ -54,6 +94,7 @@ def create_family(
     user.is_admin = True
     db.commit()
     db.refresh(family)
+    _notify_new_household(db, user, family)
     return family
 
 

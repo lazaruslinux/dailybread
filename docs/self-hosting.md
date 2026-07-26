@@ -38,9 +38,11 @@ Only a few values actually need changing; the rest can stay at their defaults:
 - `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`: needed only for push notifications.
   The one-line generator command is in the comments of `.env.example`. Leave
   them blank to skip notifications.
-- `USDA_API_KEY`: optional. A free key from
-  https://fdc.nal.usda.gov/api-key-signup gives richer food search. Leave blank
-  to work without it.
+- `USDA_API_KEY`: a free key from https://fdc.nal.usda.gov/api-key-signup.
+  Get one if anybody will search foods by name, because that search has no
+  other source: leave the key blank and searching returns an error. Barcode
+  scanning uses Open Food Facts and needs no key, and custom foods and recipes
+  work regardless.
 - `COOKIE_SECURE`: leave `false` for now. Set it to `true` once you serve the
   app over HTTPS (see step 7), or logins misbehave.
 
@@ -79,7 +81,20 @@ again.
 - Invite another household: the server admin (the account the setup wizard
   created) mints a short invite code from the Admin area. The invitee uses it
   to pick their own username and password and found their own family. Codes
-  are valid for 48 hours.
+  are valid for 48 hours, and you get a notification when the household is
+  actually set up.
+- Keep an eye on the install: the server admin's Admin area also has a server
+  overview listing every family, village and member on the server. From there
+  you can rename or dissolve a village, remove a member, remove an entire
+  household, and reset any account's password.
+
+  Two of those deserve care. Removing a household deletes that family and
+  everything in it: every member, board, kitchen and food diary. And resetting
+  a password gives you a working credential for someone else's account, which
+  means the server admin can reach any household's data on the install if they
+  choose to. That is unavoidable for whoever holds the database anyway, but it
+  is worth knowing before you hand the role to anyone. Every other account in
+  the app is family-scoped and cannot see another household at all.
 
 ## 7. HTTPS with a reverse proxy
 
