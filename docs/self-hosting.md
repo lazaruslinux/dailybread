@@ -69,6 +69,15 @@ caveat: that is plain HTTP with no encryption, fine on a private home network
 but not for the internet, and push notifications and iPhone home-screen install
 still need HTTPS.
 
+Before you widen access beyond the machine it runs on, finish the setup wizard
+in step 6. Until that wizard has been completed the install has no accounts and
+no way to tell who you are, so it belongs to whoever loads the page first: that
+visitor picks the username and password and becomes the server admin. The
+window closes for good the moment the first account exists, and the wizard
+never appears again. If someone else claims the install there is no way to take
+it back short of wiping the database with `docker compose down -v` and starting
+over.
+
 ## 6. First login
 
 The first time you open the app on an empty database, it shows a short setup

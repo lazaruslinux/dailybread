@@ -2,7 +2,6 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response, status
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app import push as push_engine
@@ -43,14 +42,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="dailybread", version="0.0.1", lifespan=lifespan)
 
-# Allow the Vite dev server to call the API during development.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# No CORS middleware, deliberately. The browser reaches the API through the
+# same origin in every path: nginx in production, the Vite proxy in
+# development, so the API never needs to answer a cross-origin request. An
+# earlier allowance for the dev server on port 5173 was removed because
+# SameSite keys on the domain and ignores the port, which made a page on
+# localhost:5173 same-site to the API and let it read responses with the
+# user's session.
 
 # CSRF defense-in-depth. Our session cookie is SameSite=lax, which already
 # stops browsers from attaching it to cross-site POSTs. This middleware adds a
