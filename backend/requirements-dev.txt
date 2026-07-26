@@ -3,4 +3,4 @@ pytest
 httpx
 # Pinned: ruff's default rule set changes between releases, so an unpinned
 # linter fails CI on its own schedule rather than on ours.
-ruff==0.15.22
+ruff==0.16.0
