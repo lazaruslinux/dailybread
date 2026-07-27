@@ -142,11 +142,11 @@ review it, and decide what ships.
 
 ## About
 
-dailybread is built and maintained by [Lazarus Labs](https://lazaruslabsllc.com).
+dailybread is built and maintained by [Lazarus Labs](https://lazaruslinux.com).
 
 ## License
 
-GNU AGPL-3.0. See [LICENSE](LICENSE). Copyright (c) 2026 Lazarus Labs LLC.
+GNU AGPL-3.0. See [LICENSE](LICENSE). Copyright (c) 2026 Lazarus Labs.
 
 In plain terms: run it, modify it, and self-host it freely. If you host a
 modified version for other people, you must share your modifications under
