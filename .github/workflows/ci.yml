@@ -21,7 +21,10 @@ jobs:
           cache-dependency-path: |
             backend/requirements.txt
             backend/requirements-dev.txt
-      - run: pip install -r requirements.txt -r requirements-dev.txt
+      # Two installs: production deps are hash-locked, dev deps are not, and
+      # pip refuses to mix hashed and unhashed requirements in one command.
+      - run: pip install --require-hashes -r requirements.txt
+      - run: pip install -r requirements-dev.txt
       - run: ruff check .
       - run: pytest -q
 

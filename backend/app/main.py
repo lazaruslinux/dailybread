@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request, Response, status
 from fastapi.responses import JSONResponse
 
 from app import push as push_engine
-from app.config import settings
+from app.config import check_deploy_config, settings
 from app.db import db_ok
 from app.routers import (
     auth,
@@ -28,6 +28,10 @@ from app.routers import (
 # Schema management moved to Alembic: the container entrypoint runs
 # "alembic upgrade head" before starting the server, so by the time the app
 # is up the database is guaranteed to be current.
+
+# Refuse to serve with the repo's placeholder secrets; failing the import
+# stops uvicorn before it ever binds.
+check_deploy_config()
 
 
 @asynccontextmanager

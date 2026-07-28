@@ -12,6 +12,9 @@ import os
 # Must happen before any app import: Settings reads the environment once.
 # 32+ bytes so PyJWT doesn't warn about a weak HS256 key during tests.
 os.environ.setdefault("SECRET_KEY", "test-only-secret-key-0123456789abcdef")
+# The startup guard refuses an empty DATABASE_URL; tests never use this engine
+# (get_db is dependency-overridden onto per-test SQLite), it just has to exist.
+os.environ.setdefault("DATABASE_URL", "sqlite://")
 
 import pytest
 from fastapi.testclient import TestClient

@@ -5,9 +5,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Copy requirements first so Docker can cache the install layer.
+# Copy requirements first so Docker can cache the install layer. The compiled
+# requirements.txt pins every package with hashes; --require-hashes makes pip
+# refuse anything that doesn't match it.
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt
 
 COPY app ./app
 COPY alembic.ini .

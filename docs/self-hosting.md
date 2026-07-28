@@ -29,12 +29,19 @@ Copy the example settings file and open it in an editor:
 cp .env.example .env
 ```
 
-Only a few values actually need changing; the rest can stay at their defaults:
+The first two values below are secrets and must be changed; the app refuses to
+start while they still hold the example file's placeholders, because those
+placeholders are public knowledge (they are in this repository). The rest
+enable optional features:
 
 - `SECRET_KEY`: a long random string that signs login sessions. Generate one
   with `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
 - `POSTGRES_PASSWORD`: the database password. Pick anything, then make sure the
-  same value appears in `DATABASE_URL` right below it.
+  same value appears in `DATABASE_URL` right below it. Set it before the first
+  start: Postgres locks in whatever password its data volume was first created
+  with, so editing `.env` later does not change the real password (if you need
+  to change it after the fact, wipe the volume with `docker compose down -v`,
+  which deletes your data, or change it inside Postgres with `ALTER USER`).
 - `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`: needed only for push notifications.
   The one-line generator command is in the comments of `.env.example`. Leave
   them blank to skip notifications.
@@ -54,6 +61,11 @@ docker compose up -d
 
 The database schema is created and updated automatically the first time the
 backend starts, so there is no separate migration step.
+
+If the app does not come up, run `docker compose logs backend`. A backend that
+exits immediately with "refused to start" is telling you a placeholder value in
+`.env` still needs filling in; fix the value it names and run
+`docker compose up -d` again.
 
 ## 5. Reach it
 

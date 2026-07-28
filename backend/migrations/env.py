@@ -6,9 +6,14 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import create_engine
 
-from app.config import settings
+from app.config import check_deploy_config, settings
 from app.db import Base
 from app import models  # noqa: F401  (import registers tables on Base.metadata)
+
+# Migrations run before the server in the container entrypoint, so this is the
+# first thing a misconfigured install hits; refusing here shows the guard's
+# plain-language message instead of a driver traceback.
+check_deploy_config()
 
 config = context.config
 if config.config_file_name is not None:

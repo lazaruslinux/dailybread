@@ -1,3 +1,5 @@
+import os
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -60,3 +62,46 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# The placeholder secrets shipped in the repo (.env.example and the field
+# default above). An install still using one is forgeable by anyone who can
+# read the public source, so startup refuses them outright.
+_PLACEHOLDER_SECRETS = {"", "change-me", "change-me-to-a-long-random-string"}
+
+
+def check_deploy_config() -> None:
+    """Refuse to start while .env still holds the repo's placeholder values.
+
+    Called once at app import. Raises SystemExit with a plain-language fix
+    instead of serving an instance whose session-signing key or database
+    password is public knowledge.
+    """
+    problems = []
+    if settings.secret_key in _PLACEHOLDER_SECRETS:
+        problems.append(
+            "SECRET_KEY is unset or still the placeholder. Generate one with:\n"
+            '  python -c "import secrets; print(secrets.token_urlsafe(48))"\n'
+            "and put it in .env as SECRET_KEY=..."
+        )
+    if not settings.database_url:
+        problems.append("DATABASE_URL is empty. Copy .env.example to .env and fill it in.")
+    elif ":change-me@" in settings.database_url:
+        problems.append(
+            "DATABASE_URL still uses the placeholder database password. Pick a real\n"
+            "POSTGRES_PASSWORD in .env and use the same value in DATABASE_URL.\n"
+            "Note: Postgres keeps the password it was first started with; if the\n"
+            "database volume already exists, see docs/self-hosting.md on changing it."
+        )
+    # Not a Settings field: the backend only receives this via compose env_file,
+    # but catching it here stops the fix-one-forget-the-other mistake before the
+    # Postgres volume freezes the placeholder on first init.
+    if os.environ.get("POSTGRES_PASSWORD") == "change-me":
+        problems.append(
+            "POSTGRES_PASSWORD in .env is still the placeholder. Pick a real one\n"
+            "and use the same value in DATABASE_URL."
+        )
+    if problems:
+        raise SystemExit(
+            "dailybread refused to start: insecure or incomplete configuration.\n\n"
+            + "\n\n".join(problems)
+        )
