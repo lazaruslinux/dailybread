@@ -39,7 +39,10 @@ updates:
         update-types: [version-update:semver-major]
 
   # The base images are digest-pinned in both Dockerfiles and docker-compose;
-  # these keep the digests moving as the upstream tags are rebuilt.
+  # these keep the digests moving as the upstream tags are rebuilt. Majors are
+  # ignored here too: a Postgres major in particular changes the on-disk data
+  # format, so upgrading it is a deliberate dump-and-restore round, never a
+  # bot merge.
   - package-ecosystem: docker
     directories: [/backend, /frontend]
     schedule:
@@ -47,6 +50,9 @@ updates:
     groups:
       images:
         patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: docker-compose
     directory: /
@@ -55,3 +61,6 @@ updates:
     groups:
       images:
         patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
