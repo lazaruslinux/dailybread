@@ -20,7 +20,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app import inbox, push, throttle, village_events
 from app.clock import family_now, shift_schedule
@@ -580,9 +580,19 @@ def shelf(db: Session = Depends(get_db), user: User = Depends(require_family)):
         .join(Recipe, Recipe.id == VillageRecipe.recipe_id)
         .join(Village, Village.id == VillageRecipe.village_id)
         .join(Family, Family.id == VillageRecipe.family_id)
+        .options(
+            # per_serving_macros walks each recipe's ingredients and their
+            # foods; load the whole shelf's in one round instead of per row.
+            selectinload(Recipe.ingredients).joinedload(RecipeIngredient.food)
+        )
         .where(VillageRecipe.village_id.in_(_my_village_ids(db, user.family_id)))
         .order_by(VillageRecipe.created_at.desc(), VillageRecipe.id.desc())
     ).all()
+    # Warm the identity map with every sharer at once: _shelf_row's per-row
+    # db.get(User, ...) then resolves from memory, no query.
+    sharer_ids = {s.shared_by_id for s, *_ in rows if s.shared_by_id}
+    if sharer_ids:
+        db.scalars(select(User).where(User.id.in_(sharer_ids))).all()
     return [
         _shelf_row(db, share, recipe, vname, fname, user.family_id)
         for share, recipe, vname, fname in rows
@@ -870,9 +880,14 @@ def food_shelf(db: Session = Depends(get_db), user: User = Depends(require_famil
         .join(Food, Food.id == VillageFood.food_id)
         .join(Village, Village.id == VillageFood.village_id)
         .join(Family, Family.id == VillageFood.family_id)
+        .options(selectinload(Food.servings))  # _food_shelf_row reads servings[0]
         .where(VillageFood.village_id.in_(_my_village_ids(db, user.family_id)))
         .order_by(VillageFood.created_at.desc(), VillageFood.id.desc())
     ).all()
+    # Same identity-map warm-up as the recipe shelf: sharers in one query.
+    sharer_ids = {s.shared_by_id for s, *_ in rows if s.shared_by_id}
+    if sharer_ids:
+        db.scalars(select(User).where(User.id.in_(sharer_ids))).all()
     return [
         _food_shelf_row(db, share, food, vname, fname, user.family_id)
         for share, food, vname, fname in rows

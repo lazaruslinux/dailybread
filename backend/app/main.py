@@ -44,7 +44,10 @@ async def lifespan(app: FastAPI):
         task.cancel()
 
 
-app = FastAPI(title="dailybread", version="0.0.1", lifespan=lifespan)
+# Kept in step with frontend/package.json by the release round.
+APP_VERSION = "1.2.0"
+
+app = FastAPI(title="dailybread", version=APP_VERSION, lifespan=lifespan)
 
 # No CORS middleware, deliberately. The browser reaches the API through the
 # same origin in every path: nginx in production, the Vite proxy in

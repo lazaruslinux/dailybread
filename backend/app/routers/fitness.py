@@ -173,36 +173,93 @@ def _ingest_user(db: Session, authorization: str | None) -> User:
     return user
 
 
-def _upsert_daily(
-    db: Session, user: User, day: dt.date, metric: str, value: float, unit: str
-) -> None:
-    row = db.scalar(
+def _prefetch_daily(
+    db: Session, user: User, metric: str, days
+) -> dict[dt.date, FitnessDaily]:
+    """One query for a metric's existing rows across all of a payload's days,
+    so a catch-up export upserts from memory instead of one SELECT per day."""
+    days = list(days)
+    if not days:
+        return {}
+    rows = db.scalars(
         select(FitnessDaily).where(
             FitnessDaily.user_id == user.id,
-            FitnessDaily.date_for == day,
             FitnessDaily.metric == metric,
+            FitnessDaily.date_for.in_(days),
         )
     )
+    return {r.date_for: r for r in rows}
+
+
+def _upsert_daily(
+    db: Session,
+    user: User,
+    day: dt.date,
+    metric: str,
+    value: float,
+    unit: str,
+    cache: dict[dt.date, FitnessDaily] | None = None,
+) -> None:
+    if cache is not None:
+        row = cache.get(day)
+    else:
+        row = db.scalar(
+            select(FitnessDaily).where(
+                FitnessDaily.user_id == user.id,
+                FitnessDaily.date_for == day,
+                FitnessDaily.metric == metric,
+            )
+        )
     if row is None:
         row = FitnessDaily(
             family_id=user.family_id, user_id=user.id, date_for=day, metric=metric
         )
         db.add(row)
+        if cache is not None:
+            cache[day] = row
     row.value = round(value, 2)
     row.unit = unit
 
 
-def _upsert_intraday(
-    db: Session, user: User, day: dt.date, hour: int, metric: str, value: float, unit: str
-) -> None:
-    row = db.scalar(
+def _prefetch_intraday(
+    db: Session, user: User, metric: str, days
+) -> dict[tuple[dt.date, int], FitnessIntraday]:
+    """The intraday twin of _prefetch_daily: all of a metric's existing hourly
+    rows for the payload's days in one query, keyed (day, hour)."""
+    days = list(days)
+    if not days:
+        return {}
+    rows = db.scalars(
         select(FitnessIntraday).where(
             FitnessIntraday.user_id == user.id,
-            FitnessIntraday.date_for == day,
             FitnessIntraday.metric == metric,
-            FitnessIntraday.hour == hour,
+            FitnessIntraday.date_for.in_(days),
         )
     )
+    return {(r.date_for, r.hour): r for r in rows}
+
+
+def _upsert_intraday(
+    db: Session,
+    user: User,
+    day: dt.date,
+    hour: int,
+    metric: str,
+    value: float,
+    unit: str,
+    cache: dict[tuple[dt.date, int], FitnessIntraday] | None = None,
+) -> None:
+    if cache is not None:
+        row = cache.get((day, hour))
+    else:
+        row = db.scalar(
+            select(FitnessIntraday).where(
+                FitnessIntraday.user_id == user.id,
+                FitnessIntraday.date_for == day,
+                FitnessIntraday.metric == metric,
+                FitnessIntraday.hour == hour,
+            )
+        )
     if row is None:
         row = FitnessIntraday(
             family_id=user.family_id,
@@ -212,6 +269,8 @@ def _upsert_intraday(
             hour=hour,
         )
         db.add(row)
+        if cache is not None:
+            cache[(day, hour)] = row
     row.value = round(value, 2)
     row.unit = unit
 
@@ -234,9 +293,10 @@ def _store_intraday(db, user, metric, combine, unit, points_wq) -> None:
     by_hour: dict[tuple[dt.date, int], list[float]] = defaultdict(list)
     for when, qty in points_wq:
         by_hour[(when.date(), when.hour)].append(qty)
+    cache = _prefetch_intraday(db, user, metric, {day for day, _ in by_hour})
     for (day, hour), vals in by_hour.items():
         value = sum(vals) if combine == "sum" else sum(vals) / len(vals)
-        _upsert_intraday(db, user, day, hour, metric, value, unit)
+        _upsert_intraday(db, user, day, hour, metric, value, unit, cache=cache)
 
 
 def _import_metrics(db: Session, user: User, metrics) -> int:
@@ -272,9 +332,10 @@ def _import_metrics(db: Session, user: User, metrics) -> int:
         by_day: dict[dt.date, list[float]] = defaultdict(list)
         for when, qty in wq:
             by_day[when.date()].append(qty)
+        cache = _prefetch_daily(db, user, metric, by_day)
         for day, values in by_day.items():
             value = sum(values) if combine == "sum" else sum(values) / len(values)
-            _upsert_daily(db, user, day, metric, value, unit)
+            _upsert_daily(db, user, day, metric, value, unit, cache=cache)
             touched += 1
         if metric in INTRADAY_COMBINE:
             _store_intraday(db, user, metric, combine, unit, wq)
@@ -289,13 +350,15 @@ def _import_distance(db: Session, user: User, points, unit: str) -> int:
     by_day: dict[dt.date, float] = defaultdict(float)
     for when, qty in wq:
         by_day[when.date()] += qty
+    daily_cache = _prefetch_daily(db, user, "distance", by_day)
     for day, native_total in by_day.items():
-        _upsert_daily(db, user, day, "distance", _meters(native_total, unit), "m")
+        _upsert_daily(db, user, day, "distance", _meters(native_total, unit), "m", cache=daily_cache)
     by_hour: dict[tuple[dt.date, int], float] = defaultdict(float)
     for when, qty in wq:
         by_hour[(when.date(), when.hour)] += qty
+    hourly_cache = _prefetch_intraday(db, user, "distance", {day for day, _ in by_hour})
     for (day, hour), native in by_hour.items():
-        _upsert_intraday(db, user, day, hour, "distance", _meters(native, unit), "m")
+        _upsert_intraday(db, user, day, hour, "distance", _meters(native, unit), "m", cache=hourly_cache)
     return len(by_day)
 
 

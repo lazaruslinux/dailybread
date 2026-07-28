@@ -87,6 +87,9 @@ export function BarcodeScanner({
       if (!ctx) return
       let busy = false
       let tick = 0
+      // Unmount during the async camera warm-up above means the cleanup
+      // already ran; starting the interval now would leave it running forever.
+      if (cancelled) return
       timer = window.setInterval(async () => {
         if (busy || done.current || !video.videoWidth) return
         busy = true

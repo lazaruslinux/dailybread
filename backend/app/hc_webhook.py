@@ -206,16 +206,23 @@ def import_payload(
             days += 1
 
     # Body fat fills blanks on the day's weigh-in, never overwrites — the
-    # same-payload weigh-ins must be queryable first (no autoflush).
+    # same-payload weigh-ins must be queryable first (no autoflush). Deduped
+    # to the day's latest reading first, so a dense export costs one query
+    # per day rather than one per sample.
     db.flush()
+    fat_by_day: dict[dt.date, tuple[dt.datetime, float]] = {}
     for p in _points(payload, "body_fat"):
         when = _local(p.get("time"), tz)
         pct = _num(p.get("percentage"))
         if when is None or pct is None or not (1.0 < pct <= 75.0):
             continue
+        day = when.date()
+        if day not in fat_by_day or when > fat_by_day[day][0]:
+            fat_by_day[day] = (when, pct)
+    for day, (_, pct) in fat_by_day.items():
         entry = db.scalar(
             select(WeightEntry).where(
-                WeightEntry.user_id == user.id, WeightEntry.date_for == when.date()
+                WeightEntry.user_id == user.id, WeightEntry.date_for == day
             )
         )
         if entry is not None and entry.body_fat_pct is None:

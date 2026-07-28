@@ -225,7 +225,20 @@ function AppShell() {
         </motion.div>
       </AnimatePresence>
 
-      <footer className="mt-10 text-center text-xs text-fg/30">dailybread v{__APP_VERSION__}</footer>
+      <footer className="mt-10 text-center text-xs text-fg/30">
+        {/* The source link doubles as the AGPL section-13 offer for anyone
+            hosting this for others; the padding keeps the tap target at the
+            44px floor without changing the footer's quiet look. */}
+        dailybread v{__APP_VERSION__} ·{' '}
+        <a
+          href="https://github.com/lazaruslinux/dailybread"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-block px-2 py-3 -my-3 underline underline-offset-2 decoration-fg/30 hover:text-fg/60"
+        >
+          source
+        </a>
+      </footer>
 
       {scanning && (
         <Suspense fallback={null}>

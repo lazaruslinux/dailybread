@@ -24,6 +24,10 @@ router = APIRouter(tags=["users"])
 
 _MAX_DATE_DRIFT = dt.timedelta(days=1)
 
+# The journal history views read the newest entries first; a year of daily
+# writing fits comfortably, and the response stops growing without bound.
+_JOURNAL_HISTORY_LIMIT = 366
+
 
 def _daily_status(user: User, today: dt.date) -> str:
     """The status is a per-day note: it shows only for the day it was set and
@@ -285,6 +289,7 @@ def my_journal_history(
         select(JournalEntry)
         .where(JournalEntry.user_id == me.id)
         .order_by(JournalEntry.date_for.desc())
+        .limit(_JOURNAL_HISTORY_LIMIT)
     ).all()
 
 
@@ -472,4 +477,5 @@ def child_journal(
         select(JournalEntry)
         .where(JournalEntry.user_id == target.id)
         .order_by(JournalEntry.date_for.desc())
+        .limit(_JOURNAL_HISTORY_LIMIT)
     ).all()

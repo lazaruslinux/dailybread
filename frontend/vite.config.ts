@@ -24,6 +24,10 @@ export default defineConfig({
       workbox: {
         // Web Push handlers ride inside the generated service worker.
         importScripts: ['push-sw.js'],
+        // Never serve the app shell for API navigations: today nothing
+        // top-level-navigates to /api, but the first download link someone
+        // adds would get index.html instead of its file.
+        navigateFallbackDenylist: [/^\/api\//],
       },
       manifest: {
         name: 'dailybread',

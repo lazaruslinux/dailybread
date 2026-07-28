@@ -49,7 +49,9 @@ reporting, no ads, and no tracking.
 
 ## Security
 
-- Traffic between your device and the server is encrypted with TLS.
+- Traffic between your device and the server is encrypted with TLS when the
+  install serves HTTPS (the reverse-proxy step in the self-hosting guide; on a
+  bare LAN install, traffic stays on your own network but is not encrypted).
 - Passwords are stored hashed with Argon2, never in plain text.
 - There is no public sign-up. The first account is created by whoever runs the
   first-run setup wizard, and every account after it needs either an admin or a

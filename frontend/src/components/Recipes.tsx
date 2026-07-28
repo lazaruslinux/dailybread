@@ -1634,12 +1634,12 @@ export function FoodSheet({
   const setServing = (i: number, s: ServingDraft) =>
     setServings((ls) => ls.map((l, j) => (j === i ? s : l)))
   const addServing = () => setServings((ls) => [...ls, { name: '', grams: '' }])
-  const removeServing = (i: number) =>
-    setServings((ls) => {
-      const next = ls.filter((_, j) => j !== i)
-      setBasis((b) => (i < b ? b - 1 : Math.min(b, next.length - 1)))
-      return next
-    })
+  const removeServing = (i: number) => {
+    // Two sibling updates, never one inside the other's updater: an impure
+    // updater double-fires under StrictMode and mis-shifts the basis in dev.
+    setServings((ls) => ls.filter((_, j) => j !== i))
+    setBasis((b) => (i < b ? b - 1 : Math.min(b, servings.length - 2)))
+  }
 
   // Switching which serving the numbers are "per" rescales them by the gram
   // ratio, so they keep describing the same food.

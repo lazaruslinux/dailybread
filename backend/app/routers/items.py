@@ -505,13 +505,32 @@ def feed(
 
     window_start = date_for - _MAX_OVERDUE_LOOKBACK
     window_end = date_for + _NEXT_DAYS
+    # An undated card whose only marks are older than the overdue window is
+    # long-archived: the visibility pass below would discard it anyway, so
+    # don't fetch years of them forever. Any card with a mark inside the
+    # window (or none at all) still gets the full Python-side semantics.
+    has_recent_mark = (
+        select(Completion.id)
+        .where(Completion.item_id == Item.id, Completion.date_for >= window_start)
+        .exists()
+    )
+    has_old_mark = (
+        select(Completion.id)
+        .where(Completion.item_id == Item.id, Completion.date_for < window_start)
+        .exists()
+    )
+    # Recurring cards (also NULL-dated) are exempt: they show by schedule,
+    # not completion history, so an old mark must never archive them.
+    undated_alive = Item.date_for.is_(None) & (
+        Item.repeat_type.isnot(None) | ~has_old_mark | has_recent_mark
+    )
     items = (
         db.scalars(
             select(Item)
             .options(selectinload(Item.assignees))
             .where(
                 Item.family_id == user.family_id,
-                (Item.date_for.is_(None)) | (Item.date_for.between(window_start, window_end)),
+                undated_alive | Item.date_for.between(window_start, window_end),
             )
         )
         .unique()

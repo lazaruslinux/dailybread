@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     SmallInteger,
     String,
@@ -467,7 +468,8 @@ class Item(Base):
     # An all-day appointment: a date with no times (Outlook's "all day").
     all_day: Mapped[bool] = mapped_column(Boolean, default=False)
     # Which day (tasks and events). Routines leave this NULL and use recurrence.
-    date_for: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    # Indexed: the reminder loop scans by date several times a minute, forever.
+    date_for: Mapped[dt.date | None] = mapped_column(Date, nullable=True, index=True)
 
     # Where it happens, free text ("Riverside Park"). Any kind may carry one;
     # the UI offers it on activities and appointments.
@@ -1185,6 +1187,8 @@ class DigestLog(Base):
     __tablename__ = "digest_log"
     __table_args__ = (
         UniqueConstraint("user_id", "date_for", "kind", name="uq_digest_user_day_kind"),
+        # The push tick asks "who already got today's <kind>?" every minute.
+        Index("ix_digest_log_day_kind", "date_for", "kind"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

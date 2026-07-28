@@ -79,10 +79,12 @@ function previewCalories(f: {
   const heightCm = (Number(f.ft) * 12 + Number(f.inch)) * 2.54
   const weightKg = kg(Number(f.weightLb))
   if (!f.birthdate || !f.sex || !f.activity || !heightCm || !weightKg) return null
-  const bd = new Date(f.birthdate)
+  // Split Y/M/D by hand (the app-wide convention): new Date('YYYY-MM-DD')
+  // parses as UTC and ticks the age over a day early in western timezones.
+  const [by, bm, bday] = f.birthdate.split('-').map(Number)
   const now = new Date()
-  let age = now.getFullYear() - bd.getFullYear()
-  if (now.getMonth() < bd.getMonth() || (now.getMonth() === bd.getMonth() && now.getDate() < bd.getDate())) age -= 1
+  let age = now.getFullYear() - by
+  if (now.getMonth() + 1 < bm || (now.getMonth() + 1 === bm && now.getDate() < bday)) age -= 1
   if (age <= 0 || age > 120) return null
 
   const bf = Number(f.bodyFat)

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app import inbox
 from app.db import get_db
@@ -133,7 +133,7 @@ def per_serving_macros(recipe: Recipe) -> RecipeMacros:
     )
 
 
-def _serialize(recipe: Recipe) -> RecipeOut:
+def _serialize(recipe: Recipe, village_names: dict[int, str] | None = None) -> RecipeOut:
     """Build the response, scaling each ingredient's per-100g food macros by its
     grams and totalling them per serving. A macro stays None until some food
     actually supplies it, so "unknown" never masquerades as zero."""
@@ -178,14 +178,16 @@ def _serialize(recipe: Recipe) -> RecipeOut:
     shared_to = []
     session = object_session(recipe)
     if session is not None and recipe.village_shares:
-        names = {
-            v.id: v.name
-            for v in session.scalars(
-                select(Village).where(
-                    Village.id.in_([sh.village_id for sh in recipe.village_shares])
+        names = village_names
+        if names is None:  # single-recipe callers; list_recipes batches this
+            names = {
+                v.id: v.name
+                for v in session.scalars(
+                    select(Village).where(
+                        Village.id.in_([sh.village_id for sh in recipe.village_shares])
+                    )
                 )
-            )
-        }
+            }
         shared_to = [
             RecipeShareOut(
                 share_id=sh.id, village_id=sh.village_id, village_name=names.get(sh.village_id, "")
@@ -213,10 +215,29 @@ def list_recipes(db: Session = Depends(get_db), user: User = Depends(require_fam
     """The family recipe box, alphabetical so it reads like a cookbook index."""
     recipes = db.scalars(
         select(Recipe)
+        .options(
+            # Same shape meals.py uses: everything _serialize touches rides
+            # along, instead of one lazy round-trip per ingredient and share.
+            selectinload(Recipe.ingredients).joinedload(RecipeIngredient.food),
+            selectinload(Recipe.village_shares),
+        )
         .where(Recipe.family_id == user.family_id)
         .order_by(func.lower(Recipe.name))
+    ).all()
+    # One name lookup for every village any recipe is shared to; _serialize
+    # would otherwise run it per recipe.
+    from app.models import Village
+
+    village_ids = {sh.village_id for r in recipes for sh in r.village_shares}
+    names = (
+        {
+            v.id: v.name
+            for v in db.scalars(select(Village).where(Village.id.in_(village_ids)))
+        }
+        if village_ids
+        else {}
     )
-    return [_serialize(r) for r in recipes]
+    return [_serialize(r, village_names=names) for r in recipes]
 
 
 @router.get("/{recipe_id}", response_model=RecipeOut)
