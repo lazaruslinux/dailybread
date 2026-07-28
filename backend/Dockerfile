@@ -1,6 +1,6 @@
 # Digest-pinned so a build is reproducible and a poisoned tag can't slip in;
 # Dependabot bumps the digest. The tag rides along as a comment for humans.
-FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
+FROM python:3.14-slim@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea54bca189ce14a6
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
