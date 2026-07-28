@@ -37,3 +37,21 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: [version-update:semver-major]
+
+  # The base images are digest-pinned in both Dockerfiles and docker-compose;
+  # these keep the digests moving as the upstream tags are rebuilt.
+  - package-ecosystem: docker
+    directories: [/backend, /frontend]
+    schedule:
+      interval: monthly
+    groups:
+      images:
+        patterns: ["*"]
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      images:
+        patterns: ["*"]

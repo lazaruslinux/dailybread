@@ -13,11 +13,13 @@ re-sending a whole window is always safe.
 """
 
 import datetime as dt
+import json
 import logging
 import secrets
 from collections import defaultdict
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -90,6 +92,15 @@ INTRADAY_COMBINE = {"steps": "sum", "active_kcal": "sum", "distance": "sum", "hr
 # per-token buckets would throttle nothing.
 INGEST_THROTTLE_KEY = "ingest-health"
 INGEST_MAX_FAILURES = 30
+
+# Sanity bounds on one payload's element counts, applied as plain truncation.
+# A 45-day window of minute-level samples is ~65k points per metric; anything
+# past these came from a hostile or broken exporter, not a phone. The metric
+# cap clears HAE's full catalog, so even a select-everything setup never
+# loses a tracked metric to truncation order.
+MAX_METRICS = 200
+MAX_WORKOUTS = 400
+MAX_POINTS_PER_METRIC = 70_000
 
 LB_TO_KG = 0.45359237
 MILE_M = 1609.344
@@ -208,7 +219,7 @@ def _upsert_intraday(
 def _clean_points(points) -> list[tuple[dt.datetime, float]]:
     """The (when, qty) pairs of a metric's data array, the junk dropped."""
     out: list[tuple[dt.datetime, float]] = []
-    for point in points if isinstance(points, list) else []:
+    for point in (points if isinstance(points, list) else [])[:MAX_POINTS_PER_METRIC]:
         when = _parse_when(point.get("date")) if isinstance(point, dict) else None
         qty = _qty(point.get("qty")) if isinstance(point, dict) else None
         if when is not None and qty is not None:
@@ -234,7 +245,7 @@ def _import_metrics(db: Session, user: User, metrics) -> int:
     # other metric (weight included) has landed — the exporter doesn't promise
     # an order within one payload.
     bodyfat_points: list = []
-    for entry in metrics if isinstance(metrics, list) else []:
+    for entry in (metrics if isinstance(metrics, list) else [])[:MAX_METRICS]:
         if not isinstance(entry, dict):
             continue
         name = entry.get("name")
@@ -293,7 +304,7 @@ def _import_weight(db: Session, user: User, points, unit: str) -> int:
     them up — but only onto days with no entry yet: a deliberate in-app
     weigh-in always beats the scale sync."""
     last_by_day: dict[dt.date, tuple[dt.datetime, float]] = {}
-    for point in points if isinstance(points, list) else []:
+    for point in (points if isinstance(points, list) else [])[:MAX_POINTS_PER_METRIC]:
         when = _parse_when(point.get("date")) if isinstance(point, dict) else None
         qty = _qty(point.get("qty")) if isinstance(point, dict) else None
         if when is None or qty is None:
@@ -324,7 +335,7 @@ def _import_body_fat(db: Session, user: User, points) -> int:
     scales send weight and fat together, so that day's weight is normally in
     the same payload and has already landed by the time this runs."""
     last_by_day: dict[dt.date, tuple[dt.datetime, float]] = {}
-    for point in points:
+    for point in points[:MAX_POINTS_PER_METRIC]:
         when = _parse_when(point.get("date")) if isinstance(point, dict) else None
         qty = _qty(point.get("qty")) if isinstance(point, dict) else None
         if when is None or qty is None:
@@ -435,7 +446,7 @@ def _import_workouts(db: Session, user: User, workouts) -> tuple[int, set[dt.dat
     the routine auto-complete pass."""
     touched = 0
     days: set[dt.date] = set()
-    for entry in workouts if isinstance(workouts, list) else []:
+    for entry in (workouts if isinstance(workouts, list) else [])[:MAX_WORKOUTS]:
         if not isinstance(entry, dict):
             continue
         started = _parse_when(entry.get("start"))
@@ -519,12 +530,27 @@ def _auto_complete_routines(db: Session, user: User, days: set[dt.date]) -> int:
 
 
 @router.post("/ingest/health", response_model=IngestResultOut)
-def ingest_health(
-    payload: dict,
+async def ingest_health(
+    request: Request,
     db: Session = Depends(get_db),
     authorization: str | None = Header(default=None),
 ):
-    user = _ingest_user(db, authorization)
+    # Token first, body second: taking the raw Request (rather than a body
+    # parameter, which FastAPI would read and parse before the handler runs)
+    # means a garbage token is 401'd without ever buffering the payload. The
+    # body-size middleware bounds what a valid token may send. The heavy
+    # import work stays in the threadpool, like a plain def handler.
+    user = await run_in_threadpool(_ingest_user, db, authorization)
+    try:
+        payload = json.loads(await request.body())
+    except ValueError:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Body is not valid JSON")
+    if not isinstance(payload, dict):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Body must be a JSON object")
+    return await run_in_threadpool(_ingest_import, db, user, payload)
+
+
+def _ingest_import(db: Session, user: User, payload: dict) -> IngestResultOut:
     family = db.get(Family, user.family_id)
     local_today = family_now(dt.datetime.now(), family.timezone if family else None).date()
     seen_before = _todays_workout_ids(db, user, local_today)

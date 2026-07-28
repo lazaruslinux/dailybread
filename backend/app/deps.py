@@ -49,7 +49,7 @@ def get_current_user(
     issued = dt.datetime.fromtimestamp(payload["iat"], tz=dt.timezone.utc)
     age = dt.datetime.now(dt.timezone.utc) - issued
     if age > dt.timedelta(hours=settings.session_refresh_after_hours):
-        set_session_cookie(response, str(user.id), user.token_version)
+        set_session_cookie(response, str(user.id), user.token_version, request=request)
 
     return user
 

@@ -50,8 +50,9 @@ enable optional features:
   other source: leave the key blank and searching returns an error. Barcode
   scanning uses Open Food Facts and needs no key, and custom foods and recipes
   work regardless.
-- `COOKIE_SECURE`: leave `false` for now. Set it to `true` once you serve the
-  app over HTTPS (see step 7), or logins misbehave.
+- `COOKIE_SECURE`: leave it at `auto`. The login cookie marks itself HTTPS-only
+  exactly when the request came in over HTTPS (see step 7), so there is
+  normally nothing to set here.
 
 ## 4. Start it
 
@@ -129,8 +130,9 @@ dailybread.example.com {
 }
 ```
 
-Point that domain at your server, run Caddy, then set `COOKIE_SECURE=true` in
-`.env` and restart with `docker compose up -d`.
+Point that domain at your server and run Caddy. Nothing needs changing in
+`.env`: the app notices requests arriving over HTTPS and marks the login
+cookie HTTPS-only by itself.
 
 ## 8. Phone health sync
 
@@ -168,3 +170,12 @@ docker compose up -d
 ```
 
 Schema migrations run automatically when the new backend starts.
+
+One-time step when upgrading from a version before 1.2.0: the backend now runs
+as an unprivileged user, but the avatar storage volume your old install
+created belongs to root, which would make new photo uploads fail. Hand it
+over once:
+
+```
+docker compose run --rm --user root backend chown -R app /app/media
+```

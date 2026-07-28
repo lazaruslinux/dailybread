@@ -1,6 +1,6 @@
 import datetime as dt
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -48,6 +48,12 @@ SIGNUP_INVITE_TTL = dt.timedelta(hours=48)
 SIGNUP_THROTTLE_KEY = "signup-invite"
 SIGNUP_MAX_FAILURES = 30
 
+# Login guessing bound across ALL clients for one username. High enough that
+# a prankster can't casually lock the family out (that now takes a sustained
+# spoofing run), low enough that generated word-word-NN reset passwords stay
+# far out of guessing range inside their short hand-off life.
+LOGIN_USERNAME_CEILING = 50
+
 
 @router.get("/setup", response_model=SetupOut)
 def setup_state(db: Session = Depends(get_db)):
@@ -57,7 +63,9 @@ def setup_state(db: Session = Depends(get_db)):
 
 
 @router.post("/bootstrap", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-def bootstrap(data: BootstrapIn, response: Response, db: Session = Depends(get_db)):
+def bootstrap(
+    data: BootstrapIn, request: Request, response: Response, db: Session = Depends(get_db)
+):
     """Create the first family and its head. Allowed only while no users exist."""
     user_count = db.scalar(select(func.count()).select_from(User))
     if user_count:
@@ -81,16 +89,28 @@ def bootstrap(data: BootstrapIn, response: Response, db: Session = Depends(get_d
     db.add(user)
     db.commit()
     db.refresh(user)
-    set_session_cookie(response, str(user.id), user.token_version)
+    set_session_cookie(response, str(user.id), user.token_version, request=request)
     return user
 
 
 @router.post("/login", response_model=UserOut)
-def login(data: LoginIn, response: Response, db: Session = Depends(get_db)):
-    # Too many recent failures against this username and we stop checking
-    # passwords at all until the window cools off (see app.throttle).
-    key = data.username.lower()
-    if throttle.too_many_failures(key):
+def login(data: LoginIn, request: Request, response: Response, db: Session = Depends(get_db)):
+    # Throttled per (username, client) so one bad actor locks only itself out
+    # of an account, not the account's real owner on another device: behind
+    # the bundled nginx the client is X-Real-IP, which nginx sets from the
+    # socket and a visitor cannot spoof; bare uvicorn sees the socket peer.
+    # A username-wide ceiling still bounds total guessing against one account
+    # from many clients; it can be provoked, but at five times the old cost
+    # and never by accident (see app.throttle).
+    client = request.headers.get("x-real-ip") or (
+        request.client.host if request.client else ""
+    )
+    username = data.username.lower()
+    pair_key = f"login:{username}:{client}"
+    user_key = f"login-user:{username}"
+    if throttle.too_many_failures(pair_key) or throttle.too_many_failures(
+        user_key, limit=LOGIN_USERNAME_CEILING
+    ):
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
             "Too many attempts. Wait a while and try again.",
@@ -99,10 +119,12 @@ def login(data: LoginIn, response: Response, db: Session = Depends(get_db)):
     # Same error whether the user is missing or the password is wrong, so an
     # attacker can't tell which usernames exist.
     if user is None or not verify_password(data.password, user.password_hash):
-        throttle.record_failure(key)
+        throttle.record_failure(pair_key)
+        throttle.record_failure(user_key)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
-    throttle.clear(key)
-    set_session_cookie(response, str(user.id), user.token_version)
+    throttle.clear(pair_key)
+    throttle.clear(user_key)
+    set_session_cookie(response, str(user.id), user.token_version, request=request)
     _award_daily_login(db, user)
     return user
 
@@ -143,6 +165,7 @@ def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
 @router.post("/change-password", response_model=UserOut)
 def change_password(
     data: ChangePasswordIn,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -158,7 +181,7 @@ def change_password(
     # model), but re-issue this session's cookie so the change doesn't log out
     # the very phone that made it.
     user.token_version += 1
-    set_session_cookie(response, str(user.id), user.token_version)
+    set_session_cookie(response, str(user.id), user.token_version, request=request)
     db.commit()
     db.refresh(user)
     return user
@@ -215,6 +238,7 @@ def server_overview(db: Session = Depends(get_db), admin: User = Depends(require
 def rescue_password(
     user_id: int,
     data: RescuePasswordIn,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
@@ -233,7 +257,7 @@ def rescue_password(
     user.password_hash = hash_password(data.password)
     user.token_version += 1
     if user.id == admin.id:
-        set_session_cookie(response, str(user.id), user.token_version)
+        set_session_cookie(response, str(user.id), user.token_version, request=request)
     db.commit()
     db.refresh(user)
     return user
@@ -309,7 +333,7 @@ def check_signup_invite(data: InviteCodeIn, db: Session = Depends(get_db)):
 
 @router.post("/invites/redeem", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def redeem_signup_invite(
-    data: InviteRedeemIn, response: Response, db: Session = Depends(get_db)
+    data: InviteRedeemIn, request: Request, response: Response, db: Session = Depends(get_db)
 ):
     """Anonymous: trade a live invite code + a chosen username and password
     for a signed-in account. The account starts family-less; the
@@ -347,7 +371,7 @@ def redeem_signup_invite(
             status.HTTP_409_CONFLICT, "That username is taken. Try another."
         )
     db.refresh(user)
-    set_session_cookie(response, str(user.id), user.token_version)
+    set_session_cookie(response, str(user.id), user.token_version, request=request)
     return user
 
 
@@ -437,6 +461,7 @@ def _managed_user(db: Session, user_id: int, admin: User) -> User:
 def update_user(
     user_id: int,
     data: UpdateUserIn,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
@@ -479,7 +504,7 @@ def update_user(
         # this same response so they stay signed in here.
         user.token_version += 1
         if user.id == admin.id:
-            set_session_cookie(response, str(user.id), user.token_version)
+            set_session_cookie(response, str(user.id), user.token_version, request=request)
 
     db.commit()
     db.refresh(user)

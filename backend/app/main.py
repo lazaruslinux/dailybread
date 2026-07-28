@@ -68,6 +68,93 @@ async def block_cross_site_writes(request: Request, call_next):
     return await call_next(request)
 
 
+# Request-body ceilings, enforced before anything parses the body. The bundled
+# nginx caps /api at 15 MB, but a self-hoster who fronts uvicorn with something
+# else (or nothing) previously had no limit at all. The ingest cap matches the
+# nginx front door so a big (authenticated: the token is checked before the
+# body is read) catch-up export behaves identically with or without the proxy.
+MAX_BODY_BYTES = 16 * 1024 * 1024
+INGEST_MAX_BODY_BYTES = 15 * 1024 * 1024
+_BODY_CAPS = {"/ingest/health": INGEST_MAX_BODY_BYTES}
+
+
+class _BodyTooLarge(Exception):
+    pass
+
+
+async def _send_413(send) -> None:
+    body = b'{"detail":"Request body too large"}'
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 413,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode()),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": body})
+
+
+class BodySizeLimitMiddleware:
+    """Pure ASGI so it runs outside body parsing entirely: an honest
+    Content-Length is refused up front, and a chunked body is counted and cut
+    off at the cap while it streams."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope.get("method") not in {"POST", "PUT", "PATCH"}:
+            await self.app(scope, receive, send)
+            return
+        cap = _BODY_CAPS.get(scope.get("path", ""), MAX_BODY_BYTES)
+        declared = dict(scope.get("headers") or []).get(b"content-length")
+        if declared is not None:
+            try:
+                if int(declared) > cap:
+                    await _send_413(send)
+                    return
+            except ValueError:
+                pass  # nonsense header; the streamed count below still guards
+        received = 0
+        too_large = False
+        response_started = False
+
+        async def counting_receive():
+            nonlocal received, too_large
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > cap:
+                    too_large = True
+                    raise _BodyTooLarge
+            return message
+
+        async def tracking_send(message):
+            nonlocal response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+                # FastAPI reads bodies inside its own try/except and reports
+                # our mid-stream cut as its generic parse-error 400; once the
+                # flag is set that 400 can only mean "too large", so give the
+                # client the honest status.
+                if too_large and message["status"] == 400:
+                    message = {**message, "status": 413}
+            await send(message)
+
+        try:
+            await self.app(scope, counting_receive, tracking_send)
+        except _BodyTooLarge:
+            if response_started:
+                raise
+            await _send_413(send)
+
+
+app.add_middleware(BodySizeLimitMiddleware)
+
+
 app.include_router(auth.router)
 app.include_router(diary.router)
 app.include_router(health.router)

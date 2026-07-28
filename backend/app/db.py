@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Iterator
 
 from sqlalchemy import create_engine, text
@@ -5,6 +6,8 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import settings
+
+log = logging.getLogger("dailybread.db")
 
 
 # Every ORM model subclasses this. SQLAlchemy collects their table definitions
@@ -48,6 +51,9 @@ def db_ok() -> tuple[bool, str]:
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-    except Exception as exc:  # surface any connection/driver error to the caller
-        return False, str(exc)
+    except Exception:
+        # The raw driver error names the DB host, port and user; that belongs
+        # in the server log, not in an unauthenticated endpoint's response.
+        log.warning("Database health check failed", exc_info=True)
+        return False, "connection failed"
     return True, "ok"

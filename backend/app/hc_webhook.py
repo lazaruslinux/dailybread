@@ -57,9 +57,17 @@ def _local(raw, tz_name: str | None) -> dt.datetime | None:
     return family_now(parsed.astimezone(), tz_name).replace(tzinfo=None)
 
 
+# Truncation bound per list, matching the HAE dialect's MAX_POINTS_PER_METRIC
+# in routers/fitness.py (which imports this module, so the constant lives in
+# both places): ~65k is 45 days of minute-level samples.
+MAX_POINTS = 70_000
+
+
 def _points(payload: dict, key: str) -> list[dict]:
     raw = payload.get(key)
-    return [p for p in raw if isinstance(p, dict)] if isinstance(raw, list) else []
+    if not isinstance(raw, list):
+        return []
+    return [p for p in raw[:MAX_POINTS] if isinstance(p, dict)]
 
 
 def _sum_by_day(points, when_key, qty_key, tz) -> dict[dt.date, float]:

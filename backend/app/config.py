@@ -18,9 +18,12 @@ class Settings(BaseSettings):
     session_days: int = 60  # how long an *idle* login stays valid
     session_refresh_after_hours: int = 24  # re-issue tokens older than this
     cookie_name: str = "db_session"
-    # Whether the session cookie is HTTPS-only. False for local http dev; set
-    # COOKIE_SECURE=true in production, behind a reverse proxy serving HTTPS.
-    cookie_secure: bool = False
+    # Whether the session cookie is HTTPS-only. "auto" (the default) marks it
+    # Secure exactly when the request arrived over HTTPS (X-Forwarded-Proto
+    # from the proxy chain, else the direct scheme), so plain-http LAN installs
+    # keep working while HTTPS installs never send the cookie in cleartext.
+    # Set COOKIE_SECURE=true/false to force it either way.
+    cookie_secure: str = "auto"
 
     # Where uploaded media (avatar images) are written. Kept on local disk so
     # photos never leave the box; point MEDIA_ROOT at a persistent volume in

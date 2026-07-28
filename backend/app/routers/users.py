@@ -425,7 +425,9 @@ async def upload_avatar(
     _require_can_set_avatar(user, viewer)
     if not (file.content_type or "").startswith("image/"):
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "That file is not an image.")
-    raw = await file.read()
+    # Bounded read: ask for one byte past the cap instead of slurping whatever
+    # arrived, so an oversized upload costs its cap in memory, not its size.
+    raw = await file.read(avatars.MAX_UPLOAD_BYTES + 1)
     if len(raw) > avatars.MAX_UPLOAD_BYTES:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "That image is too large.")
     try:

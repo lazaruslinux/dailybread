@@ -4,11 +4,13 @@ Argon2 makes each password guess expensive for us; this makes a sustained
 guessing run expensive for the guesser: too many failures against the same
 username inside the window and further tries are refused until it cools off.
 
-Keyed by username rather than client address on purpose — behind the reverse
-proxy every request can look like the same client, and the thing worth
-protecting is the account under attack. Unknown usernames are throttled the
-same way, so the 429 doesn't reveal which accounts exist. State is in-process
-memory: a restart forgets it, which is fine for what it defends against.
+Login failures are keyed on (username, client) with a wider username-only
+ceiling on top. The pair key means one hostile client locks only itself out
+of an account, not the account's real owner on their own device; the ceiling
+still bounds a guesser who spreads attempts across many clients. Unknown
+usernames are throttled the same way, so the 429 doesn't reveal which
+accounts exist. State is in-process memory: a restart forgets it, which is
+fine for what it defends against.
 """
 
 import threading

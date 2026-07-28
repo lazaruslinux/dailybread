@@ -1,3 +1,6 @@
+import ipaddress
+from urllib.parse import urlsplit
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -17,6 +20,28 @@ from app.schemas import (
 )
 
 router = APIRouter(prefix="/push", tags=["push"])
+
+
+def _plausible_push_endpoint(url: str) -> bool:
+    """Real push services live on public HTTPS hosts. Refusing anything else
+    (plain http, IP literals, localhost and LAN-style names) keeps a member
+    from pointing the server's outbound push POSTs at the LAN — a blind SSRF
+    the /push/test endpoint would otherwise trigger on demand."""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return False
+    host = parts.hostname or ""
+    if parts.scheme != "https" or not host:
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return False  # an IP literal is never a push service
+    except ValueError:
+        pass
+    if host == "localhost" or host.endswith((".localhost", ".local", ".internal", ".lan", ".home", ".home.arpa")):
+        return False
+    return True
 
 
 def _require_configured() -> None:
@@ -44,6 +69,10 @@ def subscribe(
     hands (family tablet, someone else logs in) re-registers its endpoint
     under the new member rather than duplicating it."""
     _require_configured()
+    if not _plausible_push_endpoint(data.endpoint):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "That does not look like a push service endpoint"
+        )
     sub = db.scalar(
         select(PushSubscription).where(PushSubscription.endpoint == data.endpoint)
     )

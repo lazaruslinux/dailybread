@@ -4,7 +4,7 @@ import secrets
 import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
-from fastapi import Response
+from fastapi import Request, Response
 
 from app.config import settings
 
@@ -73,7 +73,24 @@ def decode_token(token: str) -> dict:
     return jwt.decode(token, settings.secret_key, algorithms=[_ALGORITHM])
 
 
-def set_session_cookie(response: Response, subject: str, version: int = 0) -> None:
+def cookie_secure(request: Request | None) -> bool:
+    """Whether to mark the session cookie Secure. COOKIE_SECURE=true/false
+    forces it; the "auto" default follows how this request actually arrived,
+    trusting the proxy chain's X-Forwarded-Proto when present. A direct client
+    lying in that header only breaks its own login, never anyone else's."""
+    forced = settings.cookie_secure.strip().lower()
+    if forced in {"true", "1", "yes"}:
+        return True
+    if forced in {"false", "0", "no"}:
+        return False
+    if request is None:
+        return False
+    return request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
+
+
+def set_session_cookie(
+    response: Response, subject: str, version: int = 0, *, request: Request | None = None
+) -> None:
     """Attach a fresh signed-JWT session cookie to the response."""
     token = create_access_token(subject, version)
     response.set_cookie(
@@ -81,7 +98,7 @@ def set_session_cookie(response: Response, subject: str, version: int = 0) -> No
         value=token,
         httponly=True,  # JavaScript can't read it -> XSS can't steal it
         samesite="lax",  # not sent on cross-site requests -> CSRF mitigation
-        secure=settings.cookie_secure,  # HTTPS-only in production
+        secure=cookie_secure(request),  # HTTPS-only whenever HTTPS is in play
         max_age=settings.session_days * 24 * 3600,
         path="/",
     )

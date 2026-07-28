@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# Tests and builds only read the checkout; the token gets no more than that.
+permissions:
+  contents: read
+
 jobs:
   backend:
     name: Backend tests
