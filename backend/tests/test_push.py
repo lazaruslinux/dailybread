@@ -437,7 +437,7 @@ def test_private_card_changes_stay_private(owner, parent, configured, outbox, en
     parent.put("/push/subscription", json=SUB)
     res = owner.post(
         "/items",
-        json={"kind": "task", "title": "Buy her gift"},  # private to the owner
+        json={"kind": "task", "title": "Buy her gift", "visibility": "private"},
     )
     assert res.status_code == 201
     assert outbox == []  # the other parent can't see it, so they don't hear about it

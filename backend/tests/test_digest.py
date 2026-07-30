@@ -109,7 +109,7 @@ def test_each_adult_gets_their_own(owner, parent, configured, push_outbox, engin
     # One family-visible unassigned card: it's on everyone's board.
     make(owner, title="Grandma arrives", visibility="family", date_for=TODAY.isoformat())
     # And one private card of the owner's alone.
-    make(owner, title="Sharpen the mower blade")
+    make(owner, title="Sharpen the mower blade", visibility="private")
 
     assert push_engine.digest_tick(at(7)) == 2
     by_endpoint = dict(push_outbox)

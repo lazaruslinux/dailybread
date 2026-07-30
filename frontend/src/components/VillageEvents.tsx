@@ -4,7 +4,7 @@ import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { Avatar } from './Avatar'
 import { Sheet } from './Recipes'
-import { mapsUrl } from '../lib/items'
+import { compactDate, mapsUrl } from '../lib/items'
 import { formatTime } from '../lib/moods'
 
 // Shared village events on the Home board: a strip of open invites for
@@ -24,10 +24,16 @@ function eventDate(dateStr: string): string {
 }
 
 function whenLabel(ev: api.VillageEvent): string {
-  const day = eventDate(ev.date_for)
+  // A multi-day event reads as its range, and shows only its start time: the
+  // end time belongs to the last day, so printing both beside a date range
+  // would say the wrong thing about each.
+  const spans = Boolean(ev.end_date && ev.end_date > ev.date_for)
+  const day = spans
+    ? `${compactDate(ev.date_for)} – ${compactDate(ev.end_date!)}`
+    : eventDate(ev.date_for)
   if (ev.all_day || !ev.time_of_day) return day
   const start = formatTime(ev.time_of_day)
-  return ev.end_time ? `${day} · ${start} – ${formatTime(ev.end_time)}` : `${day} · ${start}`
+  return ev.end_time && !spans ? `${day} · ${start} – ${formatTime(ev.end_time)}` : `${day} · ${start}`
 }
 
 // One attendee as a chip. Parents: face + full name. Opted-in kids: face +

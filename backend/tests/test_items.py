@@ -402,23 +402,33 @@ def test_editing_cannot_strand_an_appointment(owner):
     assert owner.patch(f"/items/{card['id']}", json={"title": "Dentist checkup"}).status_code == 200
 
 
-# ---- visibility (private by default) -----------------------------------------
+# ---- visibility (the family board by default) --------------------------------
 
 
-def test_new_card_is_private_by_default(owner, child):
+def test_new_card_goes_on_the_family_board_by_default(owner, child):
     card = make_item(owner)  # no assignees, no visibility stated
+    assert card["visibility"] == "family"
+
+    # An unassigned family card is everyone's business, the child included.
+    feed = child.get(f"/items/feed?date={TODAY}").json()
+    assert any(i["id"] == card["id"] for i in feed["today"])
+
+
+def test_explicit_private_is_kept(owner, child):
+    # Opting a card out is what keeps it off the household's board: the owner
+    # plus anyone assigned, and nobody else.
+    card = make_item(owner, visibility="private")
     assert card["visibility"] == "private"
 
-    # The child neither sees it on their board nor can check it off.
     feed = child.get(f"/items/feed?date={TODAY}").json()
     assert not any(i["id"] == card["id"] for i in feed["today"])
     assert child.post(f"/items/{card['id']}/complete?date={TODAY}").status_code == 404
 
 
-def test_assigning_members_keeps_a_card_private(owner, child):
-    # Assigning is about who does it, not who sees it: it stays private (the
-    # owner plus the assignee) unless put on the family board.
-    card = make_item(owner, assignee_ids=[user_id(child)])
+def test_assigning_members_does_not_change_visibility(owner, child):
+    # Assigning is about who does it, not who sees it: an assigned card that
+    # was opted out stays private (the owner plus the assignee).
+    card = make_item(owner, assignee_ids=[user_id(child)], visibility="private")
     assert card["visibility"] == "private"
     assert [a["id"] for a in card["assignees"]] == [user_id(child)]
 
@@ -461,7 +471,8 @@ def test_either_parent_can_check_a_family_board_card(owner, parent):
 
 
 def test_parent_cannot_check_a_private_card_they_are_not_on(owner, parent):
-    card = make_item(owner)  # private to the owner; the co-parent can't even see it
+    # Private to the owner; the co-parent can't even see it.
+    card = make_item(owner, visibility="private")
     assert parent.post(f"/items/{card['id']}/complete?date={TODAY}").status_code == 404
 
 
@@ -519,15 +530,216 @@ def test_event_end_must_be_after_start(owner):
     assert res.status_code == 400
 
 
-def test_routine_rejects_an_end_time(owner):
+def test_activity_can_be_all_day(owner):
+    card = make_item(owner, kind="activity", title="Fair day", date_for=TODAY, all_day=True)
+    assert card["all_day"] is True
+    assert card["time_of_day"] is None and card["end_time"] is None
+
+
+def test_all_day_activity_rejects_times(owner):
     res = owner.post(
         "/items",
         json={
-            "kind": "routine", "title": "Stretch", "time_of_day": "07:00", "end_time": "07:30",
-            "repeat": {"type": "weekly", "days": [0, 1, 2, 3, 4, 5, 6]},
+            "kind": "activity", "title": "Fair day", "date_for": TODAY,
+            "all_day": True, "time_of_day": "09:00", "end_time": "10:00",
         },
     )
     assert res.status_code == 400
+
+
+# ---- multi-day spans ----------------------------------------------------------
+
+TOMORROW = (dt.date.today() + dt.timedelta(days=1)).isoformat()
+YESTERDAY = (dt.date.today() - dt.timedelta(days=1)).isoformat()
+
+
+def test_activity_can_span_days(owner):
+    trip = make_item(
+        owner, kind="activity", title="Camping", date_for=TODAY, end_date=TOMORROW,
+        time_of_day="09:00", end_time="16:00",
+    )
+    assert trip["date_for"] == TODAY and trip["end_date"] == TOMORROW
+
+
+def test_span_end_cannot_land_before_the_start(owner):
+    res = owner.post(
+        "/items",
+        json={
+            "kind": "activity", "title": "Backwards", "date_for": TODAY, "end_date": YESTERDAY,
+            "time_of_day": "09:00", "end_time": "16:00",
+        },
+    )
+    assert res.status_code == 400
+
+
+def test_overnight_needs_the_next_day_as_its_end(owner):
+    overnight = {
+        "kind": "activity", "title": "Stargazing", "date_for": TODAY,
+        "time_of_day": "22:00", "end_time": "02:00",
+    }
+    # On a single day 10 PM to 2 AM is still backwards.
+    assert owner.post("/items", json=overnight).status_code == 400
+    # Saying it ends the next day is what makes it read forwards.
+    assert owner.post("/items", json={**overnight, "end_date": TOMORROW}).status_code == 201
+
+
+def test_a_span_is_capped_at_the_boards_lookback(owner):
+    """90 days is how far back the feed fetches dated cards, so a longer span
+    could still be running while off the board entirely."""
+    ninety = (dt.date.today() + dt.timedelta(days=90)).isoformat()
+    ninety_one = (dt.date.today() + dt.timedelta(days=91)).isoformat()
+    span = {
+        "kind": "activity", "title": "Long haul", "date_for": TODAY,
+        "time_of_day": "09:00", "end_time": "16:00",
+    }
+    assert owner.post("/items", json={**span, "end_date": ninety}).status_code == 201
+    res = owner.post("/items", json={**span, "end_date": ninety_one})
+    assert res.status_code == 400
+    assert res.json()["detail"] == "A card can span up to 90 days"
+
+
+def test_only_dated_event_kinds_take_a_span(owner):
+    assert owner.post(
+        "/items", json={"kind": "task", "title": "Nope", "date_for": TODAY, "end_date": TOMORROW}
+    ).status_code == 400
+    assert owner.post(
+        "/items",
+        json={
+            "kind": "routine", "title": "Nope", "end_date": TOMORROW,
+            "repeat": {"type": "weekly", "days": [0]},
+        },
+    ).status_code == 400
+    # A repeating appointment recurs; the span belongs to a one-off.
+    assert owner.post(
+        "/items",
+        json={
+            "kind": "appointment", "title": "Nope", "end_date": TOMORROW,
+            "time_of_day": "09:00", "end_time": "10:00",
+            "repeat": {"type": "weekly", "days": [0]},
+        },
+    ).status_code == 400
+    # An appointment on its own date may span, though.
+    assert owner.post(
+        "/items",
+        json={
+            "kind": "appointment", "title": "Conference", "date_for": TODAY,
+            "end_date": TOMORROW, "time_of_day": "09:00", "end_time": "17:00",
+        },
+    ).status_code == 201
+
+
+def test_a_span_is_on_the_board_every_day_it_runs(owner):
+    trip = make_item(
+        owner, kind="activity", title="Camping", date_for=YESTERDAY, end_date=TOMORROW,
+        time_of_day="09:00", end_time="16:00",
+    )
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    # Mid-run: on today's board, not carried forward as overdue.
+    assert any(i["id"] == trip["id"] for i in feed["today"])
+    assert not any(i["id"] == trip["id"] for i in feed["overdue"])
+    # And still there on its last day.
+    later = owner.get(f"/items/feed?date={TOMORROW}").json()
+    assert any(i["id"] == trip["id"] for i in later["today"])
+
+
+def test_a_span_goes_overdue_only_after_its_last_day(owner):
+    over = make_item(
+        owner, kind="activity", title="Was camping",
+        date_for=(dt.date.today() - dt.timedelta(days=3)).isoformat(), end_date=YESTERDAY,
+        time_of_day="09:00", end_time="16:00",
+    )
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    assert any(i["id"] == over["id"] for i in feed["overdue"])
+
+
+def test_a_spans_later_days_sort_like_all_day(owner):
+    trip = make_item(
+        owner, kind="activity", title="Camping", date_for=YESTERDAY, end_date=TOMORROW,
+        time_of_day="09:00", end_time="16:00",
+    )
+    early = make_item(
+        owner, kind="appointment", title="Dentist", date_for=TODAY,
+        time_of_day="08:00", end_time="08:30",
+    )
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    order = [i["id"] for i in feed["today"]]
+    # The trip's 9 AM start belonged to the day it began, so today it reads as
+    # a continuing card and sits above the morning's timed appointment.
+    assert order.index(trip["id"]) < order.index(early["id"])
+
+
+def test_calendar_draws_a_span_on_every_day_including_one_it_started_before(owner):
+    start = dt.date.today() - dt.timedelta(days=2)
+    end = dt.date.today() + dt.timedelta(days=2)
+    make_item(
+        owner, kind="activity", title="Camping", date_for=start.isoformat(),
+        end_date=end.isoformat(), time_of_day="09:00", end_time="16:00",
+    )
+    # A window that opens AFTER the trip began still finds it.
+    win_start = dt.date.today().isoformat()
+    cal = owner.get(f"/items/calendar?start={win_start}&end={end.isoformat()}").json()
+    days = {d["date"]: [i["title"] for i in d["items"]] for d in cal["days"]}
+    assert len(days) == 3
+    assert all("Camping" in titles for titles in days.values())
+    # And it stops the day after it ends.
+    after = (end + dt.timedelta(days=1)).isoformat()
+    cal2 = owner.get(f"/items/calendar?start={after}&end={after}").json()
+    assert cal2["days"][0]["items"] == []
+
+
+def test_a_span_can_be_extended_and_cleared(owner):
+    trip = make_item(
+        owner, kind="activity", title="Camping", date_for=TODAY, end_date=TOMORROW,
+        time_of_day="09:00", end_time="16:00",
+    )
+    longer = (dt.date.today() + dt.timedelta(days=3)).isoformat()
+    res = owner.patch(f"/items/{trip['id']}", json={"end_date": longer})
+    assert res.status_code == 200 and res.json()["end_date"] == longer
+    # Clearing it puts the card back on its single day.
+    back = owner.patch(f"/items/{trip['id']}", json={"end_date": None})
+    assert back.status_code == 200 and back.json()["end_date"] is None
+    # And it can't be moved before the start.
+    assert owner.patch(
+        f"/items/{trip['id']}", json={"end_date": YESTERDAY}
+    ).status_code == 400
+
+
+def test_completing_a_span_completes_the_whole_run(owner):
+    trip = make_item(
+        owner, kind="activity", title="Camping", date_for=YESTERDAY, end_date=TOMORROW,
+        time_of_day="09:00", end_time="16:00",
+    )
+    assert owner.post(f"/items/{trip['id']}/complete?date={TODAY}").status_code == 200
+    cal = owner.get(f"/items/calendar?start={YESTERDAY}&end={TOMORROW}").json()
+    for day in cal["days"]:
+        card = next(i for i in day["items"] if i["id"] == trip["id"])
+        assert card["completed"] is True
+
+
+def test_routine_takes_a_start_and_end_time(owner):
+    # "Workout 8:00-8:30" is a routine with a block, not an appointment.
+    card = make_item(
+        owner, kind="routine", title="Stretch", time_of_day="07:00", end_time="07:30",
+        repeat={"type": "weekly", "days": [0, 1, 2, 3, 4, 5, 6]},
+    )
+    assert card["end_time"] == "07:30:00"
+
+
+def test_routine_end_time_needs_a_start_and_must_come_after_it(owner):
+    everyday = {"type": "weekly", "days": [0, 1, 2, 3, 4, 5, 6]}
+    dangling = owner.post(
+        "/items",
+        json={"kind": "routine", "title": "Stretch", "end_time": "07:30", "repeat": everyday},
+    )
+    assert dangling.status_code == 400
+    backwards = owner.post(
+        "/items",
+        json={
+            "kind": "routine", "title": "Stretch", "time_of_day": "07:30",
+            "end_time": "07:00", "repeat": everyday,
+        },
+    )
+    assert backwards.status_code == 400
 
 
 def test_appointment_keeps_start_and_end(owner):
@@ -560,6 +772,75 @@ def test_weekly_routine_shows_only_on_scheduled_days(owner):
     # Tomorrow is a different weekday, so the routine is not scheduled then.
     tomorrow_feed = owner.get(f"/items/feed?date={tomorrow}").json()
     assert not any(i["id"] == routine["id"] for i in tomorrow_feed["today"])
+
+
+def test_a_repeat_that_ended_yesterday_is_off_the_board(owner):
+    routine = make_item(
+        owner, kind="routine", title="Daily thing",
+        repeat={"type": "weekly", "days": [0, 1, 2, 3, 4, 5, 6], "until": YESTERDAY},
+    )
+    assert routine["repeat"]["until"] == YESTERDAY
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    assert not any(i["id"] == routine["id"] for i in feed["today"])
+    # Its last day still has it, in the calendar's record.
+    cal = owner.get(f"/items/calendar?start={YESTERDAY}&end={YESTERDAY}").json()
+    assert any(i["id"] == routine["id"] for i in cal["days"][0]["items"])
+
+
+def test_a_count_resolves_into_an_end_date(owner):
+    monday = _monday(dt.date.today())
+    routine = make_item(
+        owner, kind="routine", title="Three Mondays",
+        repeat={"type": "weekly", "days": [0], "anchor": monday.isoformat(), "count": 3},
+    )
+    # The third Monday from the anchor is the last day it may land on.
+    assert routine["repeat"]["until"] == (monday + dt.timedelta(days=14)).isoformat()
+
+
+def test_a_count_without_an_anchor_is_stamped_with_today(owner):
+    routine = make_item(
+        owner, kind="routine", title="Two days",
+        repeat={"type": "weekly", "days": [0, 1, 2, 3, 4, 5, 6], "count": 2},
+    )
+    # Walked from today (the stamped anchor): today and tomorrow.
+    assert routine["repeat"]["until"] == TOMORROW
+
+
+def test_a_count_reaching_past_the_walk_limit_is_refused(owner):
+    res = owner.post(
+        "/items",
+        json={
+            "kind": "routine", "title": "Forever and ever",
+            "repeat": {
+                "type": "monthly", "month_day": 1, "interval": 52,
+                "anchor": "2026-01-01", "count": 4,
+            },
+        },
+    )
+    assert res.status_code == 400
+    assert "too far out" in res.json()["detail"]
+
+
+def test_a_repeat_ends_by_date_or_after_a_count_but_not_both(owner):
+    res = owner.post(
+        "/items",
+        json={
+            "kind": "routine", "title": "Both",
+            "repeat": {"type": "weekly", "days": [0], "until": TOMORROW, "count": 3},
+        },
+    )
+    assert res.status_code == 422
+
+
+def test_a_repeat_cannot_end_before_its_anchor(owner):
+    res = owner.post(
+        "/items",
+        json={
+            "kind": "routine", "title": "Backwards",
+            "repeat": {"type": "weekly", "days": [0], "anchor": TODAY, "until": YESTERDAY},
+        },
+    )
+    assert res.status_code == 400
 
 
 # ---- per-person vs shared completion -----------------------------------------

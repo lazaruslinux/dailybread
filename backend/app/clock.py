@@ -59,23 +59,36 @@ def shift_schedule(
     all_day: bool,
     from_tz: str | None,
     to_tz: str | None,
-) -> tuple[dt.date, dt.time | None, dt.time | None]:
+    end_date: dt.date | None = None,
+) -> tuple[dt.date, dt.time | None, dt.time | None, dt.date | None]:
     """A village event's schedule moved from the organizer family's wall
     clock onto an attendee family's. All-day (or timeless) events stay on
     their calendar date everywhere — "Saturday's fair" is Saturday in every
-    zone. Timed events convert the start instant; the end travels as a
+    zone.
+
+    A SINGLE-DAY timed event converts its start instant; the end travels as a
     DURATION added to the converted start (so a DST boundary can't stretch or
     shrink the event), clamped to 23:59 when the converted span would cross
-    midnight — a card holds one date and two times, nothing more. A zone that
-    fails to load leaves the schedule untouched, the family_now philosophy."""
+    midnight — such a card holds one date and two times, nothing more.
+
+    A MULTI-DAY timed event has a real end instant of its own, on end_date, so
+    both ends convert independently. The duration trick would be wrong here
+    twice over: it measures the end time against the START day, and its
+    midnight clamp would pin a Sunday 4 PM finish at 23:59 on the wrong date.
+
+    A zone that fails to load leaves the schedule untouched, the family_now
+    philosophy."""
     if all_day or time_of_day is None:
-        return date_for, time_of_day, end_time
+        return date_for, time_of_day, end_time, end_date
     try:
         src, dst = _zone(from_tz), _zone(to_tz)
     except Exception:
-        return date_for, time_of_day, end_time
+        return date_for, time_of_day, end_time, end_date
     start = dt.datetime.combine(date_for, time_of_day).replace(tzinfo=src).astimezone(dst)
     new_date, new_start = start.date(), start.time()
+    if end_date is not None and end_time is not None:
+        end = dt.datetime.combine(end_date, end_time).replace(tzinfo=src).astimezone(dst)
+        return new_date, new_start, end.time(), end.date()
     new_end = end_time
     if end_time is not None:
         duration = dt.datetime.combine(date_for, end_time) - dt.datetime.combine(
@@ -83,4 +96,5 @@ def shift_schedule(
         )
         end = start + duration
         new_end = end.time() if end.date() == start.date() else dt.time(23, 59)
-    return new_date, new_start, new_end
+    new_end_date = None if end_date is None else end_date + (new_date - date_for)
+    return new_date, new_start, new_end, new_end_date

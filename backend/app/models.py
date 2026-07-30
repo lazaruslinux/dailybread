@@ -426,10 +426,11 @@ class Item(Base):
     )
     kind: Mapped[ItemKind] = mapped_column(SAEnum(ItemKind, name="item_kind"))
     title: Mapped[str] = mapped_column(String(120))
-    notes: Mapped[str] = mapped_column(String(300), default="")
+    notes: Mapped[str] = mapped_column(String(1000), default="")
 
-    # Who can SEE this card. New cards are private (the owner plus anyone
-    # assigned); family puts it on the whole household's board for awareness.
+    # Who can SEE this card. private is the owner plus anyone assigned; family
+    # puts it on the whole household's board. The API creates cards family by
+    # default (_resolve_visibility) and the client opts a card out.
     visibility: Mapped[Visibility] = mapped_column(
         SAEnum(Visibility, name="item_visibility"), default=Visibility.private
     )
@@ -458,6 +459,10 @@ class Item(Base):
     repeat_anchor: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     # Monthly: the day of the month (1-31), clamped to the month's last day.
     repeat_month_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The last day the repeat may land on. NULL is "no end". An "after N
+    # occurrences" end is resolved into this date when the card is saved, so
+    # the engine only ever answers to a date.
+    repeat_until: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
 
     # Start time (the "From"). Activities and appointments need one (unless the
     # appointment is all-day); routines and tasks may leave it NULL.
@@ -470,6 +475,9 @@ class Item(Base):
     # Which day (tasks and events). Routines leave this NULL and use recurrence.
     # Indexed: the reminder loop scans by date several times a minute, forever.
     date_for: Mapped[dt.date | None] = mapped_column(Date, nullable=True, index=True)
+    # The last day a multi-day card covers (a trip, an overnight stay). NULL is
+    # the single day date_for already names; never set on a repeating card.
+    end_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
 
     # Where it happens, free text ("Riverside Park"). Any kind may carry one;
     # the UI offers it on activities and appointments.

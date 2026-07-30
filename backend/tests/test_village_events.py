@@ -126,6 +126,14 @@ def test_share_guards(village, owner, other, child):
     share(owner, village, item["id"], expect=400)
 
 
+def test_only_activities_can_be_shared(village, owner):
+    """An appointment is the household's own business (the dentist, a work
+    meeting); an activity is the thing you invite other families to."""
+    appt = make_event(owner, kind="appointment", title="Dentist")
+    res = share(owner, village, appt["id"], expect=400)
+    assert res.json()["detail"] == "Only activities can be shared"
+
+
 def test_private_card_shares_only_for_someone_who_can_see_it(village, owner, parent):
     """The share endpoint enforces the same visibility wall as every other
     item route: one parent's private card is invisible to the other parent,
@@ -426,25 +434,50 @@ def test_rsvp_after_source_done_is_born_done(village, owner, other, app):
 def test_shift_schedule_math():
     d = dt.date(2026, 7, 20)
     # NY evening -> LA afternoon, same date
-    nd, ns, ne = shift_schedule(d, dt.time(20, 0), dt.time(21, 0), False, "America/New_York", "America/Los_Angeles")
+    nd, ns, ne, _ = shift_schedule(d, dt.time(20, 0), dt.time(21, 0), False, "America/New_York", "America/Los_Angeles")
     assert (nd, ns, ne) == (d, dt.time(17, 0), dt.time(18, 0))
     # NY small hours -> LA previous evening
-    nd, ns, ne = shift_schedule(d, dt.time(1, 0), dt.time(2, 0), False, "America/New_York", "America/Los_Angeles")
+    nd, ns, ne, _ = shift_schedule(d, dt.time(1, 0), dt.time(2, 0), False, "America/New_York", "America/Los_Angeles")
     assert (nd, ns, ne) == (d - dt.timedelta(days=1), dt.time(22, 0), dt.time(23, 0))
     # LA late night -> NY next date
-    nd, ns, ne = shift_schedule(d, dt.time(23, 0), dt.time(23, 30), False, "America/Los_Angeles", "America/New_York")
+    nd, ns, ne, _ = shift_schedule(d, dt.time(23, 0), dt.time(23, 30), False, "America/Los_Angeles", "America/New_York")
     assert (nd, ns, ne) == (d + dt.timedelta(days=1), dt.time(2, 0), dt.time(2, 30))
     # both zones unset: untouched
-    assert shift_schedule(d, dt.time(9, 0), None, False, None, None) == (d, dt.time(9, 0), None)
+    assert shift_schedule(d, dt.time(9, 0), None, False, None, None) == (d, dt.time(9, 0), None, None)
     # all-day stays on its calendar day everywhere
-    assert shift_schedule(d, None, None, True, "America/New_York", "Pacific/Auckland") == (d, None, None)
+    assert shift_schedule(d, None, None, True, "America/New_York", "Pacific/Auckland") == (d, None, None, None)
     # converted end crossing midnight clamps (event stays on one card date)
-    nd, ns, ne = shift_schedule(d, dt.time(22, 0), dt.time(23, 30), False, "America/Los_Angeles", "America/New_York")
+    nd, ns, ne, _ = shift_schedule(d, dt.time(22, 0), dt.time(23, 30), False, "America/Los_Angeles", "America/New_York")
     assert nd == d + dt.timedelta(days=1) and ns == dt.time(1, 0) and ne == dt.time(2, 30)
     # a broken zone name leaves everything untouched
     assert shift_schedule(d, dt.time(9, 0), dt.time(10, 0), False, "Not/AZone", "America/New_York") == (
-        d, dt.time(9, 0), dt.time(10, 0)
+        d, dt.time(9, 0), dt.time(10, 0), None
     )
+    # a span's last day travels the same whole days its first day did
+    nd, _, _, ned = shift_schedule(
+        d, dt.time(23, 0), dt.time(23, 30), False, "America/Los_Angeles", "America/New_York",
+        d + dt.timedelta(days=2),
+    )
+    assert (nd, ned) == (d + dt.timedelta(days=1), d + dt.timedelta(days=3))
+
+
+def test_a_timed_spans_ends_convert_independently():
+    """A multi-day event has a real end instant on its end_date, so both ends
+    convert on their own. The single-day duration trick would measure the end
+    time against the START day and clamp a real finish to 23:59."""
+    fri = dt.date(2026, 7, 24)
+    sun = dt.date(2026, 7, 26)
+    # Chicago Fri 11 PM -> Sun 4 PM, read in New York: the start crosses
+    # midnight onto Saturday, and the finish is simply an hour later, 5 PM.
+    nd, ns, ne, ned = shift_schedule(
+        fri, dt.time(23, 0), dt.time(16, 0), False, "America/Chicago", "America/New_York", sun
+    )
+    assert (nd, ns) == (fri + dt.timedelta(days=1), dt.time(0, 0))
+    assert (ned, ne) == (sun, dt.time(17, 0))  # not clamped to 23:59
+    # Same zone on both sides: nothing moves at all.
+    assert shift_schedule(
+        fri, dt.time(23, 0), dt.time(16, 0), False, "America/Chicago", "America/Chicago", sun
+    ) == (fri, dt.time(23, 0), dt.time(16, 0), sun)
 
 
 def test_copies_land_on_the_attendee_familys_clock(village, owner, other):
@@ -467,6 +500,88 @@ def test_copies_land_on_the_attendee_familys_clock(village, owner, other):
     assert src["time_of_day"] == "20:00:00"
 
 
+def test_a_running_span_stays_on_the_village_list(village, owner, other):
+    """An event drops off the list the day after it finishes. For a trip that
+    means its LAST day, so a family can still see what they're in the middle
+    of — and the listing carries the span so the client can draw the range."""
+    started = TODAY - dt.timedelta(days=2)
+    ends = TODAY + dt.timedelta(days=1)
+    item = make_event(
+        owner, title="Cabin week", date_for=started.isoformat(), end_date=ends.isoformat()
+    )
+    out = share(owner, village, item["id"])
+    listed = next(e for e in events(other) if e["event_id"] == out["event_id"])
+    assert listed["date_for"] == started.isoformat()
+    assert listed["end_date"] == ends.isoformat()
+
+
+def test_a_finished_span_falls_off_the_village_list(village, owner, other):
+    item = make_event(
+        owner,
+        title="Was a cabin week",
+        date_for=(TODAY - dt.timedelta(days=4)).isoformat(),
+        end_date=(TODAY - dt.timedelta(days=2)).isoformat(),
+    )
+    out = share(owner, village, item["id"])
+    assert all(e["event_id"] != out["event_id"] for e in events(other))
+
+
+def test_the_listed_span_lands_on_the_viewers_clock(village, owner, other):
+    """The listing shifts both ends of the span, the same way the copy does."""
+    _tz(owner, "America/Los_Angeles")
+    _tz(other, "America/New_York")
+    item = make_event(
+        owner, title="Cabin weekend", time_of_day="23:00", end_time="23:30",
+        end_date=(TOMORROW + dt.timedelta(days=2)).isoformat(),
+    )
+    out = share(owner, village, item["id"])
+    listed = next(e for e in events(other) if e["event_id"] == out["event_id"])
+    # 11 PM Pacific is the next day Eastern, so both ends step one day on.
+    assert listed["date_for"] == (TOMORROW + dt.timedelta(days=1)).isoformat()
+    assert listed["end_date"] == (TOMORROW + dt.timedelta(days=3)).isoformat()
+
+
+def test_a_span_invite_body_reads_as_a_range_on_the_recipients_clock(village, owner, other):
+    """The WHEN line of a cross-tz invite: the shifted range, then the shifted
+    start time. The end time is left off a span, as everywhere else."""
+    _tz(owner, "America/Los_Angeles")
+    _tz(other, "America/New_York")
+    end = TOMORROW + dt.timedelta(days=2)
+    item = make_event(
+        owner, title="Cabin weekend", time_of_day="23:00", end_time="23:30",
+        end_date=end.isoformat(),
+    )
+    share(owner, village, item["id"])
+    body = inbox_rows(other, "invite")[0]["body"]
+    starts_on = TOMORROW + dt.timedelta(days=1)
+    ends_on = end + dt.timedelta(days=1)
+    assert body == (
+        f"{starts_on.strftime('%a %b %-d')} – {ends_on.strftime('%a %b %-d')}"
+        " · 2:00 AM · Riverside Park"
+    )
+
+
+def test_a_span_copy_moves_both_of_its_days(village, owner, other):
+    """A multi-day invite crossing midnight on the attendee's clock keeps its
+    length: the last day moves with the first, never stretching the trip."""
+    assert owner.patch(
+        "/families/me", json={"name": "Home", "timezone": "America/Los_Angeles"}
+    ).status_code == 200
+    assert other.patch(
+        "/families/me", json={"name": "The Bs", "timezone": "America/New_York"}
+    ).status_code == 200
+    item = make_event(
+        owner, title="Cabin weekend", time_of_day="23:00", end_time="23:30",
+        end_date=(TOMORROW + dt.timedelta(days=2)).isoformat(),
+    )
+    out = share(owner, village, item["id"])
+    ev = rsvp(other, out["event_id"], "going", [user_id(other)])
+    copy = feed_ids(other, date=TOMORROW)[ev["my_item_id"]]
+    # 11 PM Pacific is the next day Eastern, so both ends step one day on.
+    assert copy["date_for"] == (TOMORROW + dt.timedelta(days=1)).isoformat()
+    assert copy["end_date"] == (TOMORROW + dt.timedelta(days=3)).isoformat()
+
+
 # ---- propagation ----------------------------------------------------------------------
 
 
@@ -484,12 +599,26 @@ def test_reschedule_rewrites_copies_and_notifies_going_only(village, owner, othe
     assert len(lines) == 1 and "Updated" in lines[0]["title"]
 
 
-def test_shared_source_cannot_be_reshaped(village, owner, other):
+def test_shared_source_cannot_be_reshaped(village, owner, other, engine_db):
     """A shared card must stay dated and non-repeating: reshaping it would
     strand every family's list and copies. Regression for the reviewer's
-    repeat-conversion 500."""
+    repeat-conversion 500. Only activities may be shared now, and their own
+    shape rules already forbid a repeat, so the lock is reached the one way
+    it still can be: an appointment shared before that rule, planted here."""
+    from app.models import Item, VillageEvent
+
     item = make_event(owner, kind="appointment")
-    out = share(owner, village, item["id"])
+    with engine_db() as db:
+        src = db.get(Item, item["id"])
+        event = VillageEvent(
+            village_id=village,
+            item_id=src.id,
+            family_id=src.family_id,
+            shared_by_id=src.owner_id,
+        )
+        db.add(event)
+        db.commit()
+        out = {"event_id": event.id}
     rsvp(other, out["event_id"], "going", [user_id(other)])
     res = owner.patch(
         f"/items/{item['id']}",
@@ -763,8 +892,7 @@ def test_past_due_nags_the_source_but_never_the_copy(
         "keys": {"p256dh": "k2", "auth": "a2"},
     })
     item = make_event(
-        owner, kind="appointment", date_for=yesterday.isoformat(),
-        time_of_day="09:00", end_time="10:00",
+        owner, date_for=yesterday.isoformat(), time_of_day="09:00", end_time="10:00",
     )
     out = share(owner, village, item["id"])
     rsvp(other, out["event_id"], "going", [user_id(other)])  # the copy lands on B's board
@@ -809,7 +937,7 @@ def test_same_tz_invite_body_is_byte_identical(village, owner, other):
     item = make_event(owner)  # default families keep NULL tz
     share(owner, village, item["id"])
     ref = SimpleNamespace(
-        repeat_type=None, date_for=TOMORROW, all_day=False,
+        repeat_type=None, date_for=TOMORROW, end_date=None, all_day=False,
         time_of_day=dt.time(17, 30), end_time=dt.time(18, 30),
     )
     expected = _schedule_text(ref) + " · Riverside Park"
@@ -831,9 +959,7 @@ def test_cross_tz_invite_body_shows_the_recipients_wall_clock(village, owner, ot
 def test_all_day_invite_body_keeps_the_calendar_date_everywhere(village, owner, other):
     _tz(owner, "America/New_York")
     _tz(other, "Pacific/Auckland")
-    item = make_event(
-        owner, kind="appointment", all_day=True, time_of_day=None, end_time=None
-    )
+    item = make_event(owner, all_day=True, time_of_day=None, end_time=None)
     share(owner, village, item["id"])
     body = inbox_rows(other, "invite")[0]["body"]
     assert TOMORROW.strftime("%a %b %-d") in body and "all day" in body
@@ -858,8 +984,8 @@ def test_null_tz_zone_uses_the_dates_own_dst_offset(monkeypatch):
     family converts a schedule on the date's own offset, not today's."""
     monkeypatch.setenv("TZ", "America/New_York")
     jan = dt.date(2026, 1, 15)  # EST, UTC-5
-    d, s, _ = shift_schedule(jan, dt.time(12, 0), None, False, None, "America/Phoenix")
+    d, s, _, _ = shift_schedule(jan, dt.time(12, 0), None, False, None, "America/Phoenix")
     assert (d, s) == (jan, dt.time(10, 0))
     jul = dt.date(2026, 7, 15)  # EDT, UTC-4
-    d, s, _ = shift_schedule(jul, dt.time(12, 0), None, False, None, "America/Phoenix")
+    d, s, _, _ = shift_schedule(jul, dt.time(12, 0), None, False, None, "America/Phoenix")
     assert (d, s) == (jul, dt.time(9, 0))

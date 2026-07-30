@@ -29,21 +29,34 @@ from app.models import (
 )
 
 # Every field a copy takes verbatim from the source. Schedule fields travel
-# separately through shift_schedule. A future Item column must consciously
-# join or skip this tuple.
+# separately through shift_schedule, end_date among them (a span's last day
+# moves with its first). repeat_until stays out for good: a shared source is
+# non-repeating by definition. A future Item column must consciously join or
+# skip this tuple.
 _SYNCED_FIELDS = ("kind", "title", "notes", "location", "all_day")
 
 
 def _copy_schedule(src: Item, from_tz: str | None, to_tz: str | None):
     return shift_schedule(
-        src.date_for, src.time_of_day, src.end_time, src.all_day, from_tz, to_tz
+        src.date_for,
+        src.time_of_day,
+        src.end_time,
+        src.all_day,
+        from_tz,
+        to_tz,
+        src.end_date,
     )
 
 
 def _apply(copy: Item, src: Item, from_tz: str | None, to_tz: str | None) -> None:
     for f in _SYNCED_FIELDS:
         setattr(copy, f, getattr(src, f))
-    copy.date_for, copy.time_of_day, copy.end_time = _copy_schedule(src, from_tz, to_tz)
+    (
+        copy.date_for,
+        copy.time_of_day,
+        copy.end_time,
+        copy.end_date,
+    ) = _copy_schedule(src, from_tz, to_tz)
 
 
 def materialize(

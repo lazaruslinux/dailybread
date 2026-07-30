@@ -1156,8 +1156,12 @@ def _events_out(
         # Don't drag the whole event history through the joins forever: a
         # shifted schedule moves at most one calendar day, so a one-day slack
         # in SQL keeps the exact viewer-local cutoff below the only filter
-        # that matters.
-        q = q.where(Item.date_for >= dt.date.today() - dt.timedelta(days=1))
+        # that matters. A multi-day event is judged on its LAST day, so a trip
+        # already under way stays on the list.
+        q = q.where(
+            func.coalesce(Item.end_date, Item.date_for)
+            >= dt.date.today() - dt.timedelta(days=1)
+        )
     rows = db.execute(q).all()
     if not rows:
         return []
@@ -1229,15 +1233,18 @@ def _events_out(
     out: list[VillageEventOut] = []
     today_here = family_now(dt.datetime.now(), viewer_family.timezone).date()
     for event, item, village_name, organizer_family in rows:
-        date_for, start, end = shift_schedule(
+        date_for, start, end, end_date = shift_schedule(
             item.date_for,
             item.time_of_day,
             item.end_time,
             item.all_day,
             organizer_family.timezone,
             viewer_family.timezone,
+            item.end_date,
         )
-        if only_event_ids is None and date_for < today_here:
+        # An event drops off the list the day after it finishes, which for a
+        # span is its last day, not its first.
+        if only_event_ids is None and (end_date or date_for) < today_here:
             continue
         rsvps = []
         my_rsvp = None
@@ -1278,6 +1285,7 @@ def _events_out(
                 notes=item.notes,
                 location=item.location,
                 date_for=date_for,
+                end_date=end_date,
                 time_of_day=start,
                 end_time=end,
                 all_day=item.all_day,
@@ -1305,8 +1313,8 @@ def share_event(
     db: Session = Depends(get_db),
     parent: User = Depends(require_parent),
 ):
-    """Offer one of the family's own dated activities/appointments to a
-    village. The card itself stays the family's; the event row is a pointer."""
+    """Offer one of the family's own dated activities to a village. The card
+    itself stays the family's; the event row is a pointer."""
     village = _member_village(db, village_id, parent.family_id)
     item = db.scalar(
         select(Item).where(Item.id == data.item_id, Item.family_id == parent.family_id)
@@ -1318,10 +1326,11 @@ def share_event(
     from app.routers.items import _require_visible
 
     _require_visible(item, parent)
-    if item.kind not in (ItemKind.activity, ItemKind.appointment):
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "Only activities and appointments can be shared"
-        )
+    # Share-time only: appointments shared before this rule keep working, they
+    # just can't be offered again. An appointment is the family's own business;
+    # an activity is the thing you invite other households to.
+    if item.kind != ItemKind.activity:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Only activities can be shared")
     if item.village_event_id is not None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "That card came from a village event")
     if item.date_for is None:

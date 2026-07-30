@@ -563,6 +563,13 @@ export interface Repeat {
   days: number[]
   interval: number
   month_day: number | null
+  // The day the pattern counts from; the editor prefills it so a later save
+  // doesn't re-phase an every-N repeat.
+  anchor: string | null // "YYYY-MM-DD"
+  // The last day the pattern may land on, or null when it runs forever. An
+  // "after N times" end is resolved to this date when the card is saved, so
+  // the count itself never comes back.
+  until: string | null // "YYYY-MM-DD"
 }
 
 // One participant's own state on a routine, since routines are per-person.
@@ -588,8 +595,11 @@ export interface FeedItem {
   shared_to_feed: boolean
   time_of_day: string | null // start / "From", "HH:MM:SS"
   end_time: string | null // end / "To", "HH:MM:SS"
-  all_day: boolean // all-day appointment
+  all_day: boolean // all-day activity or appointment
   date_for: string | null // "YYYY-MM-DD"
+  // The last day a multi-day card covers. null when it lives on date_for
+  // alone; the card shows on every day from date_for through this one.
+  end_date?: string | null // "YYYY-MM-DD"
   location?: string | null // where it happens (activities/appointments)
   // Set on a materialized village-event copy: organizer-managed, no local edit.
   village_event_id?: number | null
@@ -635,6 +645,14 @@ export interface RepeatInput {
   days?: number[]
   interval?: number
   month_day?: number | null
+  // Where the "every N" count starts from; without it an every-2-weeks
+  // pattern has no phase to hold to.
+  anchor?: string | null // "YYYY-MM-DD"
+  // How the repeat ends: a last day, or a number of occurrences the server
+  // walks forward into one. They are mutually exclusive; neither means it
+  // runs forever.
+  until?: string | null // "YYYY-MM-DD"
+  count?: number | null
 }
 
 export interface ItemPayload {
@@ -649,6 +667,8 @@ export interface ItemPayload {
   end_time?: string | null // end / "To"
   all_day?: boolean
   date_for?: string | null
+  // Activities and appointments only, and never on a repeating card.
+  end_date?: string | null
   repeat?: RepeatInput | null // required for routines, ignored otherwise
   // Routines only: a synced workout checks the routine off for that member.
   workout_auto_complete?: boolean
@@ -1635,6 +1655,9 @@ export interface VillageEvent {
   notes: string
   location: string | null
   date_for: string
+  // Last day of a multi-day event, on this family's clock too; null when it
+  // lives on date_for alone.
+  end_date?: string | null
   time_of_day: string | null // already on this family's clock
   end_time: string | null
   all_day: boolean

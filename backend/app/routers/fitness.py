@@ -584,6 +584,7 @@ def _auto_complete_routines(db: Session, user: User, days: set[dt.date]) -> int:
                 routine.repeat_interval,
                 routine.repeat_anchor,
                 routine.repeat_month_day,
+                routine.repeat_until,
                 day,
             ):
                 continue

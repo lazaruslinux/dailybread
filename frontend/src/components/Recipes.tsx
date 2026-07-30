@@ -1792,8 +1792,14 @@ export function FoodSheet({
                     placeholder="100" style={{ width: '3.75rem' }}
                     className="field shrink-0 px-2 text-right"
                     aria-label={`Serving ${i + 1} size in ${UNIT_LABEL[sizeUnit]}`} />
+                  {/* Inline width like the grams input beside it: .field sets
+                      its own width, so a w-* utility loses to it, and desktop
+                      renders native selects far wider than iOS — without this
+                      the select swallows the delete button and the row
+                      overflows the sheet. */}
                   <select value={sizeUnit} onChange={(e) => changeSizeUnit(e.target.value as SizeUnit)}
-                    className="field min-h-11 w-auto shrink-0 px-1.5 text-xs" aria-label={`Serving ${i + 1} unit`}>
+                    style={{ width: '4rem' }}
+                    className="field min-h-11 shrink-0 px-1.5 text-xs" aria-label={`Serving ${i + 1} unit`}>
                     {unitsForBase(baseUnit).map((u) => (
                       <option key={u} value={u}>{UNIT_LABEL[u]}</option>
                     ))}

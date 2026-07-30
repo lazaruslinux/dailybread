@@ -16,7 +16,7 @@ import datetime as dt
 import json
 import logging
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -329,8 +329,8 @@ def _due_users(
 
 def _open_today(db: Session, user: User, now: dt.datetime) -> list[Item]:
     """One member's OPEN items today: routines landing today, cards dated
-    today, and undated anytime tasks — completed ones excluded, exactly like
-    the board."""
+    today (a multi-day card on every day it covers), and undated anytime
+    tasks — completed ones excluded, exactly like the board."""
     from app.routers.items import _completions_by_item, _occurs
 
     today = now.date()
@@ -342,7 +342,10 @@ def _open_today(db: Session, user: User, now: dt.datetime) -> list[Item]:
                 Item.family_id == user.family_id,
                 or_(
                     Item.repeat_type.is_not(None),
-                    Item.date_for == today,
+                    and_(
+                        Item.date_for <= today,
+                        func.coalesce(Item.end_date, Item.date_for) >= today,
+                    ),
                     Item.date_for.is_(None),
                 ),
             )
@@ -388,7 +391,12 @@ def _todays_board(db: Session, user: User, now: dt.datetime) -> tuple[int, Item 
     upcoming = [
         item
         for item in open_items
-        if item.time_of_day is not None and not item.all_day and item.time_of_day > now.time()
+        if item.time_of_day is not None
+        and not item.all_day
+        and item.time_of_day > now.time()
+        # A span's start time belonged to the day it began; on a later day of
+        # the run it reads like an all-day card and is nobody's "next up".
+        and not (item.date_for is not None and item.date_for < now.date())
     ]
     next_item = min(upcoming, key=lambda i: i.time_of_day) if upcoming else None
     return len(open_items), next_item
@@ -397,11 +405,13 @@ def _todays_board(db: Session, user: User, now: dt.datetime) -> tuple[int, Item 
 def _past_due_pass(db: Session, clocks: dict[int, dt.datetime], now: dt.datetime) -> int:
     """One nudge, 24 hours after a dated card's moment passed with nobody
     marking it: "Past due: Call the plumber". One-shots only (routines reset
-    daily and never go "past due" on the board). Claimed on (item, the day
-    AFTER its date) via ReminderLog, which can't collide: a dated card only
-    ever claims its own day for the before-hand reminder. An alert more than
-    a day stale (a long server outage, or the feature arriving over an
-    existing backlog) claims quietly instead of dogpiling old cards."""
+    daily and never go "past due" on the board). A multi-day card is judged on
+    its LAST day — a trip isn't late while it's still running. Claimed on
+    (item, the day AFTER that last day) via ReminderLog, which can't collide:
+    a dated card only ever claims its own start day for the before-hand
+    reminder. An alert more than a day stale (a long server outage, or the
+    feature arriving over an existing backlog) claims quietly instead of
+    dogpiling old cards."""
     from app.routers.items import _completions_by_item
 
     sent = 0
@@ -413,7 +423,7 @@ def _past_due_pass(db: Session, clocks: dict[int, dt.datetime], now: dt.datetime
             .where(
                 Item.kind != ItemKind.routine,
                 Item.repeat_type.is_(None),
-                Item.date_for.in_(candidate_days),
+                func.coalesce(Item.end_date, Item.date_for).in_(candidate_days),
                 # A shared-event copy can't be acted on by its family (only the
                 # host drives it), so it must never nag them as "past due". The
                 # organizer's own source still nags the host family.
@@ -428,22 +438,28 @@ def _past_due_pass(db: Session, clocks: dict[int, dt.datetime], now: dt.datetime
     comps = _completions_by_item(db, items)
     for item in items:
         local = clocks.get(item.family_id, now)
+        last_day = item.end_date or item.date_for
+        # The moment it came due: a single day's start time, but a span isn't
+        # finished until its LAST day's END time — a trip ending Sunday at 4 PM
+        # nags Monday at 4, not Monday at the hour it set off on Friday.
+        moment = item.time_of_day
+        if last_day != item.date_for and item.end_time is not None:
+            moment = item.end_time
         due_at = dt.datetime.combine(
-            item.date_for,
-            item.time_of_day if item.time_of_day and not item.all_day else dt.time(23, 59),
+            last_day, moment if moment and not item.all_day else dt.time(23, 59)
         )
         alert_at = due_at + dt.timedelta(hours=24)
         if local < alert_at:
             continue
         if comps[item.id]:  # done or cancelled, whenever it was marked
             continue
-        if _already_reminded(db, item, item.date_for + dt.timedelta(days=1)):
+        if _already_reminded(db, item, last_day + dt.timedelta(days=1)):
             continue
         if local - alert_at > dt.timedelta(hours=24):
             continue  # claimed quietly: too stale to nag about now
         when = "yesterday"
-        if item.time_of_day and not item.all_day:
-            when += f" at {_fmt(item.time_of_day)}"
+        if moment and not item.all_day:
+            when += f" at {_fmt(moment)}"
         people = [
             p for p in _recipients(db, item) if not p.is_minor and wants(p, "overdue")
         ]

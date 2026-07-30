@@ -176,6 +176,17 @@ class RepeatIn(BaseModel):
     interval: int = Field(default=1, ge=1, le=52)
     month_day: int | None = Field(default=None, ge=1, le=31)
     anchor: dt.date | None = None
+    # Where the repeat stops. until is the last day it may land on; count is
+    # "after N occurrences" and the server resolves it into an until date, so
+    # only one of the two is ever stored. Neither means it runs forever.
+    until: dt.date | None = None
+    count: int | None = Field(default=None, ge=1, le=500)
+
+    @model_validator(mode="after")
+    def _one_end(self) -> "RepeatIn":
+        if self.until is not None and self.count is not None:
+            raise ValueError("A repeat ends by date or after a count, not both")
+        return self
 
 
 class RepeatOut(BaseModel):
@@ -183,6 +194,12 @@ class RepeatOut(BaseModel):
     days: list[int]  # 0=Mon .. 6=Sun
     interval: int
     month_day: int | None
+    # The stored anchor phases an every-N pattern; the editor prefills it so a
+    # later save doesn't silently re-phase the repeat.
+    anchor: dt.date | None = None
+    # A count end was resolved to this date when the card was saved, so
+    # editing one shows the end date rather than the count that made it.
+    until: dt.date | None = None
 
 
 class ItemIn(BaseModel):
@@ -190,7 +207,7 @@ class ItemIn(BaseModel):
 
     kind: ItemKind
     title: str = Field(min_length=1, max_length=120)
-    notes: str = Field(default="", max_length=300)
+    notes: str = Field(default="", max_length=1000)
     # Who the card is shared with. Empty on a personal card means the owner
     # alone; use visibility=family for "Everyone".
     assignee_ids: list[int] = Field(default_factory=list)
@@ -199,8 +216,11 @@ class ItemIn(BaseModel):
     visibility: Visibility | None = None
     time_of_day: dt.time | None = None  # start / "From"
     end_time: dt.time | None = None  # end / "To" (activities & timed appointments)
-    all_day: bool = False  # all-day appointment: a date with no times
+    all_day: bool = False  # all-day event: a date with no times
     date_for: dt.date | None = None  # tasks/events; routines use repeat instead
+    # The last day a multi-day activity or appointment covers. None is a
+    # single day; a repeating card can't carry one.
+    end_date: dt.date | None = None
     repeat: RepeatIn | None = None  # required for routines, forbidden otherwise
     # Routines only: a synced workout checks this routine off for that member.
     workout_auto_complete: bool = False
@@ -218,7 +238,7 @@ class ItemUpdate(BaseModel):
     """
 
     title: str | None = Field(default=None, min_length=1, max_length=120)
-    notes: str | None = Field(default=None, max_length=300)
+    notes: str | None = Field(default=None, max_length=1000)
     # Sending the list replaces the assignees wholesale.
     assignee_ids: list[int] | None = None
     visibility: Visibility | None = None
@@ -226,6 +246,7 @@ class ItemUpdate(BaseModel):
     end_time: dt.time | None = None
     all_day: bool | None = None
     date_for: dt.date | None = None
+    end_date: dt.date | None = None
     repeat: RepeatIn | None = None
     workout_auto_complete: bool | None = None
     location: str | None = Field(default=None, max_length=120)
@@ -260,6 +281,8 @@ class FeedItemOut(BaseModel):
     end_time: dt.time | None  # end / "To"
     all_day: bool
     date_for: dt.date | None
+    # Last day of a multi-day card; None when it lives on date_for alone.
+    end_date: dt.date | None = None
     # Where it happens (activities/appointments mostly; free text).
     location: str | None = None
     # Set on a materialized village-event copy: the card is organizer-managed
@@ -1467,6 +1490,9 @@ class VillageEventOut(BaseModel):
     notes: str
     location: str | None
     date_for: dt.date
+    # Last day of a multi-day event, on the viewer's clock too. None when the
+    # event lives on date_for alone.
+    end_date: dt.date | None = None
     time_of_day: dt.time | None
     end_time: dt.time | None
     all_day: bool

@@ -9,7 +9,7 @@ import {
   type User,
   type VillageEvent,
 } from '../lib/api'
-import { mapsUrl } from '../lib/items'
+import { compactDate, mapsUrl, spansDays } from '../lib/items'
 import { formatTime } from '../lib/moods'
 import { Avatar } from './Avatar'
 import { KIND_STYLE } from './ItemCard'
@@ -34,18 +34,21 @@ function ordinal(n: number): string {
 
 // A routine's recurrence in plain words for the detail view.
 function describeRepeat(r: Repeat): string {
+  let base: string
   if (r.type === 'weekly') {
     const isEveryDay = r.days.length === 7
     const isWeekdays = r.days.length === 5 && [0, 1, 2, 3, 4].every((d) => r.days.includes(d))
-    const base = isEveryDay
+    base = isEveryDay
       ? 'Every day'
       : isWeekdays
         ? 'Weekdays'
         : r.days.map((d) => DAY_FULL[d]).join(', ')
-    return r.interval > 1 ? `${base}, every ${r.interval} weeks` : base
+    if (r.interval > 1) base = `${base}, every ${r.interval} weeks`
+  } else {
+    base = `The ${ordinal(r.month_day ?? 1)} of the month`
+    if (r.interval > 1) base = `${base}, every ${r.interval} months`
   }
-  const base = `The ${ordinal(r.month_day ?? 1)} of the month`
-  return r.interval > 1 ? `${base}, every ${r.interval} months` : base
+  return r.until ? `${base}, until ${compactDate(r.until)}` : base
 }
 
 // Full view of one card: everything the board truncates, plus the actions.
@@ -84,16 +87,20 @@ export function ItemDetail({
   villageEvent?: VillageEvent | null
   onChangeRsvp?: () => void
   // Set when this card could be offered to a village (parent, own dated
-  // activity/appointment, non-recurring). Home decides; this just renders.
+  // non-recurring activity). Home decides; this just renders.
   onShareVillage?: () => void
 }) {
   const { Icon, tint, label: kindLabel } = KIND_STYLE[item.kind]
   const label = item.cancelled ? `${kindLabel} · Cancelled` : kindLabel
   const isRoutine = item.kind === 'routine'
+  const spans = spansDays(item)
+  // A span shows only its START time: its end time belongs to the last day,
+  // and "9:00 AM – 4:00 PM" beside a date range reads as if both times landed
+  // on both days. Same rule the notification text uses.
   const whenLabel = item.all_day
     ? 'All day'
     : item.time_of_day
-      ? item.end_time
+      ? item.end_time && !spans
         ? `${formatTime(item.time_of_day)} – ${formatTime(item.end_time)}`
         : formatTime(item.time_of_day)
       : null
@@ -204,10 +211,12 @@ export function ItemDetail({
           )}
           {item.date_for && (
             <div className="flex items-center gap-2">
-              <span className="w-12 text-xs font-semibold uppercase tracking-wide text-fg/40">
-                {item.kind === 'task' ? 'Due' : 'Date'}
+              <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-fg/40">
+                {item.kind === 'task' ? 'Due' : spans ? 'Dates' : 'Date'}
               </span>
-              {formatDate(item.date_for)}
+              {spans
+                ? `${compactDate(item.date_for)} – ${compactDate(item.end_date!)}`
+                : formatDate(item.date_for)}
             </div>
           )}
           {item.location && (

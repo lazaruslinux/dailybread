@@ -162,6 +162,62 @@ def test_done_and_ancient_cards_never_alert(owner, configured, push_outbox, engi
     assert push_engine.digest_tick(at(10)) == 0
 
 
+def test_a_span_is_only_past_due_after_its_last_day(owner, configured, push_outbox, engine_db):
+    """A trip that runs into today isn't late; the nudge waits for the day
+    after the span's LAST day."""
+    owner.put("/push/subscription", json=SUB)
+    make(
+        owner,
+        kind="activity",
+        title="Camping",
+        date_for=(TODAY - dt.timedelta(days=2)).isoformat(),
+        end_date=TODAY.isoformat(),
+        time_of_day="09:00:00",
+        end_time="16:00:00",
+    )
+    finished = make(
+        owner,
+        kind="activity",
+        title="Was camping",
+        date_for=(TODAY - dt.timedelta(days=3)).isoformat(),
+        end_date=YESTERDAY.isoformat(),
+        time_of_day="09:00:00",
+        end_time="16:00:00",
+    )
+    push_outbox.clear()
+    # 25 hours past both trips' 9 AM start, and neither nags: a span comes due
+    # at its LAST day's END time, so the finished one isn't late until 4 PM.
+    push_engine.digest_tick(at(10))
+    assert [p for _ep, p in push_outbox if p["title"].startswith("Past due")] == []
+    # 25 hours past that 4 PM finish, exactly one card nags: the finished one.
+    push_engine.digest_tick(at(17))
+    past_due = [p for _ep, p in push_outbox if p["title"].startswith("Past due")]
+    assert [p["title"] for p in past_due] == [f"Past due: {finished['title']}"]
+    # And the body names the moment it actually finished, not when it set off.
+    assert past_due[0]["body"] == "Was due yesterday at 4:00 PM and it's still open."
+
+
+def test_the_digest_counts_a_trip_on_every_day_it_runs(owner, configured, push_outbox, engine_db):
+    """A multi-day card is on today's board from its first day to its last, so
+    the morning count has to see it mid-run, not only on the day it began."""
+    owner.put("/push/subscription", json=SUB)
+    make(
+        owner,
+        kind="activity",
+        title="Camping",
+        date_for=YESTERDAY.isoformat(),
+        end_date=(TODAY + dt.timedelta(days=1)).isoformat(),
+        time_of_day="09:00:00",
+        end_time="16:00:00",
+    )
+    push_outbox.clear()
+    assert push_engine.digest_tick(at(7)) == 1
+    body = push_outbox[0][1]["body"]
+    assert body.startswith("1 item on today's board")
+    # Its 9 AM start belonged to the day it began, so it is nobody's "next up".
+    assert "Next up" not in body
+
+
 def test_past_due_alert_respects_the_pref(owner, configured, push_outbox, engine_db):
     owner.put("/push/subscription", json=SUB)
     owner.put("/push/prefs", json={"prefs": {"overdue": False}})

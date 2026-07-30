@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../lib/api'
 import { avatarUrl } from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
-import { canCheckItem } from '../lib/items'
+import { canCheckItem, continuesOn } from '../lib/items'
 import { timeGreeting } from '../lib/moods'
 import { Avatar } from '../components/Avatar'
 import { DayTimeline } from '../components/DayTimeline'
@@ -140,7 +140,10 @@ function WaitingOnYou({
 // is only for one-offs (routines are habits, never overdue); a passed timed
 // routine just stays in Now until it's done.
 type Slot = 'pastdue' | 'now' | 'coming' | 'anytime'
-function todaySlot(item: api.FeedItem, nowHm: string): Slot {
+function todaySlot(item: api.FeedItem, nowHm: string, today: string): Slot {
+  // A multi-day card past its first day is under way all day: its start time
+  // belonged to the day it began, so the clock has nothing to say about it.
+  if (continuesOn(item, today)) return 'now'
   if (!item.time_of_day && !item.all_day) return 'anytime'
   if (item.all_day) return 'now'
   const end = item.end_time || item.time_of_day! // has a start time here
@@ -530,6 +533,7 @@ export function Home({
       // The date lives inside the card for anything not dated today, so the
       // past-due and next-7-days lists read without repeated date separators.
       showDate: item.date_for != null && item.date_for !== feed?.date,
+      day: feed?.date,
       onToggle: checkable ? () => toggle(item) : undefined,
       onOpen: () => setDetail({ item, checkable }),
       onEdit: isParent ? () => openEditor(item) : undefined,
@@ -567,6 +571,8 @@ export function Home({
     filter.length === 0 || filter.some((id) => isForMember(item, id))
 
   const nowHm = `${pad(clock.getHours())}:${pad(clock.getMinutes())}:00`
+  // The day the board is showing, which multi-day cards are read against.
+  const boardDay = feed?.date ?? api.localDate()
 
   const overdue = feed ? feed.overdue.filter(matchesFilter) : []
   const todayCards = feed ? feed.today.filter(matchesFilter) : []
@@ -584,17 +590,24 @@ export function Home({
   // ones right where they were scheduled - so those stay off the Done and
   // Past due lists in that view. Only carry-overs from earlier days (which
   // have no spot on today's grid) and the untimed sections keep their lists.
-  const timed = todayCards.filter((i) => i.time_of_day && !i.all_day)
-  const allDayOpen = todayCards.filter((i) => i.all_day && !i.completed)
+  // A multi-day card only gets a slot on the grid on the day it starts; after
+  // that it runs alongside the day rather than at a time in it, so it joins
+  // the all-day strip above the timeline.
+  const timed = todayCards.filter(
+    (i) => i.time_of_day && !i.all_day && !continuesOn(i, boardDay),
+  )
+  const allDayOpen = todayCards.filter(
+    (i) => (i.all_day || continuesOn(i, boardDay)) && !i.completed,
+  )
   const timedIds = new Set(timed.map((i) => i.id))
   const doneOffTimeline = done.filter((i) => !timedIds.has(i.id))
   const pastDueOffTimeline = overdue.filter((i) => !i.completed)
 
   const openToday = todayCards.filter((i) => !i.completed)
-  const pastDue = [...overdue.filter((i) => !i.completed), ...openToday.filter((i) => todaySlot(i, nowHm) === 'pastdue')]
-  const nowCards = openToday.filter((i) => todaySlot(i, nowHm) === 'now')
-  const comingCards = openToday.filter((i) => todaySlot(i, nowHm) === 'coming')
-  const anytimeCards = openToday.filter((i) => todaySlot(i, nowHm) === 'anytime')
+  const pastDue = [...overdue.filter((i) => !i.completed), ...openToday.filter((i) => todaySlot(i, nowHm, boardDay) === 'pastdue')]
+  const nowCards = openToday.filter((i) => todaySlot(i, nowHm, boardDay) === 'now')
+  const comingCards = openToday.filter((i) => todaySlot(i, nowHm, boardDay) === 'coming')
+  const anytimeCards = openToday.filter((i) => todaySlot(i, nowHm, boardDay) === 'anytime')
   const next7Open = next7.filter((i) => !i.completed)
 
   const todayEmpty =
@@ -836,8 +849,12 @@ export function Home({
                 {/* Peeked days are for looking: no checkboxes (a toggle would
                     record the wrong date), cards still open their detail. */}
                 {(() => {
-                  const peekAllDay = peekItems.filter((i) => i.all_day)
-                  const peekTimed = peekItems.filter((i) => i.time_of_day && !i.all_day)
+                  const peekAllDay = peekItems.filter(
+                    (i) => i.all_day || continuesOn(i, timelineDate),
+                  )
+                  const peekTimed = peekItems.filter(
+                    (i) => i.time_of_day && !i.all_day && !continuesOn(i, timelineDate),
+                  )
                   return (
                     <>
                       {peekAllDay.length > 0 && (
@@ -850,6 +867,7 @@ export function Home({
                                 item={item}
                                 canCheck={false}
                                 family={family}
+                                day={timelineDate}
                                 viewerId={user?.id}
                                 viewerIsParent={isParent}
                                 onOpen={() => setDetail({ item, checkable: false })}
@@ -967,10 +985,13 @@ export function Home({
           const matchedEvent = managed
             ? vEvents.find((e) => e.my_item_id === detail.item.id) ?? null
             : vEvents.find((e) => e.is_own && e.item_id === detail.item.id) ?? null
+          // Activities only: an appointment is the family's own business, and
+          // the server refuses to share one now anyway. Appointments shared
+          // before that rule keep working; they just can't be offered again.
           const shareable =
             isParent &&
             !managed &&
-            (detail.item.kind === 'appointment' || detail.item.kind === 'activity') &&
+            detail.item.kind === 'activity' &&
             Boolean(detail.item.date_for) &&
             !detail.item.repeat
           return (

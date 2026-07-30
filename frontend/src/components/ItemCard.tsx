@@ -2,6 +2,7 @@ import { motion } from 'framer-motion'
 import { Activity, CalendarClock, Check, Circle, Flame, Hourglass, Pencil, Repeat, type LucideIcon , X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { avatarUrl, type FamilyMember, type FeedItem, type ItemKind } from '../lib/api'
+import { continuesOn, dateSpanLabel, spansDays } from '../lib/items'
 import { formatTimeRange } from '../lib/moods'
 import { Avatar } from './Avatar'
 import { CrumbFloat } from './CrumbFloat'
@@ -53,18 +54,6 @@ function ParticipantAvatar({
 // completes a card; tapping anywhere else opens the detail sheet, so a
 // stray tap can never silently change state. Completed cards stay in place
 // but visibly settle: dimmed, circle filled with a check.
-// "Mon, Jul 6" — the card's own date, shown only for cards that aren't today's
-// (past due and the next-7-days list), so a member can tell them apart without
-// repeated date separators.
-function shortDate(dateStr: string): string {
-  const [y, m, d] = dateStr.split('-').map(Number)
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  })
-}
-
 export function ItemCard({
   item,
   index,
@@ -72,6 +61,7 @@ export function ItemCard({
   family,
   flag,
   showDate,
+  day,
   viewerId,
   viewerIsParent,
   onToggle,
@@ -84,6 +74,9 @@ export function ItemCard({
   family?: FamilyMember[]
   flag?: 'overdue' | 'due' | null
   showDate?: boolean
+  // The day this card is being drawn on. Only multi-day cards care: past their
+  // first day they have no start time left to show.
+  day?: string
   viewerId?: number
   viewerIsParent?: boolean
   onToggle?: () => void
@@ -91,8 +84,17 @@ export function ItemCard({
   onEdit?: () => void
 }) {
   const { Icon, tint, label } = KIND_STYLE[item.kind]
-  const timeLabel = item.all_day ? 'All day' : formatTimeRange(item.time_of_day, item.end_time)
-  const dateLine = showDate && item.date_for ? shortDate(item.date_for) : null
+  const continuing = day != null && continuesOn(item, day)
+  const timeLabel =
+    item.all_day || continuing ? 'All day' : formatTimeRange(item.time_of_day, item.end_time)
+  // "Mon, Jul 6" — the card's own date, shown for cards that aren't today's
+  // (past due and the next-7-days list), so a member can tell them apart
+  // without repeated date separators. A card that runs across days always
+  // says so: "Jul 30 – Aug 2".
+  const dateLine =
+    item.date_for && (showDate || spansDays(item))
+      ? dateSpanLabel(item.date_for, item.end_date)
+      : null
   const showCheckbox = canCheck && onToggle
 
   // The +n breadcrumb float: Home dispatches db:crumbs when a completion

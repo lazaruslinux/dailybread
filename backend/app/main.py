@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
 
 
 # Kept in step with frontend/package.json by the release round.
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 
 app = FastAPI(title="dailybread", version=APP_VERSION, lifespan=lifespan)
 

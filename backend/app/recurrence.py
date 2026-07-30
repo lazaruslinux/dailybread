@@ -31,9 +31,12 @@ def occurs_on(
     repeat_interval: int | None,
     repeat_anchor: dt.date | None,
     repeat_month_day: int | None,
+    repeat_until: dt.date | None,
     date: dt.date,
 ) -> bool:
     """Does a routine with these recurrence fields land on `date`?"""
+    if repeat_until is not None and date > repeat_until:
+        return False  # the repeat has run out; nothing lands past its last day
     interval = repeat_interval or 1
 
     if repeat_type == RepeatType.weekly:
@@ -69,6 +72,7 @@ def streak(
     repeat_interval: int | None,
     repeat_anchor: dt.date | None,
     repeat_month_day: int | None,
+    repeat_until: dt.date | None,
     completed_dates: set[dt.date],
     upto: dt.date,
 ) -> int:
@@ -83,7 +87,13 @@ def streak(
     day = upto
     for _ in range(_STREAK_SCAN_LIMIT):
         if occurs_on(
-            repeat_type, repeat_days, repeat_interval, repeat_anchor, repeat_month_day, day
+            repeat_type,
+            repeat_days,
+            repeat_interval,
+            repeat_anchor,
+            repeat_month_day,
+            repeat_until,
+            day,
         ):
             if day in completed_dates:
                 count += 1

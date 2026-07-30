@@ -8,7 +8,7 @@ import { ItemDetail } from '../components/ItemDetail'
 import { KIND_STYLE, SectionDivider } from '../components/ItemCard'
 import { ItemSheet } from '../components/ItemSheet'
 import { FormError } from '../components/ui'
-import { canCheckItem } from '../lib/items'
+import { canCheckItem, continuesOn, dateSpanLabel, spansDays } from '../lib/items'
 import { formatTime } from '../lib/moods'
 
 const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
@@ -94,19 +94,24 @@ function dayHeading(iso: string, todayISO: string): string {
 function AgendaRow({
   item,
   family,
+  day,
   checkable,
   onToggle,
   onOpen,
 }: {
   item: api.FeedItem
   family: api.FamilyMember[]
+  // The day this row sits under: a multi-day card shows its times only on the
+  // day it starts, and reads as all-day on the rest of its run.
+  day: string
   checkable: boolean
   onToggle?: () => void
   onOpen?: () => void
 }) {
   const { Icon, tint, label } = KIND_STYLE[item.kind]
-  const when = item.all_day ? 'All day' : formatTime(item.time_of_day)
-  const until = item.all_day ? null : formatTime(item.end_time)
+  const continuing = continuesOn(item, day)
+  const when = item.all_day || continuing ? 'All day' : formatTime(item.time_of_day)
+  const until = item.all_day || continuing ? null : formatTime(item.end_time)
   const people = item.assignees
     .map((a) => family.find((m) => m.id === a.id))
     .filter((m): m is api.FamilyMember => Boolean(m))
@@ -147,6 +152,11 @@ function AgendaRow({
         <p className={`truncate font-semibold ${item.completed ? 'text-fg/50 line-through decoration-fg/30' : 'text-fg/90'}`}>
           {item.title}
         </p>
+        {spansDays(item) && (
+          <p className="truncate text-[11px] font-semibold text-fg/45">
+            {dateSpanLabel(item.date_for!, item.end_date)}
+          </p>
+        )}
       </div>
       {people.length > 0 && (
         <div className="flex -space-x-2">
@@ -370,6 +380,7 @@ export function Calendar() {
         key={`${item.id}-${dayISO}`}
         item={item}
         family={family}
+        day={dayISO}
         checkable={canMark}
         onToggle={canMark ? () => toggle(item, dayISO) : undefined}
         onOpen={() => setDetail({ item, day: dayISO })}

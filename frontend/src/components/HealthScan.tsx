@@ -1,6 +1,7 @@
 import { ChevronRight, PlusCircle, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import * as api from '../lib/api'
+import { useAuth } from '../auth/AuthContext'
 import { BarcodeScanner } from './BarcodeScanner'
 import {
   FoodIdentity,
@@ -78,6 +79,11 @@ type Phase = 'scan' | 'loading' | 'result' | 'unknown' | 'error'
 type Action = 'diary' | 'custom' | 'recipe' | null
 
 export function HealthScan({ onClose }: { onClose: () => void }) {
+  const { user } = useAuth()
+  // Writing a custom food and editing a recipe are both a parent's to do, and
+  // both endpoints 403 anyone else, so the buttons that lead there don't show
+  // for a non-parent adult either. Adding to the diary is everyone's.
+  const isParent = user?.role === 'parent'
   const [phase, setPhase] = useState<Phase>('scan')
   const [result, setResult] = useState<api.FoodHealth | null>(null)
   const [code, setCode] = useState('')
@@ -154,10 +160,21 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
           </div>
           <p className="text-sm leading-relaxed text-fg/70">
             No food database knows barcode <span className="font-semibold text-fg">{code}</span> yet.
-            You can enter its label once as a custom food, and a later scan will find it right away.
+            {isParent
+              ? ' You can enter its label once as a custom food, and a later scan will find it right away.'
+              : ' A parent can enter its label once as a custom food, and a later scan will find it right away.'}
           </p>
-          <div className="mt-5">
-            <Button onClick={() => setAction('custom')}>Create custom food</Button>
+          <div className="mt-5 flex flex-col gap-2">
+            {/* Custom foods are a parent's to write (the endpoint 403s anyone
+                else), so the button only shows for one. */}
+            {isParent && (
+              <Button className="min-h-11" onClick={() => setAction('custom')}>
+                Create custom food
+              </Button>
+            )}
+            <Button className="min-h-11" variant="ghost" onClick={() => setPhase('scan')}>
+              Scan another
+            </Button>
           </div>
         </Sheet>
         {action === 'custom' && (
@@ -256,12 +273,19 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
           <Button className="min-h-11" onClick={() => setAction('diary')}>
             Add to diary
           </Button>
-          <Button className="min-h-11" variant="ghost" onClick={() => setAction('custom')}>
-            Save as custom food
-          </Button>
-          <Button className="min-h-11" variant="ghost" onClick={() => setAction('recipe')}>
-            Add to a recipe
-          </Button>
+          {isParent && (
+            <Button className="min-h-11" variant="ghost" onClick={() => setAction('custom')}>
+              Save as custom food
+            </Button>
+          )}
+          {/* Dropping the food into a recipe edits the recipe, which is a
+              parent's to do; without the gate a non-parent adult only finds
+              out after picking one. */}
+          {isParent && (
+            <Button className="min-h-11" variant="ghost" onClick={() => setAction('recipe')}>
+              Add to a recipe
+            </Button>
+          )}
         </div>
       </Sheet>
 

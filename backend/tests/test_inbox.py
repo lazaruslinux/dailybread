@@ -64,6 +64,57 @@ def test_board_add_lands_in_the_other_parents_inbox(owner, parent, child):
     assert entries(child) == []
 
 
+def test_a_spans_line_reads_as_a_date_range(owner, parent):
+    """A multi-day card says the days it covers and the time it starts. Its end
+    TIME is left off: it belongs to the last day, and showing both beside a
+    date range would read as if each day ran 9 to 4."""
+    end = TODAY + dt.timedelta(days=3)
+    make_item(
+        owner,
+        kind="activity",
+        title="Camping",
+        date_for=TODAY.isoformat(),
+        end_date=end.isoformat(),
+        time_of_day="09:00",
+        end_time="16:00",
+    )
+    row = next(r for r in entries(parent) if r["kind"] == "board")
+    assert row["body"] == (
+        f"{TODAY.strftime('%a %b %-d')} – {end.strftime('%a %b %-d')} · 9:00 AM"
+    )
+
+
+def test_a_single_day_card_keeps_the_plain_line(owner, parent):
+    # end_date equal to the start is still one day, and reads like one.
+    make_item(
+        owner,
+        kind="activity",
+        title="Park trip",
+        date_for=TODAY.isoformat(),
+        end_date=TODAY.isoformat(),
+        time_of_day="09:00",
+        end_time="16:00",
+    )
+    row = next(r for r in entries(parent) if r["kind"] == "board")
+    assert row["body"] == f"{TODAY.strftime('%a %b %-d')} · 9:00 AM – 4:00 PM"
+
+
+def test_an_all_day_span_says_all_day(owner, parent):
+    end = TODAY + dt.timedelta(days=2)
+    make_item(
+        owner,
+        kind="activity",
+        title="Fair week",
+        date_for=TODAY.isoformat(),
+        end_date=end.isoformat(),
+        all_day=True,
+    )
+    row = next(r for r in entries(parent) if r["kind"] == "board")
+    assert row["body"] == (
+        f"{TODAY.strftime('%a %b %-d')} – {end.strftime('%a %b %-d')} · all day"
+    )
+
+
 def test_reschedule_and_delete_each_write_a_line(owner, parent):
     item = make_item(owner, date_for=TODAY.isoformat())
     owner.patch(f"/items/{item['id']}", json={"date_for": (TODAY + dt.timedelta(days=1)).isoformat()})
@@ -72,6 +123,33 @@ def test_reschedule_and_delete_each_write_a_line(owner, parent):
     assert len(titles) == 3  # added, rescheduled, removed — newest first
     assert "removed" in titles[0]
     assert "rescheduled" in titles[1]
+
+
+def test_rephasing_an_every_other_week_routine_is_a_reschedule(owner, parent):
+    """The anchor decides WHICH weeks an "every 2 weeks" pattern lands on, so
+    moving it moves the schedule: the reminder claims must clear and the
+    family must hear it, exactly like changing the day."""
+    monday = TODAY - dt.timedelta(days=TODAY.weekday())
+    item = make_item(
+        owner,
+        kind="routine",
+        title="Bin night",
+        repeat={
+            "type": "weekly", "days": [0], "interval": 2, "anchor": monday.isoformat()
+        },
+    )
+    res = owner.patch(
+        f"/items/{item['id']}",
+        json={
+            "repeat": {
+                "type": "weekly", "days": [0], "interval": 2,
+                "anchor": (monday + dt.timedelta(days=7)).isoformat(),
+            }
+        },
+    )
+    assert res.status_code == 200, res.text
+    titles = [r["title"] for r in entries(parent) if r["kind"] == "board"]
+    assert "rescheduled" in titles[0]
 
 
 def test_routines_write_board_history(owner, parent):
@@ -396,7 +474,11 @@ def test_kid_routine_approval_adds_no_extra_board_line(owner, parent, child):
 
 def test_private_card_edits_and_unchecks_leak_nothing(owner, parent):
     res = owner.post(
-        "/items", json={"kind": "task", "title": "Secret gift", "date_for": TODAY.isoformat()}
+        "/items",
+        json={
+            "kind": "task", "title": "Secret gift", "date_for": TODAY.isoformat(),
+            "visibility": "private",
+        },
     )
     item = res.json()  # private to the owner
     owner.patch(f"/items/{item['id']}", json={"title": "Secret present"})

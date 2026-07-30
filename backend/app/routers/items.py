@@ -2,7 +2,7 @@ import datetime as dt
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import delete, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -150,20 +150,61 @@ def _mask_from_days(days: list[int]) -> int:
     return mask
 
 
+# How far a count-based repeat may be walked forward looking for its Nth
+# occurrence: about ten years, past which the card is refused rather than
+# scanned for. A sparse pattern (the 31st every 12 months) still fits.
+_MAX_REPEAT_WALK = 3700
+
+
+def _nth_occurrence(
+    rtype: RepeatType,
+    rdays: int | None,
+    interval: int,
+    anchor: dt.date,
+    rmonthday: int | None,
+    count: int,
+) -> dt.date:
+    """The date of the count-th occurrence on or after the anchor. Walked a day
+    at a time: every pattern answers the same question through occurs_on, so
+    there's no per-type arithmetic to keep in step with the engine."""
+    day = anchor
+    seen = 0
+    for _ in range(_MAX_REPEAT_WALK):
+        if recurrence.occurs_on(rtype, rdays, interval, anchor, rmonthday, None, day):
+            seen += 1
+            if seen == count:
+                return day
+        day += dt.timedelta(days=1)
+    _bad("That repeat ends too far out")
+
+
 def _resolve_repeat(repeat: RepeatIn | None):
     """Turn the API's repeat object into the item's stored recurrence columns:
-    (repeat_type, repeat_days, repeat_interval, repeat_anchor, repeat_month_day)."""
+    (repeat_type, repeat_days, repeat_interval, repeat_anchor, repeat_month_day,
+    repeat_until). An "after N occurrences" end is resolved into a concrete
+    repeat_until here, so nothing downstream ever counts occurrences."""
     if repeat is None:
-        return None, None, 1, None, None
+        return None, None, 1, None, None, None
     if repeat.type == RepeatType.weekly:
-        return RepeatType.weekly, _mask_from_days(repeat.days), repeat.interval, repeat.anchor, None
-    return RepeatType.monthly, None, repeat.interval, repeat.anchor, repeat.month_day
+        rtype, rdays, rmonthday = RepeatType.weekly, _mask_from_days(repeat.days), None
+    else:
+        rtype, rdays, rmonthday = RepeatType.monthly, None, repeat.month_day
+    anchor, until = repeat.anchor, repeat.until
+    if repeat.count is not None and (rdays or rmonthday):
+        # A pattern that can never land (no weekdays, no month day) would walk
+        # to the bound and blame the count; leave it for _validate_repeat to
+        # name properly. The walk needs a fixed start, so an anchorless card
+        # is stamped with today's date and keeps meaning the same dates after.
+        if anchor is None:
+            anchor = dt.date.today()
+        until = _nth_occurrence(rtype, rdays, repeat.interval, anchor, rmonthday, repeat.count)
+    return rtype, rdays, repeat.interval, anchor, rmonthday, until
 
 
 def _resolve_visibility(explicit: Visibility | None) -> Visibility:
-    """Cards are private by default (the owner plus anyone assigned); the
-    client opts into family visibility to put it on the whole family's board."""
-    return explicit if explicit is not None else Visibility.private
+    """Cards go on the whole family's board by default; the client opts a card
+    OUT with private (the owner plus anyone assigned)."""
+    return explicit if explicit is not None else Visibility.family
 
 
 def _bad(msg: str) -> None:
@@ -173,20 +214,24 @@ def _bad(msg: str) -> None:
 def _validate_item(item: Item) -> None:
     """Enforce each kind's final shape.
 
-    Routines carry a repeat schedule, no date, and at most a single start time.
-    Tasks are free-form. Activities are time blocks (start and end required).
-    Appointments are calendar events: a start and end, or all-day (no times).
+    Routines carry a repeat schedule, no date, and optionally a start and end
+    time. Tasks are free-form. Activities and appointments are calendar events:
+    a start and end, or all-day (no times), on one date or across a span.
     """
     if item.workout_auto_complete and item.kind != ItemKind.routine:
         _bad("Only routines can complete themselves from a workout")
     if item.kind == ItemKind.routine:
-        if item.date_for is not None:
+        if item.date_for is not None or item.end_date is not None:
             _bad("Routines recur; they take no date")
         if item.repeat_type is None:
             _bad("Routines need a repeat schedule")
         _validate_repeat(item)
-        if item.end_time is not None or item.all_day:
-            _bad("Routines don't take an end time or all-day")
+        if item.all_day:
+            _bad("Routines don't take all-day")
+        if item.end_time is not None:
+            if item.time_of_day is None:
+                _bad("A routine's end time needs a start time")
+            _validate_end_after_start(item)
         return
 
     if item.kind == ItemKind.task:
@@ -194,17 +239,23 @@ def _validate_item(item: Item) -> None:
             _bad("Tasks don't repeat")
         if item.end_time is not None or item.all_day:
             _bad("Tasks don't take an end time or all-day")
+        if item.end_date is not None:
+            _bad("Tasks take a single due date")
         return
 
     if item.kind == ItemKind.activity:
         if item.repeat_type is not None:
             _bad("Activities don't repeat")
+        if item.date_for is None:
+            _bad("Activities need a date")
+        _validate_span(item)
         if item.all_day:
-            _bad("Activities can't be all-day")
-        if item.date_for is None or item.time_of_day is None or item.end_time is None:
-            _bad("Activities need a date and a start and end time")
-        if item.end_time <= item.time_of_day:
-            _bad("End time must be after the start time")
+            if item.time_of_day is not None or item.end_time is not None:
+                _bad("An all-day activity has no times")
+        else:
+            if item.time_of_day is None or item.end_time is None:
+                _bad("Activities need a start and end time, or mark them all-day")
+            _validate_end_after_start(item)
         return
 
     # appointment — a one-off on its date, or (the weekly work meeting) a
@@ -213,19 +264,50 @@ def _validate_item(item: Item) -> None:
     if item.repeat_type is not None:
         if item.date_for is not None:
             _bad("A repeating appointment recurs; it takes no date")
+        if item.end_date is not None:
+            _bad("A repeating card can't span days")
         if item.all_day:
             _bad("A repeating appointment needs times, not all-day")
         _validate_repeat(item)
     elif item.date_for is None:
         _bad("Appointments need a date")
+    _validate_span(item)
     if item.all_day:
         if item.time_of_day is not None or item.end_time is not None:
             _bad("An all-day appointment has no times")
     else:
         if item.time_of_day is None or item.end_time is None:
             _bad("Appointments need a start and end time, or mark them all-day")
-        if item.end_time <= item.time_of_day:
-            _bad("End time must be after the start time")
+        _validate_end_after_start(item)
+
+
+def _validate_span(item: Item) -> None:
+    """A dated card may run across days (a trip, an overnight stay): end_date
+    is the last day it covers, so it can't land before the card starts.
+
+    The length is capped at the board's own lookback. The feed fetches dated
+    cards by date_for across that window, so a longer span would keep running
+    while quietly falling off the Home board — visible on the calendar and
+    nowhere else. Refusing it beats losing it."""
+    if item.end_date is None:
+        return
+    if item.date_for is None:
+        _bad("A card that spans days needs a start date")
+    if item.end_date < item.date_for:
+        _bad("The end date must be on or after the start date")
+    if item.end_date - item.date_for > _MAX_OVERDUE_LOOKBACK:
+        _bad(f"A card can span up to {_MAX_OVERDUE_LOOKBACK.days} days")
+
+
+def _validate_end_after_start(item: Item) -> None:
+    """A timed card ends after it starts, compared as (date, time): 10 PM to
+    2 AM passes when the end date is the next day, and still doesn't when both
+    times sit on the same one."""
+    start_day = item.date_for or dt.date.min
+    if dt.datetime.combine(item.end_date or start_day, item.end_time) <= dt.datetime.combine(
+        start_day, item.time_of_day
+    ):
+        _bad("End time must be after the start time")
 
 
 def _validate_repeat(item: Item) -> None:
@@ -235,6 +317,12 @@ def _validate_repeat(item: Item) -> None:
         _bad("Monthly repeat needs a day of the month")
     if (item.repeat_interval or 1) < 1:
         _bad("Repeat interval must be at least 1")
+    if (
+        item.repeat_until is not None
+        and item.repeat_anchor is not None
+        and item.repeat_until < item.repeat_anchor
+    ):
+        _bad("The repeat ends before it starts")
 
 
 def _resolve_assignees(db: Session, ids: list[int], family_id: int) -> list[User]:
@@ -260,6 +348,7 @@ def _occurs(item: Item, date: dt.date) -> bool:
         item.repeat_interval,
         item.repeat_anchor,
         item.repeat_month_day,
+        item.repeat_until,
         date,
     )
 
@@ -271,6 +360,7 @@ def _streak(item: Item, completed_dates: set[dt.date], upto: dt.date) -> int:
         item.repeat_interval,
         item.repeat_anchor,
         item.repeat_month_day,
+        item.repeat_until,
         completed_dates,
         upto,
     )
@@ -286,6 +376,8 @@ def _repeat_out(item: Item) -> RepeatOut | None:
         days=days,
         interval=item.repeat_interval,
         month_day=item.repeat_month_day,
+        anchor=item.repeat_anchor,
+        until=item.repeat_until,
     )
 
 
@@ -313,6 +405,7 @@ def _feed_item(
         end_time=item.end_time,
         all_day=item.all_day,
         date_for=item.date_for,
+        end_date=item.end_date,
         location=item.location,
         village_event_id=item.village_event_id,
         repeat=_repeat_out(item),
@@ -463,6 +556,29 @@ def _build_feed_item(
     )
 
 
+def _span_end(item: Item) -> dt.date | None:
+    """The last day a dated card covers: its own date, or end_date when it
+    spans several. None for undated and recurring cards."""
+    return item.end_date or item.date_for
+
+
+def _covers_day(item: Item, day: dt.date) -> bool:
+    """Is a non-repeating dated card on the board on this day? A single-day
+    card only on its date; a span on every day from its start through its end."""
+    return item.date_for is not None and item.date_for <= day <= _span_end(item)
+
+
+def _day_sort_key(item: FeedItemOut, day: dt.date):
+    """All-day cards first, then timed ones, untimed last. A span's later days
+    sort like all-day: its start time belonged to the first day only."""
+    continuing = item.date_for is not None and item.date_for < day
+    return (
+        not (item.all_day or continuing),
+        item.time_of_day or dt.time(23, 59),
+        item.title.lower(),
+    )
+
+
 def _completed_on(completions: CompletionRows, date: dt.date) -> bool:
     """Whether a valid completion landed on this exact day. Same validity rule
     _build_feed_item uses for a dated card's `done` (non-pending, non-cancelled),
@@ -553,11 +669,12 @@ def feed(
                 today.append(_build_feed_item(db, item, user, date_for, comps[item.id], item.id in shared))
             continue
 
-        if item.date_for == date_for:
+        if _covers_day(item, date_for):
             fi = _build_feed_item(db, item, user, date_for, comps[item.id], item.id in shared)
-            # Its due day has arrived. A card checked off ahead of time already
-            # had its day in Done on the day it was ticked, so it doesn't come
-            # back now; one done on its own day stays put, crossed out, today.
+            # Its day has arrived (or a span is mid-run). A card checked off
+            # ahead of time already had its day in Done on the day it was
+            # ticked, so it doesn't come back now; one done on its own day
+            # stays put, crossed out, today.
             if fi.completed and not _completed_on(comps[item.id], date_for):
                 continue
             today.append(fi)
@@ -574,7 +691,7 @@ def feed(
             ):
                 continue
             today.append(fi)
-        elif item.date_for < date_for:
+        elif _span_end(item) < date_for:
             # A one-off whose day has passed carries forward until checked off.
             # Once completed it leaves the board immediately: it wasn't done
             # today, so it doesn't belong in today's Done list — its record
@@ -593,10 +710,9 @@ def feed(
             next7.append(fi)
 
     # All-day events first, then timed cards in day order; untimed sink to the end.
-    late = dt.time(23, 59)
-    overdue.sort(key=lambda i: (i.date_for, not i.all_day, i.time_of_day or late, i.title.lower()))
-    today.sort(key=lambda i: (not i.all_day, i.time_of_day or late, i.title.lower()))
-    next7.sort(key=lambda i: (i.date_for, not i.all_day, i.time_of_day or late, i.title.lower()))
+    overdue.sort(key=lambda i: (i.date_for, _day_sort_key(i, i.date_for)))
+    today.sort(key=lambda i: _day_sort_key(i, date_for))
+    next7.sort(key=lambda i: (i.date_for, _day_sort_key(i, i.date_for)))
 
     return FeedOut(date=date_for, overdue=overdue, today=today, next7=next7)
 
@@ -654,14 +770,22 @@ def calendar(
     if end - start > _MAX_CALENDAR_SPAN:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Calendar range is too wide")
 
-    # Routines (recur, so always in play) plus non-routine cards dated in range.
+    # Routines (recur, so always in play) plus non-routine cards whose span
+    # overlaps the range — a trip that started before it still shows on its
+    # days inside it.
     items = (
         db.scalars(
             select(Item)
             .options(selectinload(Item.assignees))
             .where(
                 Item.family_id == user.family_id,
-                or_(Item.repeat_type.isnot(None), Item.date_for.between(start, end)),
+                or_(
+                    Item.repeat_type.isnot(None),
+                    and_(
+                        Item.date_for <= end,
+                        func.coalesce(Item.end_date, Item.date_for) >= start,
+                    ),
+                ),
             )
         )
         .unique()
@@ -672,16 +796,15 @@ def calendar(
     comps = _completions_by_item(db, visible)
     shared = _village_shared_ids(db, visible)
 
-    late = dt.time(23, 59)
     days: list[CalendarDayOut] = []
     day = start
     while day <= end:
         on_day = [
             _build_feed_item(db, item, user, day, comps[item.id], item.id in shared)
             for item in visible
-            if (_occurs(item, day) if item.repeat_type is not None else item.date_for == day)
+            if (_occurs(item, day) if item.repeat_type is not None else _covers_day(item, day))
         ]
-        on_day.sort(key=lambda i: (not i.all_day, i.time_of_day or late, i.title.lower()))
+        on_day.sort(key=lambda i: _day_sort_key(i, day))
         days.append(CalendarDayOut(date=day, items=on_day))
         day += dt.timedelta(days=1)
 
@@ -723,7 +846,7 @@ def create_item(
     """Parents put cards on their family's board. A card is the creator's own
     (personal) until it names members or is shared with the whole family."""
     assignees = _resolve_assignees(db, data.assignee_ids, parent.family_id)
-    rtype, rdays, rinterval, ranchor, rmonthday = _resolve_repeat(data.repeat)
+    rtype, rdays, rinterval, ranchor, rmonthday, runtil = _resolve_repeat(data.repeat)
     shared = data.shared_to_feed if data.shared_to_feed is not None else (
         data.kind == ItemKind.activity
     )
@@ -741,11 +864,13 @@ def create_item(
         end_time=data.end_time,
         all_day=data.all_day,
         date_for=data.date_for,
+        end_date=data.end_date,
         repeat_type=rtype,
         repeat_days=rdays,
         repeat_interval=rinterval,
         repeat_anchor=ranchor,
         repeat_month_day=rmonthday,
+        repeat_until=runtil,
         workout_auto_complete=data.workout_auto_complete,
         location=data.location,
     )
@@ -811,6 +936,8 @@ def update_item(
         item.all_day = data.all_day
     if "date_for" in fields:
         item.date_for = data.date_for
+    if "end_date" in fields:
+        item.end_date = data.end_date
     if "repeat" in fields:
         (
             item.repeat_type,
@@ -818,6 +945,7 @@ def update_item(
             item.repeat_interval,
             item.repeat_anchor,
             item.repeat_month_day,
+            item.repeat_until,
         ) = _resolve_repeat(data.repeat)
     if "workout_auto_complete" in fields and data.workout_auto_complete is not None:
         item.workout_auto_complete = data.workout_auto_complete
@@ -1018,6 +1146,7 @@ def uncancel_item(
 
 _SCHEDULE_FIELDS = (
     "date_for",
+    "end_date",
     "time_of_day",
     "end_time",
     "all_day",
@@ -1025,45 +1154,37 @@ _SCHEDULE_FIELDS = (
     "repeat_days",
     "repeat_interval",
     "repeat_month_day",
+    # Re-phasing an "every N weeks" pattern moves which weeks it lands on, so
+    # the anchor is a reschedule like any other schedule field.
+    "repeat_anchor",
+    "repeat_until",
 )
 
 
-def _schedule_text(item: Item) -> str:
-    if item.repeat_type is not None:
-        base = "Repeats " + ("weekly" if item.repeat_type == RepeatType.weekly else "monthly")
-    elif item.date_for is not None:
-        base = item.date_for.strftime("%a %b %-d")
-    else:
-        base = "Anytime"
-    if item.all_day:
-        return f"{base} · all day"
-    if item.time_of_day is not None:
-        clock = item.time_of_day.strftime("%-I:%M %p")
-        if item.end_time is not None:
-            clock += " – " + item.end_time.strftime("%-I:%M %p")
-        return f"{base} · {clock}"
-    return base
-
-
-def _schedule_text_on(item: Item, from_tz: str | None, to_tz: str | None) -> str:
-    """_schedule_text rendered on a recipient family's wall clock. A shared
-    village event fans out to families that may keep different timezones, so the
-    WHEN each family reads must be its own; the organizer's is only one of them.
-    Same-tz recipients (equal names, both NULL included) shift to a byte-
-    identical string. Repeats and dateless cards carry no instant to convert and
-    format unchanged."""
-    date_for, start, end = item.date_for, item.time_of_day, item.end_time
-    if item.repeat_type is None and date_for is not None:
-        date_for, start, end = shift_schedule(
-            date_for, start, end, item.all_day, from_tz, to_tz
-        )
-    if item.repeat_type is not None:
-        base = "Repeats " + ("weekly" if item.repeat_type == RepeatType.weekly else "monthly")
+def _when_text(
+    repeat_type: RepeatType | None,
+    date_for: dt.date | None,
+    end_date: dt.date | None,
+    start: dt.time | None,
+    end: dt.time | None,
+    all_day: bool,
+) -> str:
+    """The WHEN line under a board notification: the day (or the range a span
+    covers), then the clock. A span shows only its START time — its end time
+    belongs to the last day, and "9:00 AM – 4:00 PM" beside a date range would
+    read as if both times landed on both days. The one formatter both
+    _schedule_text and _schedule_text_on go through, so a same-tz recipient's
+    text stays byte-identical to the organizer's."""
+    if repeat_type is not None:
+        base = "Repeats " + ("weekly" if repeat_type == RepeatType.weekly else "monthly")
     elif date_for is not None:
         base = date_for.strftime("%a %b %-d")
+        if end_date is not None and end_date > date_for:
+            base += " – " + end_date.strftime("%a %b %-d")
+            end = None  # the range already says where it finishes
     else:
         base = "Anytime"
-    if item.all_day:
+    if all_day:
         return f"{base} · all day"
     if start is not None:
         clock = start.strftime("%-I:%M %p")
@@ -1071,6 +1192,33 @@ def _schedule_text_on(item: Item, from_tz: str | None, to_tz: str | None) -> str
             clock += " – " + end.strftime("%-I:%M %p")
         return f"{base} · {clock}"
     return base
+
+
+def _schedule_text(item: Item) -> str:
+    return _when_text(
+        item.repeat_type,
+        item.date_for,
+        item.end_date,
+        item.time_of_day,
+        item.end_time,
+        item.all_day,
+    )
+
+
+def _schedule_text_on(item: Item, from_tz: str | None, to_tz: str | None) -> str:
+    """_schedule_text rendered on a recipient family's wall clock. A shared
+    village event fans out to families that may keep different timezones, so the
+    WHEN each family reads must be its own; the organizer's is only one of them.
+    Same-tz recipients (equal names, both NULL included) shift to a byte-
+    identical string. A span's last day travels with its first. Repeats and
+    dateless cards carry no instant to convert and format unchanged."""
+    date_for, start, end = item.date_for, item.time_of_day, item.end_time
+    end_date = item.end_date
+    if item.repeat_type is None and date_for is not None:
+        date_for, start, end, end_date = shift_schedule(
+            date_for, start, end, item.all_day, from_tz, to_tz, end_date
+        )
+    return _when_text(item.repeat_type, date_for, end_date, start, end, item.all_day)
 
 
 def _event_notify_bodies(
