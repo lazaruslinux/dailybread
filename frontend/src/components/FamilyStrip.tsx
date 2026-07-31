@@ -3,9 +3,9 @@ import { avatarUrl, type FamilyMember } from '../lib/api'
 import { Avatar } from './Avatar'
 import { LevelBadge } from './LevelBadge'
 
-// The row of faces under the header. The circle stays a clean photo with the
-// mood dot on its corner; the level sits in its little circle to the LEFT of
-// the name. Everything else about a person lives behind the tap.
+// The row of faces under the header, as pill rows. The circle stays a clean
+// photo with the mood weather icon on its corner; the level sits in its little
+// circle after the name. Everything else about a person lives behind the tap.
 export function FamilyStrip({
   members,
   onOpen,
@@ -18,21 +18,21 @@ export function FamilyStrip({
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="mb-5 flex gap-4 overflow-x-auto pb-1"
+      className="flex gap-2 overflow-x-auto p-px"
     >
       {members.map((m) => (
+        // Not .glass: that class is unlayered, so its own radius would beat
+        // rounded-full. The pill spells the surface out with the same tokens.
         <button
           key={m.id}
           onClick={() => onOpen(m.id)}
-          className="flex min-w-0 flex-col items-center gap-1 rounded-xl px-1 py-1 transition-opacity hover:opacity-80"
+          className="flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-[var(--glass-border)] bg-[var(--card)] py-1 pl-[7px] pr-3 shadow-[var(--card-shadow)] transition-opacity hover:opacity-80"
         >
-          <Avatar name={m.display_name} src={avatarUrl(m)} mood={m.mood?.level ?? null} />
-          <span className="flex max-w-24 items-center gap-1">
-            <LevelBadge level={m.level} />
-            <span className="min-w-0 truncate text-[11px] font-medium text-fg/60">
-              {m.display_name.split(/\s+/)[0]}
-            </span>
+          <Avatar name={m.display_name} src={avatarUrl(m)} mood={m.mood?.level ?? null} size="sm" />
+          <span className="max-w-24 truncate text-[13.5px] font-semibold text-fg/80">
+            {m.display_name.split(/\s+/)[0]}
           </span>
+          <LevelBadge level={m.level} />
         </button>
       ))}
     </motion.div>

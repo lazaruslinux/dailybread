@@ -180,9 +180,9 @@ export function WelcomeTour({
       <Brand
         subtitle={step === 0 ? `Welcome to dailybread, ${firstName}! Here is a simple tour:` : ''}
       />
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3">
         <div>
-          <h2 className="mb-2 flex items-center gap-2 text-lg font-bold">
+          <h2 className="mb-1.5 flex items-center gap-2 text-base font-bold">
             {(() => {
               const StepIcon = deck[step].Icon
               return <StepIcon className={`h-5 w-5 ${deck[step].iconClass ?? 'text-accent-bright'}`} strokeWidth={2.2} />
@@ -205,7 +205,7 @@ export function WelcomeTour({
                   type="button"
                   onClick={() => pickTheme(t.id)}
                   aria-pressed={theme === t.id}
-                  className={`rounded-xl border p-3 text-sm font-semibold transition-colors ${
+                  className={`min-h-11 rounded-xl border p-2.5 text-sm font-semibold transition-colors ${
                     theme === t.id
                       ? 'border-accent-bright/60 bg-accent-bright/15 text-fg/90'
                       : 'border-fg/10 bg-fg/5 text-fg/70 hover:bg-fg/10'
@@ -222,7 +222,7 @@ export function WelcomeTour({
               role="switch"
               aria-checked={wantVerses}
               onClick={toggleVerses}
-              className="mt-3 flex w-full items-center justify-between gap-3 rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left"
+              className="mt-2.5 flex min-h-[52px] w-full items-center justify-between gap-3 rounded-xl border border-fg/10 bg-fg/5 px-3 py-2 text-left"
             >
               <span className="text-sm font-semibold text-fg/85">Opt-in to daily Bible verses</span>
               <span className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${wantVerses ? 'bg-accent' : 'bg-fg/15'}`}>

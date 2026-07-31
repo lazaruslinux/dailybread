@@ -33,7 +33,7 @@ function FilterChip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+      className={`db-tap44 rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${
         active
           ? 'border-accent-bright/60 bg-accent-bright/20 text-fg'
           : 'border-fg/10 bg-fg/5 text-fg/55 hover:bg-fg/10'
@@ -89,13 +89,13 @@ function WaitingOnYou({
       layout
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      className="glass mb-5 border border-amber-400/25 p-4"
+      className="glass border border-amber-400/25 p-3.5"
       data-waiting-on-you
     >
-      <span className="mb-3 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-amber-300">
+      <span className="db-micro mb-2 flex items-center gap-1.5 text-amber-300">
         <Hourglass className="h-3 w-3" strokeWidth={3} /> Waiting on you
       </span>
-      <div className="flex flex-col gap-2.5">
+      <div className="flex flex-col gap-2">
         <AnimatePresence>
           {approvals.map((a) => {
             const kid = family.find((m) => m.id === a.user.id) ?? a.user
@@ -176,7 +176,7 @@ function WelcomeCrumb() {
     <motion.div
       initial={{ opacity: 0, y: -6 }}
       animate={{ opacity: 1, y: 0 }}
-      className="mb-3 flex items-center gap-2 rounded-xl border border-gold/30 bg-gold/10 px-3 py-2"
+      className="flex items-center gap-2 rounded-xl border border-gold/30 bg-gold/10 px-3 py-2"
       data-welcome-crumb
     >
       <Coin className="h-4 w-4 shrink-0" />
@@ -618,38 +618,40 @@ export function Home({
     done.length === 0
   const allEmpty = todayEmpty && next7Open.length === 0
 
+  // Rows, not cards: the board is one card and these are lines inside it.
   const renderCards = (items: api.FeedItem[]) => (
-    <div className="flex flex-col gap-3">
-      <AnimatePresence>
-        {items.map((item, i) => (
-          <ItemCard key={item.id} index={i} {...cardProps(item)} />
-        ))}
-      </AnimatePresence>
-    </div>
+    <AnimatePresence>
+      {items.map((item, i) => (
+        <ItemCard key={item.id} index={i} {...cardProps(item)} />
+      ))}
+    </AnimatePresence>
   )
 
   return (
-    <div>
+    <div className="flex flex-col gap-3">
       <WelcomeCrumb />
 
       {/* The home masthead, in reading order: who you are to us (greeting),
-          what day it is, whose house this is (team name), then the family. */}
-      <h1 className="font-display text-[2.05rem] font-semibold leading-[1.1] tracking-[-0.02em]">
-        {timeGreeting()}, {user?.display_name.split(/\s+/)[0] ?? ''}
-      </h1>
-      <p className="mt-1 text-sm text-fg/50">
-        It's{' '}
-        {clock.toLocaleDateString(undefined, {
-          weekday: 'long',
-          month: 'long',
-          day: 'numeric',
-          year: 'numeric',
-        })}
-      </p>
+          what day it is, whose house this is (team name), then the family.
+          One line each: the greeting used to run two lines on a phone. */}
+      <div>
+        <h1 className="font-display text-[1.6rem] font-semibold leading-[1.15] tracking-[-0.02em]">
+          {timeGreeting()}, {user?.display_name.split(/\s+/)[0] ?? ''}
+        </h1>
+        <p className="mt-0.5 text-[13px] text-fg/50">
+          It's{' '}
+          {clock.toLocaleDateString(undefined, {
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric',
+          })}
+        </p>
+      </div>
       {familyName && (
-        <div className="mb-3 mt-4 flex items-center gap-3">
+        <div className="flex items-center gap-3">
           <span className="h-px flex-1 bg-gradient-to-r from-transparent to-gold/40" />
-          <span className="font-team text-2xl font-bold leading-none text-gold">
+          <span className="font-team text-[25px] font-bold leading-none text-gold">
             {familyName}
           </span>
           <span className="h-px flex-1 bg-gradient-to-l from-transparent to-gold/40" />
@@ -670,10 +672,15 @@ export function Home({
 
       <TonightCard onOpenKitchen={onOpenKitchen} />
 
+      <FormError message={error} />
+
+      {/* The board: one card, dense rows inside it. Its own controls ride at
+          the top of the card rather than floating above it. */}
+      <div className="glass db-pad overflow-hidden">
       {/* The board's control bar: List/Timeline swap the view in place (enclosed
           segmented pill), Calendar navigates away (free-standing accent pill). */}
-      <div className="mb-4 flex items-stretch justify-center gap-2" data-view-toggle>
-        <div className="flex gap-1 rounded-full border border-fg/10 bg-fg/5 p-1">
+      <div className="flex items-center gap-2 px-3.5 pb-0.5 pt-2.5" data-view-toggle>
+        <div className="flex gap-1 rounded-full border border-fg/10 bg-fg/5 p-[3px]">
           {(
             [
               { id: 'list', label: 'List', Icon: Rows3 },
@@ -685,11 +692,11 @@ export function Home({
               type="button"
               onClick={() => pickView(id)}
               aria-pressed={view === id}
-              className={`flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-semibold transition-colors ${
+              className={`db-tap44 flex min-h-9 items-center gap-1.5 rounded-full px-3 text-[12.5px] font-semibold transition-colors ${
                 view === id ? 'bg-accent-bright/20 text-fg' : 'text-fg/50 hover:text-fg/80'
               }`}
             >
-              <Icon className="h-4 w-4" strokeWidth={2.5} /> {label}
+              <Icon className="h-3.5 w-3.5" strokeWidth={2.5} /> {label}
             </button>
           ))}
         </div>
@@ -697,15 +704,15 @@ export function Home({
           type="button"
           onClick={onOpenCalendar}
           aria-label="View calendar"
-          className="flex items-center gap-1.5 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-3.5 text-sm font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
+          className="ml-auto flex min-h-11 items-center gap-1.5 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-3 text-[13px] font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
         >
-          <CalendarDays className="h-4 w-4" strokeWidth={2.5} /> Calendar
+          <CalendarDays className="h-3.5 w-3.5" strokeWidth={2.5} /> Calendar
         </button>
       </div>
 
       {isParent && family.length > 0 && (
-        <div className="mb-4 flex flex-wrap items-center gap-1.5">
-          <span className="mr-0.5 text-[11px] font-semibold uppercase tracking-wide text-fg/35">
+        <div className="flex flex-wrap items-center gap-1.5 px-3.5 pb-0.5 pt-2">
+          <span className="db-micro mr-0.5 tracking-[0.06em]">
             Filter
           </span>
           <FilterChip active={filter.length === 0} onClick={() => setFilter([])}>
@@ -719,10 +726,8 @@ export function Home({
         </div>
       )}
 
-      <FormError message={error} />
-
       {feed && filter.length > 0 && allEmpty && (
-        <p className="glass p-6 text-center text-sm text-fg/50">
+        <p className="db-emptyline py-4 text-center">
           No cards for the people you picked.
         </p>
       )}
@@ -733,13 +738,13 @@ export function Home({
           <button
             type="button"
             onClick={() => openEditor(null)}
-            className="glass w-full p-6 text-center text-sm text-fg/60 transition-colors hover:text-fg"
+            className="db-emptyline w-full py-4 text-center transition-colors hover:text-fg"
           >
             Nothing on the board today.{' '}
             <span className="font-semibold text-accent-bright">Add something?</span>
           </button>
         ) : (
-          <p className="glass p-6 text-center text-sm text-fg/50">
+          <p className="db-emptyline py-4 text-center">
             Nothing on the board today. Enjoy it.
           </p>
         )
@@ -765,7 +770,7 @@ export function Home({
           {comingCards.length > 0 ? (
             renderCards(comingCards)
           ) : (
-            <p className="px-1 text-sm text-fg/40">The rest of your day is empty.</p>
+            <p className="db-emptyline">The rest of your day is empty.</p>
           )}
 
           {anytimeCards.length > 0 && (
@@ -802,20 +807,20 @@ export function Home({
 
           {/* Day header: the divider grew chevrons. Any day but today is a
               read-only peek; the label taps back to today. */}
-          <div className="mb-2 mt-6 flex items-center gap-2 py-0.5 first:mt-0" data-timeline-nav>
+          <div className="flex items-center gap-1.5 px-3.5 pt-3" data-timeline-nav>
             <button
               type="button"
               aria-label="Previous day"
               onClick={() => setTimelineDate(shiftDay(timelineDate ?? api.localDate(), -1))}
               className="-m-2.5 rounded-lg p-3.5 text-fg/45 transition-colors hover:bg-fg/10 hover:text-fg"
             >
-              <ChevronLeft className="h-4 w-4" strokeWidth={2.5} />
+              <ChevronLeft className="h-3.5 w-3.5" strokeWidth={2.5} />
             </button>
             <button
               type="button"
               onClick={() => setTimelineDate(null)}
               disabled={!timelineDate}
-              className={`text-[10px] font-bold uppercase tracking-widest ${
+              className={`db-tap44 text-[10px] font-bold uppercase tracking-[0.11em] ${
                 timelineDate ? 'text-fg/70 underline decoration-fg/30 underline-offset-4' : 'text-accent-bright'
               }`}
             >
@@ -827,14 +832,14 @@ export function Home({
               onClick={() => setTimelineDate(shiftDay(timelineDate ?? api.localDate(), 1))}
               className="-m-2.5 rounded-lg p-3.5 text-fg/45 transition-colors hover:bg-fg/10 hover:text-fg"
             >
-              <ChevronRight className="h-4 w-4" strokeWidth={2.5} />
+              <ChevronRight className="h-3.5 w-3.5" strokeWidth={2.5} />
             </button>
             <span className="h-px flex-1 bg-gradient-to-r from-accent-bright/70 to-transparent" />
             {timelineDate && (
               <button
                 type="button"
                 onClick={() => setTimelineDate(null)}
-                className="inline-flex min-h-11 items-center rounded-full border border-fg/10 bg-fg/5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-fg/60 transition-colors hover:bg-fg/10"
+                className="db-tap44 inline-flex items-center rounded-full border border-fg/10 bg-fg/5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-fg/60 transition-colors hover:bg-fg/10"
               >
                 Back to today
               </button>
@@ -843,7 +848,7 @@ export function Home({
 
           {timelineDate ? (
             peekItems === null ? (
-              <p className="px-1 text-sm text-fg/40">Loading…</p>
+              <p className="db-emptyline">Loading…</p>
             ) : (
               <>
                 {/* Peeked days are for looking: no checkboxes (a toggle would
@@ -858,37 +863,37 @@ export function Home({
                   return (
                     <>
                       {peekAllDay.length > 0 && (
-                        <div className="mb-3 flex flex-col gap-3">
-                          <AnimatePresence>
-                            {peekAllDay.map((item, i) => (
-                              <ItemCard
-                                key={item.id}
-                                index={i}
-                                item={item}
-                                canCheck={false}
-                                family={family}
-                                day={timelineDate}
-                                viewerId={user?.id}
-                                viewerIsParent={isParent}
-                                onOpen={() => setDetail({ item, checkable: false })}
-                              />
-                            ))}
-                          </AnimatePresence>
-                        </div>
+                        <AnimatePresence>
+                          {peekAllDay.map((item, i) => (
+                            <ItemCard
+                              key={item.id}
+                              index={i}
+                              item={item}
+                              canCheck={false}
+                              family={family}
+                              day={timelineDate}
+                              viewerId={user?.id}
+                              viewerIsParent={isParent}
+                              onOpen={() => setDetail({ item, checkable: false })}
+                            />
+                          ))}
+                        </AnimatePresence>
                       )}
                       {peekTimed.length > 0 ? (
-                        <DayTimeline
-                          key={timelineDate}
-                          items={peekTimed}
-                          nowMinutes={clock.getHours() * 60 + clock.getMinutes()}
-                          isToday={false}
-                          canCheck={() => false}
-                          viewerId={user?.id}
-                          onToggle={() => {}}
-                          onOpen={(item) => setDetail({ item, checkable: false })}
-                        />
+                        <div className="px-2 pb-2 pt-2">
+                          <DayTimeline
+                            key={timelineDate}
+                            items={peekTimed}
+                            nowMinutes={clock.getHours() * 60 + clock.getMinutes()}
+                            isToday={false}
+                            canCheck={() => false}
+                            viewerId={user?.id}
+                            onToggle={() => {}}
+                            onOpen={(item) => setDetail({ item, checkable: false })}
+                          />
+                        </div>
                       ) : (
-                        <p className="px-1 text-sm text-fg/40">
+                        <p className="db-emptyline">
                           Nothing with a time on {relativeDay(timelineDate).toLowerCase()}.
                         </p>
                       )}
@@ -898,16 +903,18 @@ export function Home({
               </>
             )
           ) : timed.length > 0 ? (
-            <DayTimeline
-              items={timed}
-              nowMinutes={clock.getHours() * 60 + clock.getMinutes()}
-              canCheck={canCheck}
-              viewerId={user?.id}
-              onToggle={toggle}
-              onOpen={(item) => setDetail({ item, checkable: canCheck(item) })}
-            />
+            <div className="px-2 pb-2 pt-2">
+              <DayTimeline
+                items={timed}
+                nowMinutes={clock.getHours() * 60 + clock.getMinutes()}
+                canCheck={canCheck}
+                viewerId={user?.id}
+                onToggle={toggle}
+                onOpen={(item) => setDetail({ item, checkable: canCheck(item) })}
+              />
+            </div>
           ) : (
-            <p className="px-1 text-sm text-fg/40">Nothing with a time today.</p>
+            <p className="db-emptyline">Nothing with a time today.</p>
           )}
 
           {!timelineDate && anytimeCards.length > 0 && (
@@ -925,16 +932,18 @@ export function Home({
           )}
         </>
       )}
+      </div>
 
+      {/* What's ahead is its own card: it belongs to the week, not to today. */}
       {feed && !(filter.length > 0 && allEmpty) && (
-        <>
+        <div className="glass db-pad overflow-hidden">
           <SectionDivider label="Next 7 days" />
           {next7Open.length > 0 ? (
             renderCards(next7Open)
           ) : (
-            <p className="px-1 text-sm text-fg/40">Nothing in the next 7 days.</p>
+            <p className="db-emptyline">Nothing in the next 7 days.</p>
           )}
-        </>
+        </div>
       )}
 
       <VerseCard />

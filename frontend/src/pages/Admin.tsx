@@ -41,7 +41,7 @@ function MemberRow({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.96 }}
       transition={{ delay: index * 0.04, type: 'spring', stiffness: 300, damping: 26 }}
-      className="glass flex items-center gap-4 p-4"
+      className="db-row"
     >
       {/* The person themselves (photo, mood, name) taps through to their
           profile; the admin machinery stays on the buttons to the right. */}
@@ -49,7 +49,7 @@ function MemberRow({
         type="button"
         onClick={onOpen}
         disabled={!onOpen}
-        className="flex min-w-0 flex-1 items-center gap-4 text-left"
+        className="-my-2 flex min-h-11 min-w-0 flex-1 items-center gap-3 py-2 text-left"
         aria-label={onOpen ? `Open ${member.display_name}'s profile` : undefined}
       >
         <Avatar
@@ -89,7 +89,7 @@ function MemberRow({
         <button
           onClick={onEdit}
           aria-label={`Edit ${member.display_name}`}
-          className="rounded-lg p-2 text-fg/50 transition-colors hover:bg-fg/10 hover:text-fg"
+          className="-m-1.5 rounded-lg p-3.5 text-fg/50 transition-colors hover:bg-fg/10 hover:text-fg"
         >
           <Pencil className="h-4 w-4" />
         </button>
@@ -97,7 +97,7 @@ function MemberRow({
           <button
             onClick={onDelete}
             aria-label={`Remove ${member.display_name}`}
-            className="rounded-lg p-2 text-fg/50 transition-colors hover:bg-rose-500/20 hover:text-rose-300"
+            className="-m-1.5 rounded-lg p-3.5 text-fg/50 transition-colors hover:bg-rose-500/20 hover:text-rose-300"
           >
             <Trash2 className="h-4 w-4" />
           </button>
@@ -149,10 +149,8 @@ function ResetPasswordSection({ member }: { member: api.User }) {
 
   if (generated) {
     return (
-      <div className="rounded-xl border border-accent-bright/30 bg-accent-bright/10 p-4">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg/50">
-          Their new password
-        </p>
+      <div className="rounded-xl border border-accent-bright/30 bg-accent-bright/10 p-3.5">
+        <p className="db-micro mb-1.5">Their new password</p>
         <div className="flex items-center gap-2">
           <code className="flex-1 select-all rounded-lg bg-fg/10 px-3 py-2 font-mono text-sm font-semibold tracking-wide">
             {generated}
@@ -278,7 +276,7 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
   return (
     <Sheet onClose={onClose}>
         <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-lg font-bold">{creating ? 'Add family member' : `Edit ${member.display_name}`}</h2>
+          <h2 className="text-base font-bold">{creating ? 'Add family member' : `Edit ${member.display_name}`}</h2>
           <button
             onClick={onClose}
             aria-label="Close"
@@ -288,7 +286,7 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
           </button>
         </div>
 
-        <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
+        <form onSubmit={onSubmit} noValidate className="flex flex-col gap-3">
           <Field
             label="Name"
             value={displayName}
@@ -312,7 +310,7 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
           )}
 
           <div>
-            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
+            <span className="db-micro mb-1.5 block">
               Role
             </span>
             <div className="grid grid-cols-2 gap-2">
@@ -357,7 +355,7 @@ function MemberSheet({ member, isSelf, onClose, onSaved }: SheetProps) {
           )}
 
           <label
-            className={`flex items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 ${
+            className={`flex min-h-[52px] items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-3.5 py-2 ${
               role === 'child' || (isSelf && member?.is_admin) ? 'opacity-50' : 'cursor-pointer'
             }`}
           >
@@ -512,7 +510,7 @@ function InviteHouseholdSheet({ onClose }: { onClose: () => void }) {
   return (
     <Sheet onClose={onClose}>
         <div className="mb-5 flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-lg font-bold">
+          <h2 className="flex items-center gap-2 text-base font-bold">
             <Home className="h-5 w-5 text-accent-bright" /> Invite to this server
           </h2>
           <button
@@ -525,14 +523,14 @@ function InviteHouseholdSheet({ onClose }: { onClose: () => void }) {
         </div>
 
         {invite ? (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3">
             <p className="text-sm leading-relaxed text-fg/70">
               Give this code to <span className="font-semibold text-fg">{invite.display_name}</span>.
               On the sign-in screen they tap "Enter invite code", pick their own username and
               password, and set up their own family. It works once and expires in 48 hours; if
               it lapses, just mint another.
             </p>
-            <div className="flex items-center justify-center gap-3 rounded-xl border border-fg/10 bg-fg/5 p-4">
+            <div className="flex items-center justify-center gap-3 rounded-xl border border-fg/10 bg-fg/5 p-3.5">
               <span className="select-all font-mono text-2xl font-bold tracking-widest text-fg/90">
                 {invite.code}
               </span>
@@ -549,7 +547,7 @@ function InviteHouseholdSheet({ onClose }: { onClose: () => void }) {
             <Button onClick={onClose}>Done</Button>
           </div>
         ) : (
-          <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
+          <form onSubmit={onSubmit} noValidate className="flex flex-col gap-3">
             <p className="text-xs leading-relaxed text-fg/50">
               This invites someone to start their own family on this server, with their own
               board, completely separate from yours. Use "Add family member" instead if you're
@@ -608,12 +606,12 @@ function RescueSheet({
 
   return (
     <Sheet onClose={onClose}>
-      <h3 className="mb-1 text-lg font-bold">Reset {target.display_name}'s password</h3>
+      <h3 className="mb-1 text-base font-bold">Reset {target.display_name}'s password</h3>
       <p className="mb-4 text-sm text-fg/60">
         For when a household has locked itself out. @{target.username} is signed out
         everywhere; hand them the new password however you normally would.
       </p>
-      <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+      <form onSubmit={submit} noValidate className="flex flex-col gap-3">
         <Field
           label="New password"
           type="password"
@@ -704,11 +702,11 @@ function RenameVillageSheet({
 
   return (
     <Sheet onClose={onClose}>
-      <h3 className="mb-1 text-lg font-bold">Village name</h3>
+      <h3 className="mb-1 text-base font-bold">Village name</h3>
       <p className="mb-4 text-sm text-fg/60">
         This is how the village appears to every family linked in it.
       </p>
-      <form onSubmit={submit} className="flex flex-col gap-4">
+      <form onSubmit={submit} className="flex flex-col gap-3">
         <Field
           label="Village name"
           value={name}
@@ -800,7 +798,7 @@ function ServerOverview() {
     <p key={u.id} className="flex items-center gap-2 pl-8 text-sm text-fg/70">
       <span className="font-semibold text-fg/85">{u.display_name}</span>
       <span className="text-xs text-fg/45">@{u.username}</span>
-      <span className="text-[10px] font-semibold uppercase tracking-wide text-fg/40">
+      <span className="db-micro text-[10px]">
         {u.is_owner ? 'server admin' : u.is_admin ? `${ROLE_LABEL[u.role]} · admin` : ROLE_LABEL[u.role]}
       </span>
       <button
@@ -844,17 +842,17 @@ function ServerOverview() {
     <div className="mt-3">
       <button
         onClick={toggle}
-        className="glass flex w-full items-center gap-3 p-4 text-left font-semibold text-fg/80 transition-colors hover:text-fg"
+        className="glass flex min-h-[52px] w-full items-center gap-3 p-3.5 text-left text-sm font-semibold text-fg/80 transition-colors hover:text-fg"
       >
         <ListTree className="h-4 w-4 text-accent-bright" /> Server overview
       </button>
       {open && (
-        <div className="glass mt-2 flex flex-col gap-3 p-4">
+        <div className="glass mt-2 flex flex-col gap-2.5 p-3.5">
           <FormError message={error} />
           {tree === null && !error && <p className="text-sm text-fg/40">Loading</p>}
           {tree?.villages.map((v) => (
             <div key={v.id} className="flex flex-col gap-1.5">
-              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-accent-bright">
+              <p className="db-micro flex items-center gap-2 text-accent-bright">
                 <span>Village · {v.name}</span>
                 <button
                   onClick={() => setRenamingVillage(v)}
@@ -876,17 +874,13 @@ function ServerOverview() {
           ))}
           {tree && tree.solo_families.length > 0 && (
             <div className="flex flex-col gap-1.5">
-              <p className="text-xs font-semibold uppercase tracking-widest text-fg/40">
-                Not in a village
-              </p>
+              <p className="db-micro">Not in a village</p>
               {tree.solo_families.map(familyBlock)}
             </div>
           )}
           {tree && tree.homeless_users.length > 0 && (
             <div className="flex flex-col gap-1.5">
-              <p className="text-xs font-semibold uppercase tracking-widest text-fg/40">
-                Still setting up
-              </p>
+              <p className="db-micro">Still setting up</p>
               {tree.homeless_users.map(userRow)}
             </div>
           )}
@@ -989,12 +983,12 @@ function RenameFamilySheet({
 
   return (
     <Sheet onClose={onClose}>
-      <h3 className="mb-1 text-lg font-bold">Family name</h3>
+      <h3 className="mb-1 text-base font-bold">Family name</h3>
       <p className="mb-4 text-sm text-fg/60">
         This is how your family appears across the app, and to families you link with in a
         village. Lots of families share a last name, so a fun, custom name works best.
       </p>
-      <form onSubmit={submit} className="flex flex-col gap-4">
+      <form onSubmit={submit} className="flex flex-col gap-3">
         <Field
           label="Family name"
           value={name}
@@ -1003,7 +997,7 @@ function RenameFamilySheet({
           required
         />
         <label className="block min-w-0">
-          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
+          <span className="db-micro mb-1.5 block">
             Family clock
           </span>
           <select
@@ -1075,9 +1069,9 @@ export function Admin({ onOpenProfile }: { onOpenProfile?: (id: number) => void 
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-3 flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold tracking-tight">Family members</h2>
+          <h2 className="text-lg font-bold tracking-tight">Family members</h2>
           <button
             type="button"
             onClick={() => setRenaming(true)}
@@ -1095,7 +1089,7 @@ export function Admin({ onOpenProfile }: { onOpenProfile?: (id: number) => void 
 
       <FormError message={loadError} />
 
-      <div className="flex flex-col gap-3">
+      <div className="glass db-pad overflow-hidden">
         <AnimatePresence>
           {members?.map((m, i) => (
             <MemberRow
@@ -1111,7 +1105,7 @@ export function Admin({ onOpenProfile }: { onOpenProfile?: (id: number) => void 
           ))}
         </AnimatePresence>
         {members === null && !loadError && (
-          <p className="py-8 text-center text-sm text-fg/40">Loading</p>
+          <p className="py-6 text-center text-sm text-fg/40">Loading</p>
         )}
       </div>
 
@@ -1119,17 +1113,15 @@ export function Admin({ onOpenProfile }: { onOpenProfile?: (id: number) => void 
           founds a whole new family on the install, not a member of yours. Only
           the instance owner can do it, so a family B admin never sees this. */}
       {user?.is_owner && (
-        <div className="mt-8 border-t border-fg/10 pt-5">
-          <p className="text-xs font-semibold uppercase tracking-widest text-fg/40">
-            Server admin
-          </p>
-          <p className="mt-1 mb-3 text-sm text-fg/50">
+        <div className="mt-6 border-t border-[var(--line-soft)] pt-4">
+          <p className="db-micro">Server admin</p>
+          <p className="mb-2.5 mt-1 text-sm text-fg/50">
             Invite someone to found their own family on this server with an invite code. They
             run their own board; you won't see their members here.
           </p>
           <button
             onClick={() => setInviting(true)}
-            className="glass flex w-full items-center gap-3 p-4 text-left font-semibold text-fg/80 transition-colors hover:text-fg"
+            className="glass flex min-h-[52px] w-full items-center gap-3 p-3.5 text-left text-sm font-semibold text-fg/80 transition-colors hover:text-fg"
           >
             <Home className="h-4 w-4 text-accent-bright" /> Invite to this server
           </button>

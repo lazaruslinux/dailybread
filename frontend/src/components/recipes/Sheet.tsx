@@ -41,7 +41,7 @@ export function Sheet({ children, onClose }: { children: React.ReactNode; onClos
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 40 }}
         transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-        className="sheet-card max-h-[90svh] w-full max-w-sm overflow-y-auto p-6"
+        className="sheet-card max-h-[90svh] w-full max-w-sm overflow-y-auto p-5"
         role="dialog"
         aria-modal="true"
       >

@@ -50,10 +50,12 @@ function ParticipantAvatar({
   )
 }
 
-// One card on the board. The circle on the left is the only thing that
-// completes a card; tapping anywhere else opens the detail sheet, so a
-// stray tap can never silently change state. Completed cards stay in place
-// but visibly settle: dimmed, circle filled with a check.
+// One row on the board. The board is a single card and this is a line in it:
+// tick, title over a muted meta line, then the time chip, who it's for, and
+// the edit shortcut. The circle on the left is the only thing that completes
+// a row; tapping anywhere else opens the detail sheet, so a stray tap can
+// never silently change state. Completed rows stay in place but visibly
+// settle: dimmed, circle filled with a check, title struck through.
 export function ItemCard({
   item,
   index,
@@ -149,18 +151,10 @@ export function ItemCard({
       animate={{ opacity: item.completed || item.cancelled ? 0.55 : 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, scale: 0.96 }}
       transition={{ delay: index * 0.05, type: 'spring', stiffness: 300, damping: 26 }}
-      whileTap={{ scale: 0.97 }}
+      whileTap={{ scale: 0.99 }}
       onClick={onOpen}
-      className={`glass cursor-pointer touch-pan-y select-none overflow-hidden ${
-        shared ? 'flex flex-col border border-gold/60 !p-0' : 'flex items-center gap-3 p-3.5'
-      }`}
+      className={`db-row cursor-pointer touch-pan-y select-none ${shared ? 'db-row-shared' : ''}`}
     >
-      {shared && (
-        <span className="block w-full shrink-0 bg-gold px-4 py-1 text-center text-[10px] font-bold uppercase tracking-[0.14em] text-black/75">
-          Shared {item.kind === 'appointment' ? 'appointment' : 'activity'}
-        </span>
-      )}
-      <div className={shared ? 'flex w-full items-center gap-3 p-3.5' : 'contents'}>
       {showCheckbox ? (
         // Generous tap target around a modest circle; stops propagation so
         // checking off never also opens the detail sheet underneath.
@@ -182,12 +176,12 @@ export function ItemCard({
             e.stopPropagation()
             onToggle()
           }}
-          className="relative -m-2 shrink-0 p-2"
+          className="relative -m-3 shrink-0 p-3"
           data-check
         >
           {float && <CrumbFloat key={float.key} amount={float.amount} />}
           <span
-            className={`flex h-7 w-7 items-center justify-center rounded-full border-2 transition-colors ${
+            className={`flex h-[22px] w-[22px] items-center justify-center rounded-full border-2 transition-colors ${
               item.completed
                 ? 'border-emerald-300/70 bg-emerald-400/25'
                 : myPending
@@ -195,72 +189,97 @@ export function ItemCard({
                   : 'border-fg/30 bg-fg/5'
             }`}
           >
-            {item.completed && <Check className="h-4 w-4 text-emerald-300" strokeWidth={3} />}
+            {item.completed && <Check className="h-3.5 w-3.5 text-emerald-300" strokeWidth={3} />}
             {!item.completed && item.cancelled && (
-              <X className="h-4 w-4 text-gold" strokeWidth={3} />
+              <X className="h-3.5 w-3.5 text-gold" strokeWidth={3} />
             )}
             {!item.completed && myPending && (
-              <Hourglass className="h-3.5 w-3.5 text-amber-300" strokeWidth={2.5} />
+              <Hourglass className="h-3 w-3 text-amber-300" strokeWidth={2.5} />
             )}
           </span>
         </button>
       ) : (
-        <div
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
-            item.completed ? 'bg-emerald-400/25' : 'bg-fg/15'
+        // Not this member's to check: the same 22px slot keeps the rows aligned
+        // and carries what the tick would have said, done or which kind.
+        <span
+          className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full ${
+            item.completed ? 'bg-emerald-400/25' : ''
           }`}
         >
           {item.completed ? (
-            <Check className="h-5 w-5 text-emerald-300" strokeWidth={2.5} />
+            <Check className="h-3.5 w-3.5 text-emerald-300" strokeWidth={3} />
           ) : (
-            <Icon className={`h-5 w-5 ${tint}`} strokeWidth={2} />
+            <Icon className={`h-4 w-4 ${tint}`} strokeWidth={2} />
           )}
-        </div>
+        </span>
       )}
 
       <div className="min-w-0 flex-1">
-        <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-fg/50">
-          <span className={`flex items-center gap-1 ${showCheckbox ? tint : ''}`}>
-            {showCheckbox && <Icon className="h-3 w-3" strokeWidth={2.5} />}
-            {label}
+        <p
+          className={`truncate text-[14.5px] font-semibold leading-tight ${
+            item.completed ? 'text-fg/60 line-through decoration-fg/30' : 'text-fg'
+          }`}
+        >
+          {item.title}
+        </p>
+        {/* One muted meta line under the title carries everything that used to
+            need its own row: kind, flags, the card's own dates, streak, notes.
+            State (shared, overdue, approval, streak) is shrink-0 so it can never
+            be squeezed out; the plain text pieces shrink and ellipsize instead.
+            The line wraps rather than clipping, because on a 390px phone the
+            state chips alone can outrun the column, and a hidden cutoff would
+            lose state silently. Only a genuinely busy row grows past 48px. */}
+        <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[12.5px] leading-tight text-fg/55">
+          {shared && (
+            <span className="db-chip db-chip-gold shrink-0 py-0 text-[11px]">
+              Shared {item.kind === 'appointment' ? 'appointment' : 'activity'}
+            </span>
+          )}
+          <span className={`flex min-w-0 items-center gap-1 ${showCheckbox ? tint : ''}`}>
+            {showCheckbox && <Icon className="h-3 w-3 shrink-0" strokeWidth={2.5} />}
+            <span className="truncate">{label}</span>
           </span>
           {flag === 'overdue' && (
-            <span className="rounded-full bg-rose-500/20 px-1.5 py-px text-[10px] font-bold normal-case text-rose-300">
+            <span className="shrink-0 rounded-full bg-rose-500/20 px-1.5 text-[11px] font-bold text-rose-300">
               Overdue
             </span>
           )}
           {flag === 'due' && (
-            <span className="rounded-full bg-gold/20 px-1.5 py-px text-[10px] font-bold normal-case text-gold">
+            <span className="shrink-0 rounded-full bg-gold/20 px-1.5 text-[11px] font-bold text-gold">
               Due
             </span>
           )}
           {needsApproval && (
-            <span className="flex items-center gap-0.5 rounded-full bg-amber-400/20 px-1.5 py-px text-[10px] font-bold normal-case text-amber-300">
+            <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-amber-400/20 px-1.5 text-[11px] font-bold text-amber-300">
               <Hourglass className="h-2.5 w-2.5" strokeWidth={3} /> Needs approval
             </span>
           )}
           {perPerson && perPerson.length > 1 && (
-            <span className="font-bold normal-case text-fg/40">
+            <span className="shrink-0 font-bold text-fg/40">
               {doneCount}/{perPerson.length}
             </span>
           )}
+          {dateLine && <span className="min-w-0 truncate font-semibold text-fg/65">{dateLine}</span>}
+          {(item.streak ?? 0) >= 3 && (
+            <span className="flex shrink-0 items-center gap-0.5 font-bold text-orange-300">
+              <Flame className="h-3 w-3" /> {item.streak}
+            </span>
+          )}
+          {myPending ? (
+            <span className="shrink-0 font-medium text-amber-300/90">Waiting for a parent</span>
+          ) : (
+            item.notes && <span className="min-w-0 truncate">{item.notes}</span>
+          )}
         </span>
-        <p className={`truncate font-semibold ${item.completed ? 'text-fg/60 line-through decoration-fg/30' : 'text-fg'}`}>
-          {item.title}
-        </p>
-        {myPending ? (
-          <p className="truncate text-sm font-medium text-amber-300/90">Waiting for a parent</p>
-        ) : (
-          item.notes && <p className="truncate text-sm text-fg/60">{item.notes}</p>
-        )}
       </div>
 
-      <div className="flex shrink-0 flex-col items-end gap-1.5">
-        {dateLine && (
-          <span className="text-[11px] font-semibold text-fg/65">{dateLine}</span>
-        )}
+      <div className="flex shrink-0 items-center gap-2">
         {timeLabel && (
-          <span className={`whitespace-nowrap text-[13px] font-semibold tabular-nums ${flag === 'overdue' ? 'text-rose-300' : 'text-fg/75'}`}>
+          <span
+            className={`db-chip whitespace-nowrap tabular-nums ${
+              flag === 'overdue' ? 'bg-rose-500/15 text-rose-300' : ''
+            }`}
+          >
             {timeLabel}
           </span>
         )}
@@ -304,11 +323,6 @@ export function ItemCard({
             </div>
           )
         )}
-        {(item.streak ?? 0) >= 3 && (
-          <span className="flex items-center gap-0.5 text-[10px] font-bold text-orange-300">
-            <Flame className="h-3 w-3" /> {item.streak}
-          </span>
-        )}
       </div>
 
       {onEdit && (
@@ -321,39 +335,28 @@ export function ItemCard({
             e.stopPropagation()
             onEdit()
           }}
-          className="-my-2 -mr-2 shrink-0 rounded-xl p-2.5 text-fg/35 transition-colors hover:bg-fg/10 hover:text-fg/70 active:bg-fg/15"
+          className="-my-3 -mr-2 shrink-0 rounded-xl p-3.5 text-fg/35 transition-colors hover:bg-fg/10 hover:text-fg/70 active:bg-fg/15"
         >
           <Pencil className="h-4 w-4" strokeWidth={2} />
         </button>
       )}
-      </div>
     </motion.div>
   )
 }
 
-// A thin labelled hairline that heads each board section (Past due, Now,
-// Coming up, ...). The "Now" line is accented so the eye lands on what's
-// current; the rest are quiet.
+// A thin labelled hairline between groups of rows inside the board card
+// (Past due, Now, Coming up, ...). The label sits centered between two rules,
+// small-caps; the "Now" line is accented so the eye lands on what's current.
+// The label string is written normally and uppercased by CSS.
 export function SectionDivider({ label, accent = false }: { label: string; accent?: boolean }) {
   return (
     <motion.div
       layout
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="mb-2 mt-6 flex items-center gap-2 py-0.5 first:mt-0"
+      className={`db-sect ${accent ? 'db-sect-accent' : ''}`}
     >
-      <span
-        className={`text-[10px] font-bold uppercase tracking-widest ${
-          accent ? 'text-accent-bright' : 'text-fg/45'
-        }`}
-      >
-        {label}
-      </span>
-      <span
-        className={`h-px flex-1 bg-gradient-to-r to-transparent ${
-          accent ? 'from-accent-bright/70' : 'from-fg/15'
-        }`}
-      />
+      <span>{label}</span>
     </motion.div>
   )
 }

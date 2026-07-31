@@ -251,11 +251,11 @@ export function RecipeSheet({
           }}
         />
       )}
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-3 flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wide text-accent-bright">
           {recipe ? 'Edit recipe' : 'New recipe'}
         </span>
-        <button onClick={attemptClose} aria-label="Close" className="rounded-lg p-1.5 text-fg/50 hover:bg-fg/10 hover:text-fg">
+        <button onClick={attemptClose} aria-label="Close" className="-m-1.5 rounded-lg p-3 text-fg/50 hover:bg-fg/10 hover:text-fg">
           <X className="h-5 w-5" />
         </button>
       </div>
@@ -269,7 +269,7 @@ export function RecipeSheet({
         </div>
       )}
 
-      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+      <form onSubmit={onSubmit} className="flex flex-col gap-3">
         <label className="flex flex-col gap-1">
           <span className="text-xs font-semibold uppercase tracking-wide text-fg/45">Name</span>
           <input

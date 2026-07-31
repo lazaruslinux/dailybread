@@ -14,7 +14,7 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import * as api from '../lib/api'
 import { updateMyProfile } from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
@@ -49,8 +49,8 @@ function ThemePicker({ userId, stored }: { userId: number; stored: Theme | null 
     updateMyProfile({ theme: t }).catch(() => {})
   }
   return (
-    <div className="glass p-4">
-      <span className="mb-3 block text-xs font-semibold uppercase tracking-wide text-fg/50">
+    <div className="glass p-3.5">
+      <span className="db-micro mb-3 block">
         Appearance
       </span>
       <div className="grid grid-cols-2 gap-2">
@@ -122,8 +122,8 @@ function VersePrefsCard() {
 
   if (!verses) return null
   return (
-    <div className="glass p-4">
-      <span className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
+    <div className="glass p-3.5">
+      <span className="db-micro mb-1 flex items-center gap-1.5">
         <BookOpen className="h-3.5 w-3.5 text-gold/80" /> Daily Bread
       </span>
       <p className="mb-3 text-sm text-fg/55">
@@ -177,12 +177,12 @@ function SettingsRow({
   return (
     <button
       onClick={() => onOpen(page)}
-      className="glass flex items-center gap-3 p-4 text-left transition-colors hover:bg-fg/5"
+      className="db-setrow transition-colors hover:bg-fg/5"
     >
-      <Icon className={`h-4 w-4 shrink-0 ${iconClass}`} />
+      <Icon className={`h-[19px] w-[19px] shrink-0 ${iconClass}`} />
       <span className="min-w-0 flex-1">
-        <span className="block font-semibold text-fg/80">{SUB_META[page].label}</span>
-        <span className="block truncate text-xs text-fg/40">{SUB_META[page].hint}</span>
+        <span className="block text-fg/80">{SUB_META[page].label}</span>
+        <span className="block truncate text-xs font-medium text-fg/40">{SUB_META[page].hint}</span>
       </span>
       {badge > 0 && (
         // Solid, not the tinted-chip pattern: the count must read at a glance
@@ -192,6 +192,27 @@ function SettingsRow({
         </span>
       )}
       <ChevronRight className="h-4 w-4 shrink-0 text-fg/30" />
+    </button>
+  )
+}
+
+// One of the plain action rows that close the You page. Same 52px rhythm as
+// SettingsRow, no hint line and no destination page behind it.
+function ActionRow({
+  Icon,
+  iconClass = 'text-fg/55',
+  onClick,
+  children,
+}: {
+  Icon: LucideIcon
+  iconClass?: string
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <button onClick={onClick} className="db-setrow text-fg/80 transition-colors hover:bg-fg/5">
+      <Icon className={`h-[19px] w-[19px] shrink-0 ${iconClass}`} />
+      {children}
     </button>
   )
 }
@@ -274,14 +295,14 @@ export function You({
 
   if (sub !== null) {
     return (
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3">
         <button
           onClick={closeSub}
           className="-my-2 -ml-2.5 flex min-h-11 items-center gap-1 self-start rounded-lg pl-2.5 pr-3 text-base font-semibold text-fg/60 transition-colors hover:text-fg"
         >
           <ChevronLeft className="h-5 w-5" /> You
         </button>
-        <h2 className="-mt-2 text-xl font-bold tracking-tight">{SUB_META[sub].label}</h2>
+        <h2 className="-mt-1.5 text-lg font-bold tracking-tight">{SUB_META[sub].label}</h2>
         {sub === 'inbox' && (
           <InboxPage
             onAllRead={onInboxRead}
@@ -303,12 +324,14 @@ export function You({
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <Profile userId={user.id} onOpenCrumbs={() => openSub('crumbs')} />
 
       <JournalCard />
 
-      <div className="flex flex-col gap-2">
+      {/* One card per group of rows, not a card per row: the settings list
+          reads as a list. */}
+      <div className="glass db-pad overflow-hidden">
         <SettingsRow Icon={Inbox} page="inbox" onOpen={openSub} badge={inboxUnread} />
         <SettingsRow Icon={Coin as unknown as LucideIcon} page="crumbs" onOpen={openSub} />
         {/* Minors get no notifications (the server sends them none, so the
@@ -323,33 +346,21 @@ export function You({
         {!user.is_minor && <SettingsRow Icon={Trees} page="villages" onOpen={openSub} />}
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="glass db-pad overflow-hidden">
         {user.is_admin && (
-          <button
-            onClick={onOpenAdmin}
-            className="glass flex items-center gap-3 p-4 text-left font-semibold text-fg/80 transition-colors hover:text-fg"
-          >
-            <Users className="h-4 w-4 text-fg/55" /> Family members
-          </button>
+          <ActionRow Icon={Users} onClick={onOpenAdmin}>
+            Family members
+          </ActionRow>
         )}
-        <button
-          onClick={() => setTouring(true)}
-          className="glass flex items-center gap-3 p-4 text-left font-semibold text-fg/80 transition-colors hover:text-fg"
-        >
-          <Map className="h-4 w-4 text-fg/55" /> Repeat welcome tutorial
-        </button>
-        <button
-          onClick={() => setChangingPassword(true)}
-          className="glass flex items-center gap-3 p-4 text-left font-semibold text-fg/80 transition-colors hover:text-fg"
-        >
-          <KeyRound className="h-4 w-4 text-fg/55" /> Change password
-        </button>
-        <button
-          onClick={logout}
-          className="glass flex items-center gap-3 p-4 text-left font-semibold text-fg/80 transition-colors hover:text-fg"
-        >
-          <LogOut className="text-danger h-4 w-4" /> Sign out
-        </button>
+        <ActionRow Icon={Map} onClick={() => setTouring(true)}>
+          Repeat welcome tutorial
+        </ActionRow>
+        <ActionRow Icon={KeyRound} onClick={() => setChangingPassword(true)}>
+          Change password
+        </ActionRow>
+        <ActionRow Icon={LogOut} iconClass="text-danger" onClick={logout}>
+          Sign out
+        </ActionRow>
       </div>
 
       <AnimatePresence>

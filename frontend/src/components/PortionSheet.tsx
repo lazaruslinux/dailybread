@@ -257,7 +257,7 @@ export function PortionSheet({
 
   return (
     <Sheet onClose={onClose}>
-      <div className="mb-4 flex items-start justify-between gap-3">
+      <div className="mb-3.5 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-lg font-bold leading-snug">{name}</h2>
           {/* Brand + label serving + database badge: enough to spot a wrong
@@ -273,7 +273,7 @@ export function PortionSheet({
         </button>
       </div>
 
-      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+      <form onSubmit={onSubmit} className="flex flex-col gap-3.5">
         <div className="flex items-end gap-2">
           <div className="w-20 shrink-0">
             <Field
@@ -324,7 +324,7 @@ export function PortionSheet({
                 key={s.id}
                 type="button"
                 onClick={() => setChosenSlot(s.id)}
-                className={`rounded-xl border px-1 py-2 text-xs font-semibold transition-colors ${
+                className={`min-h-11 rounded-xl border px-1 py-2 text-xs font-semibold transition-colors ${
                   chosenSlot === s.id
                     ? 'border-accent-bright/60 bg-accent-bright/20 text-fg'
                     : 'border-fg/10 bg-fg/5 text-fg/55 hover:bg-fg/10'
@@ -356,7 +356,7 @@ export function PortionSheet({
                 <button
                   type="button"
                   onClick={() => setEditingMacros(false)}
-                  className="-m-2 rounded-lg p-2 text-xs font-semibold text-accent-bright"
+                  className="-m-3.5 rounded-lg p-3.5 text-xs font-semibold text-accent-bright"
                 >
                   Done
                 </button>

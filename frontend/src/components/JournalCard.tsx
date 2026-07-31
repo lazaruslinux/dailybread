@@ -62,12 +62,12 @@ export function JournalCard() {
   const past = history.filter((h) => h.date_for !== today)
 
   return (
-    <div className="glass p-4">
-      <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-fg/50">
+    <div className="glass p-3.5">
+      <span className="db-micro flex items-center gap-2">
         <NotebookPen className="h-3.5 w-3.5 text-fg/50" /> Daily journal
       </span>
-      <p className="mt-1 font-display text-lg leading-tight text-fg">{formatDay(today)}</p>
-      <p className="mb-3 mt-1 text-xs text-fg/45">
+      <p className="mt-1 font-display text-base leading-tight text-fg">{formatDay(today)}</p>
+      <p className="mb-2.5 mt-0.5 text-xs text-fg/45">
         How did your day turn out? Write out how you feel here, and save it if you'd like.
       </p>
 
@@ -93,7 +93,7 @@ export function JournalCard() {
       </div>
 
       {past.length > 0 && (
-        <div className="mt-4 border-t border-fg/10 pt-3">
+        <div className="mt-3 border-t border-[var(--line-soft)] pt-2">
           <button
             type="button"
             onClick={() => setArchiveOpen((o) => !o)}
@@ -111,7 +111,7 @@ export function JournalCard() {
           </button>
 
           {archiveOpen && (
-            <div className="mt-2 flex flex-col gap-1.5">
+            <div className="mt-1.5 flex flex-col gap-1">
               {past.map((h) => {
                 const open = openDay === h.date_for
                 return (
@@ -120,17 +120,17 @@ export function JournalCard() {
                       type="button"
                       onClick={() => setOpenDay(open ? null : h.date_for)}
                       aria-expanded={open}
-                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
+                      className="flex min-h-11 w-full items-center justify-between gap-2 px-3 py-1.5 text-left"
                     >
                       {/* Date only — the entry's text stays hidden until this
                           day is opened, so the archive never shows content at a glance. */}
-                      <span className="text-sm font-semibold text-fg/85">{formatDay(h.date_for)}</span>
+                      <span className="text-[13.5px] font-semibold text-fg/85">{formatDay(h.date_for)}</span>
                       <ChevronDown
                         className={`h-4 w-4 shrink-0 text-fg/40 transition-transform ${open ? 'rotate-180' : ''}`}
                       />
                     </button>
                     {open && (
-                      <p className="whitespace-pre-wrap px-3 pb-3 text-sm leading-relaxed text-fg/75">
+                      <p className="whitespace-pre-wrap px-3 pb-2.5 text-[13.5px] leading-relaxed text-fg/75">
                         {h.body}
                       </p>
                     )}

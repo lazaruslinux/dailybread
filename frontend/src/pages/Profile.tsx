@@ -146,7 +146,7 @@ export function Profile({
       <motion.div
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
-        className="glass mb-4 flex flex-col items-center gap-3 p-7 text-center"
+        className="glass mb-3 flex flex-col items-center gap-2.5 p-4 text-center"
       >
         <div className="relative">
           <Avatar
@@ -176,8 +176,8 @@ export function Profile({
           )}
         </div>
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">{profile.display_name}</h2>
-          <p className="text-sm text-fg/50">@{profile.username}</p>
+          <h2 className="text-xl font-bold tracking-tight">{profile.display_name}</h2>
+          <p className="text-[13px] text-fg/50">@{profile.username}</p>
           {moodMeta && (
             <p className="mt-1.5 flex items-center justify-center gap-1.5 text-sm text-fg/70">
               <moodMeta.Icon className={`h-4 w-4 ${moodMeta.tint}`} strokeWidth={2.5} />
@@ -250,11 +250,11 @@ export function Profile({
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.05 }}
-        className="glass mb-4 p-5"
+        className="glass mb-3 p-3.5"
       >
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-1.5 flex items-center justify-between gap-2">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-fg/40">Status</p>
+            <p className="db-micro">Status</p>
             {isSelf && <p className="mt-0.5 text-[11px] text-fg/35">Clears each night</p>}
           </div>
           {isSelf && !editingBio && (
@@ -264,7 +264,7 @@ export function Profile({
                 setEditingBio(true)
               }}
               aria-label="Edit status"
-              className="rounded-lg p-1.5 text-fg/50 hover:bg-fg/10 hover:text-fg"
+              className="-m-2 rounded-lg p-3.5 text-fg/50 hover:bg-fg/10 hover:text-fg"
             >
               <Pencil className="h-4 w-4" />
             </button>
@@ -301,11 +301,9 @@ export function Profile({
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="glass p-5"
+        className="glass p-3.5"
       >
-        <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-fg/40">
-          {isSelf ? 'How is your day' : 'Their day'}
-        </p>
+        <p className="db-micro mb-2.5">{isSelf ? 'How is your day' : 'Their day'}</p>
 
         {isSelf ? (
           <>
@@ -318,7 +316,7 @@ export function Profile({
                     key={level}
                     onClick={() => pickMood(level)}
                     disabled={busy}
-                    className={`flex flex-col items-center gap-1.5 rounded-xl border px-1 py-3 transition-colors ${
+                    className={`flex flex-col items-center gap-1 rounded-xl border px-1 py-2.5 transition-colors ${
                       active
                         ? `border-fg/30 ${meta.chip}`
                         : 'border-fg/10 bg-fg/5 hover:bg-fg/10'
@@ -332,12 +330,12 @@ export function Profile({
                 )
               })}
             </div>
-            <p className="mt-3 text-xs leading-relaxed text-fg/35">
+            <p className="mt-2.5 text-xs leading-relaxed text-fg/35">
               The family sees your mood on your profile. Tap the current one to clear it.
             </p>
           </>
         ) : moodMeta ? (
-          <div className={`flex items-center gap-3 rounded-xl px-4 py-3 ${moodMeta.chip}`}>
+          <div className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 ${moodMeta.chip}`}>
             <moodMeta.Icon className={`h-6 w-6 ${moodMeta.tint}`} strokeWidth={2} />
             <span className="font-semibold">{moodMeta.label} today</span>
           </div>
@@ -351,18 +349,18 @@ export function Profile({
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.15 }}
-          className="glass mt-4 p-5"
+          className="glass db-pad mt-3 overflow-hidden"
         >
-          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-fg/40">
-            {isSelf ? 'On your board' : 'On their board'}
-          </p>
+          <div className="db-card-h">
+            <span className="db-micro">{isSelf ? 'On your board' : 'On their board'}</span>
+          </div>
 
           {day.length === 0 ? (
-            <p className="text-sm text-fg/40">Nothing assigned today.</p>
+            <p className="db-emptyline">Nothing assigned today.</p>
           ) : (
-            <ul className="flex flex-col gap-1">
+            <ul>
               {day.map((item) => (
-                <li key={item.id} className="flex items-center gap-3 rounded-xl px-1 py-2">
+                <li key={item.id} className="db-row">
                   <span
                     className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${
                       item.completed ? 'bg-emerald-400/25' : 'bg-fg/10'
@@ -375,7 +373,7 @@ export function Profile({
                     )}
                   </span>
                   <span
-                    className={`min-w-0 flex-1 truncate text-sm ${
+                    className={`min-w-0 flex-1 truncate text-[14.5px] ${
                       item.completed
                         ? 'text-fg/45 line-through decoration-fg/30'
                         : 'text-fg/85'
@@ -384,7 +382,7 @@ export function Profile({
                     {item.title}
                   </span>
                   {item.time_of_day && (
-                    <span className="shrink-0 text-xs font-medium text-fg/45">
+                    <span className="db-chip db-chip-plain whitespace-nowrap tabular-nums">
                       {formatTime(item.time_of_day)}
                     </span>
                   )}
@@ -400,15 +398,13 @@ export function Profile({
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="glass mt-4 p-5"
+          className="glass mt-3 p-3.5"
         >
-          <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-fg/40">
-            Their journal
-          </p>
-          <p className="mb-3 text-[11px] text-fg/35">
+          <p className="db-micro mb-1">Their journal</p>
+          <p className="mb-2.5 text-[11px] text-fg/35">
             Visible to parents while they're a kid.
           </p>
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2.5">
             {journal.slice(0, 7).map((entry) => (
               <div key={entry.date_for}>
                 <p className="mb-0.5 text-[11px] font-semibold text-fg/45">
@@ -418,7 +414,7 @@ export function Profile({
                     day: 'numeric',
                   })}
                 </p>
-                <p className="whitespace-pre-wrap text-sm leading-relaxed text-fg/75">
+                <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-fg/75">
                   {entry.body}
                 </p>
               </div>

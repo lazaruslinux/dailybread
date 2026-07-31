@@ -70,12 +70,10 @@ const RSVP_META: Record<api.RsvpStatus, { label: string; tint: string }> = {
 
 function RsvpBuckets({ ev }: { ev: api.VillageEvent }) {
   return (
-    <div className="mt-4 flex flex-col gap-2.5">
-      <span className="text-xs font-semibold uppercase tracking-wide text-fg/40">
-        Who's coming
-      </span>
-      <div className="flex flex-col gap-1 rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5">
-        <span className="text-xs font-semibold uppercase tracking-wide text-fg/50">
+    <div className="mt-3 flex flex-col gap-2">
+      <span className="db-micro">Who's coming</span>
+      <div className="flex flex-col gap-1 rounded-xl border border-fg/10 bg-fg/5 px-3 py-2">
+        <span className="db-micro">
           {ev.organizer_family_name} · Hosting
         </span>
       </div>
@@ -83,9 +81,9 @@ function RsvpBuckets({ ev }: { ev: api.VillageEvent }) {
         <p className="px-1 text-xs text-fg/45">No answers yet.</p>
       )}
       {ev.rsvps.map((r) => (
-        <div key={r.family_id} className="rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5">
+        <div key={r.family_id} className="rounded-xl border border-fg/10 bg-fg/5 px-3 py-2">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wide text-fg/50">
+            <span className="db-micro">
               {r.family_name}
             </span>
             <span className={`text-xs font-bold ${RSVP_META[r.status].tint}`}>
@@ -94,7 +92,7 @@ function RsvpBuckets({ ev }: { ev: api.VillageEvent }) {
             </span>
           </div>
           {r.attendees.length > 0 && (
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               {r.attendees.map((a, i) => (
                 <AttendeeChip key={a.user_id ?? `kid-${i}`} a={a} />
               ))}
@@ -119,10 +117,8 @@ function AttendeePicker({
   onToggle: (id: number) => void
 }) {
   return (
-    <div className="mt-3 flex flex-col gap-2">
-      <span className="text-xs font-semibold uppercase tracking-wide text-fg/40">
-        Who's going from your family
-      </span>
+    <div className="mt-3 flex flex-col gap-1.5">
+      <span className="db-micro">Who's going from your family</span>
       {family.map((m) => {
         const on = selected.has(m.id)
         return (
@@ -219,7 +215,7 @@ export function VillageEventSheet({
         </button>
       </div>
 
-      <h2 className={`font-display text-2xl font-semibold tracking-[-0.01em] ${ev.cancelled ? 'text-fg/60 line-through decoration-fg/30' : ''}`}>
+      <h2 className={`font-display text-xl font-semibold tracking-[-0.01em] ${ev.cancelled ? 'text-fg/60 line-through decoration-fg/30' : ''}`}>
         {ev.title}
       </h2>
       <p className="mt-1 text-sm text-fg/55">
@@ -228,7 +224,7 @@ export function VillageEventSheet({
         {ev.cancelled ? ' · called off' : ''}
       </p>
 
-      <div className="mt-4 flex flex-col gap-2 text-sm text-fg/75">
+      <div className="mt-3 flex flex-col gap-1.5 text-sm text-fg/75">
         <div className="flex items-center gap-2">
           <CalendarClock className="h-4 w-4 shrink-0 text-fg/40" />
           {whenLabel(ev)}
@@ -254,7 +250,7 @@ export function VillageEventSheet({
       <RsvpBuckets ev={ev} />
 
       {!ev.is_own && (
-        <div className="mt-5">
+        <div className="mt-4">
           {picking ? (
             <>
               <AttendeePicker family={family} selected={selected} onToggle={toggle} />
@@ -351,36 +347,36 @@ export function VillageStrip({
   const open = events.filter((e) => !e.is_own && !e.cancelled && (e.my_rsvp === null || e.my_rsvp === 'maybe'))
   if (open.length === 0) return null
   return (
-    <div className="glass border border-accent-bright/25 p-3" data-village-strip>
+    <div className="glass db-pad border border-accent-bright/25" data-village-strip>
       {/* The needs-attention idiom: the TabBar's rose dot on the header, a
           solid rose chip per row. A "maybe" still carries the chip — it's in
           the strip because it still needs a final answer. */}
-      <span className="mb-2 flex items-center gap-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-accent-bright">
-        <span className="h-2 w-2 shrink-0 rounded-full bg-rose-400" />
-        Village invites
-      </span>
-      <div className="flex flex-col gap-1">
-        {open.map((ev) => (
-          <button
-            key={ev.event_id}
-            type="button"
-            onClick={() => onOpen(ev)}
-            className="flex min-h-11 w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-fg/5"
-          >
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-semibold text-fg/90">{ev.title}</span>
-              <span className="block truncate text-xs text-fg/50">
-                {ev.organizer_family_name} · {whenLabel(ev)}
-                {ev.my_rsvp === 'maybe' ? ' · you said maybe' : ''}
-              </span>
-            </span>
-            <span className="shrink-0 rounded-full bg-rose-500/90 px-2 py-0.5 text-[10px] font-semibold text-white">
-              RSVP
-            </span>
-            <ChevronRight className="h-4 w-4 shrink-0 text-fg/30" />
-          </button>
-        ))}
+      <div className="db-card-h">
+        <span className="db-micro flex items-center gap-1.5 text-accent-bright">
+          <span className="h-2 w-2 shrink-0 rounded-full bg-rose-400" />
+          Village invites
+        </span>
       </div>
+      {open.map((ev) => (
+        <button
+          key={ev.event_id}
+          type="button"
+          onClick={() => onOpen(ev)}
+          className="db-row transition-colors hover:bg-fg/5"
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[14.5px] font-semibold text-fg/90">{ev.title}</span>
+            <span className="block truncate text-[12.5px] text-fg/50">
+              {ev.organizer_family_name} · {whenLabel(ev)}
+              {ev.my_rsvp === 'maybe' ? ' · you said maybe' : ''}
+            </span>
+          </span>
+          <span className="shrink-0 rounded-full bg-rose-500/90 px-2 py-0.5 text-[10px] font-semibold text-white">
+            RSVP
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-fg/30" />
+        </button>
+      ))}
     </div>
   )
 }
@@ -425,7 +421,7 @@ export function ShareEventSheet({
         Their parents get an invite and can RSVP. You'll see who's coming on the card.
       </p>
       {error && <p className="text-danger mt-3 text-xs">{error}</p>}
-      <div className="mt-4 flex flex-col gap-2">
+      <div className="mt-3 flex flex-col gap-1.5">
         {villages === null ? (
           <p className="py-4 text-center text-sm text-fg/45">Loading…</p>
         ) : villages.length === 0 ? (
@@ -439,7 +435,7 @@ export function ShareEventSheet({
               type="button"
               disabled={busy}
               onClick={() => shareTo(v.id)}
-              className="flex min-h-11 items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 text-left text-sm font-semibold text-fg/85 transition-colors hover:bg-fg/10 disabled:opacity-50"
+              className="flex min-h-12 items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-3.5 py-2 text-left text-sm font-semibold text-fg/85 transition-colors hover:bg-fg/10 disabled:opacity-50"
             >
               {v.name}
               <ChevronRight className="h-4 w-4 text-fg/30" />

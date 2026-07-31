@@ -146,14 +146,14 @@ function AppShell() {
   // keeps it at the screen bottom even when a page is short), so content no
   // longer needs bottom padding to clear a fixed bar.
   return (
-    <div className="mx-auto flex min-h-svh w-full max-w-md flex-col px-5 pt-8">
-      <header className="mb-6">
+    <div className="mx-auto flex min-h-svh w-full max-w-md flex-col px-4 pt-5">
+      <header className="mb-4">
         {tab === 'home' && !overlay ? (
           // Home wears the brand: loaf + lettering centered, the health badge
           // kept reachable at the row's edge. The greeting lives in Home now.
-          <div className="relative flex items-center justify-center py-0.5">
+          <div className="relative flex min-h-11 items-center justify-center">
             <span className="flex items-center gap-2 font-display text-xl font-semibold tracking-[-0.02em]">
-              <LoafMark className="h-[38px] w-[38px] text-gold" />
+              <LoafMark className="h-[34px] w-[34px] text-gold" />
               <span>
                 daily
                 <span className="bg-gradient-to-r from-accent-bright to-accent-strong bg-clip-text text-transparent">
@@ -225,7 +225,7 @@ function AppShell() {
         </motion.div>
       </AnimatePresence>
 
-      <footer className="mt-10 text-center text-xs text-fg/30">
+      <footer className="mt-8 text-center text-xs text-fg/30">
         {/* The source link doubles as the AGPL section-13 offer for anyone
             hosting this for others; the padding keeps the tap target at the
             44px floor without changing the footer's quiet look. */}

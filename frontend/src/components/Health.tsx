@@ -191,7 +191,7 @@ export function HealthSheet({
         <h2 className="flex items-center gap-2 text-lg font-bold">
           <HeartPulse className="h-5 w-5 text-red-400" /> Health profile
         </h2>
-        <button onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-fg/50 hover:bg-fg/10 hover:text-fg">
+        <button onClick={onClose} aria-label="Close" className="-m-3 rounded-lg p-3 text-fg/50 hover:bg-fg/10 hover:text-fg">
           <X className="h-5 w-5" />
         </button>
       </div>
@@ -460,7 +460,7 @@ export function WeightSheet({
         <h2 className="flex items-center gap-2 text-lg font-bold">
           <Scale className="h-5 w-5 text-accent-bright" /> Log weight
         </h2>
-        <button onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-fg/50 hover:bg-fg/10 hover:text-fg">
+        <button onClick={onClose} aria-label="Close" className="-m-3 rounded-lg p-3 text-fg/50 hover:bg-fg/10 hover:text-fg">
           <X className="h-5 w-5" />
         </button>
       </div>
@@ -561,15 +561,15 @@ export function HealthCard({
   }
 
   return (
-    <section className="glass p-4" data-health-card>
-      <div className="mb-2.5 flex items-center justify-between">
-        <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
+    <section className="glass p-3.5" data-health-card>
+      <div className="mb-2 flex items-center justify-between">
+        <span className="db-micro flex items-center gap-1.5">
           <HeartPulse className="h-3.5 w-3.5 text-red-400" /> Health Calculator
         </span>
       </div>
       {/* Exactly two lines: where you are, where you're headed. The pace and
           burn math live inside Manage Targets, where they're set. */}
-      <div className="mb-3 flex flex-col gap-0.5">
+      <div className="mb-2.5 flex flex-col gap-0.5">
         <p className="text-sm text-fg/85">
           <span className="text-fg/50">Current Weight:</span>{' '}
           <span className="font-semibold">{fmtLb(w.weight_kg)}</span>
@@ -589,13 +589,13 @@ export function HealthCard({
       <div className="grid grid-cols-2 gap-2">
         <button
           onClick={onEdit}
-          className="flex items-center justify-center gap-1.5 rounded-xl bg-accent px-3 py-2.5 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+          className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-accent px-3 py-2.5 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
         >
           <Target className="h-3.5 w-3.5" /> Manage Targets
         </button>
         <button
           onClick={onLogWeight}
-          className="flex items-center justify-center gap-1.5 rounded-xl border border-gold/40 bg-gold/15 px-3 py-2.5 text-xs font-semibold text-gold transition-colors hover:bg-gold/25"
+          className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-gold/40 bg-gold/15 px-3 py-2.5 text-xs font-semibold text-gold transition-colors hover:bg-gold/25"
         >
           <Scale className="h-3.5 w-3.5" /> Log Weigh-In
         </button>

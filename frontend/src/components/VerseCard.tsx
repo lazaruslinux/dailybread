@@ -75,11 +75,11 @@ export function VerseCard() {
         onClick={() => setCollapsed(false)}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="glass mt-6 flex w-full items-center gap-2.5 px-4 py-3 text-left"
+        className="glass flex min-h-11 w-full items-center gap-2.5 px-4 py-2.5 text-left"
         data-verse-card-folded
       >
         <BookOpen className="h-4 w-4 shrink-0 text-gold/80" strokeWidth={2} />
-        <span className="min-w-0 flex-1 truncate text-[10px] font-semibold uppercase tracking-widest text-gold/70">
+        <span className="min-w-0 flex-1 truncate text-[11px] font-bold uppercase tracking-[0.09em] text-gold/80">
           Daily bread
         </span>
         <ChevronDown className="h-4 w-4 shrink-0 text-fg/35" />
@@ -92,11 +92,11 @@ export function VerseCard() {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: 'spring', stiffness: 300, damping: 26 }}
-      className="glass mt-6 p-4"
+      className="glass px-4 pb-3.5 pt-3"
       data-verse-card
     >
-      <div className="mb-2 flex items-center justify-between">
-        <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-gold/70">
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.09em] text-gold/80">
           <BookOpen className="h-3.5 w-3.5" strokeWidth={2} />
           Daily bread
         </span>
@@ -159,14 +159,14 @@ export function VerseCard() {
             aria-label={`Daily verse, ${verse.ref}. Read on Bible.com`}
             className={`block transition-opacity ${checked ? 'opacity-45' : ''}`}
           >
-            <p className="font-reading text-[17.5px] leading-relaxed text-fg/90">{verse.text}</p>
+            <p className="font-reading text-[16.5px] leading-[1.55] text-fg/90">{verse.text}</p>
           </a>
-          <div className="mt-2 flex items-center justify-between gap-3">
+          <div className="mt-1.5 flex items-center justify-between gap-3">
             <a
               href={verseLink(verse)}
               target="_blank"
               rel="noopener noreferrer"
-              className={`flex items-center gap-1 text-xs font-medium text-fg/45 ${checked ? 'opacity-60' : ''}`}
+              className={`font-reading flex items-center gap-1 text-[12.5px] font-semibold tracking-[0.03em] text-gold ${checked ? 'opacity-60' : ''}`}
             >
               {verse.ref} NKJV
               <ExternalLink className="h-3 w-3" strokeWidth={2} />
@@ -193,7 +193,7 @@ export function VerseCard() {
             )}
           </div>
           {allRead && !collapsed && (state?.streak ?? 0) > 0 && (
-            <p className="mt-2 flex items-center justify-center gap-1 text-[11px] font-semibold text-gold/70">
+            <p className="mt-1.5 flex items-center justify-center gap-1 text-[11px] font-semibold text-gold/70">
               {state?.streak} day streak
               <Zap className="h-3 w-3 text-gold" strokeWidth={2.5} />
             </p>

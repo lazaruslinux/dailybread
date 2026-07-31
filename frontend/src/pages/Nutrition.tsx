@@ -7,7 +7,6 @@ import {
   Lock,
   Flame,
   Footprints,
-  Plus,
   SlidersHorizontal,
   Trash2,
   Watch,
@@ -96,18 +95,19 @@ const BARS: {
 
 function TargetsCard({ day, onEdit }: { day: api.DiaryDay; onEdit: () => void }) {
   return (
-    <section className="glass p-4" data-targets>
-      <div className="mb-3 flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-wide text-fg/50">Targets</span>
+    <section className="glass" data-targets>
+      <div className="db-card-h">
+        <span className="db-micro">Targets</span>
         <button
           onClick={onEdit}
           aria-label="Edit your targets"
-          className="-my-3.5 flex items-center gap-1.5 rounded-lg px-2 py-3.5 text-xs font-semibold text-fg/55 transition-colors hover:bg-fg/10 hover:text-fg"
+          className="-my-3.5 ml-auto flex items-center gap-1.5 rounded-lg px-2 py-3.5 text-xs font-semibold text-fg/55 transition-colors hover:bg-fg/10 hover:text-fg"
         >
           <SlidersHorizontal className="h-3.5 w-3.5" /> Edit
         </button>
       </div>
-      <div className="flex flex-col gap-2.5">
+      {/* Bar internals are the approved shape; only the frame around them moved. */}
+      <div className="flex flex-col gap-2.5 px-3.5 pb-3.5 pt-1">
         {BARS.map(({ key, label, unit, color }) => {
           const eaten = day.consumed[key] ?? 0
           const target = day.targets[key]
@@ -551,7 +551,7 @@ function EditEntrySheet({
                 key={s.id}
                 type="button"
                 onClick={() => setSlot(s.id)}
-                className={`rounded-xl border px-1 py-2 text-xs font-semibold transition-colors ${
+                className={`min-h-11 rounded-xl border px-1 py-2 text-xs font-semibold transition-colors ${
                   slot === s.id
                     ? 'border-accent-bright/60 bg-accent-bright/20 text-fg'
                     : 'border-fg/10 bg-fg/5 text-fg/55 hover:bg-fg/10'
@@ -809,7 +809,7 @@ function SyncedWorkoutRow({ workout, counted }: { workout: api.DiaryWorkout; cou
     .filter(Boolean)
     .join(' · ')
   return (
-    <div className="-mx-1.5 flex items-center justify-between gap-3 rounded-lg px-1.5 py-2">
+    <div className="db-row">
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5 truncate text-sm font-medium">
           <Watch className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
@@ -843,66 +843,56 @@ function ExerciseCard({
   onAdd: () => void
   onEdit: (e: api.ExerciseEntry) => void
 }) {
-  const empty = exercise.length === 0 && workouts.length === 0
   return (
-    <section className="glass p-4" data-exercise>
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-fg/90">Exercise</h3>
-        <button
-          onClick={onAdd}
-          className="-my-1.5 flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/15"
-        >
-          <Plus className="h-3.5 w-3.5" strokeWidth={2.5} /> Add manual exercise
-        </button>
+    <section className="glass db-pad" data-exercise>
+      <div className="db-card-h">
+        <h3 className="db-micro">Exercise</h3>
+        {burned > 0 && (
+          <span className="db-sum font-semibold text-emerald-500">
+            +{Math.round(burned)} kcal earned from workouts
+          </span>
+        )}
       </div>
-      {burned > 0 && (
-        <p className="mb-1 text-xs font-semibold text-emerald-500">
-          +{Math.round(burned)} kcal earned from workouts
-        </p>
-      )}
 
-      {empty ? (
-        <button
-          onClick={onAdd}
-          className="mt-1 w-full rounded-xl border border-dashed border-fg/20 px-3 py-2.5 text-left text-sm text-fg/40 transition-colors hover:border-accent-bright/40 hover:text-fg/60"
-        >
-          + Add manual exercise
-        </button>
-      ) : (
-        <div className="flex flex-col">
-          {workouts.map((w, i) => (
-            <SyncedWorkoutRow key={`${w.started_at}-${i}`} workout={w} counted={watchCounted} />
-          ))}
-          {exercise.map((e) => {
-            const sub = [fmtTime(e.time_of_day), `${trim(e.minutes)} min`, EFFORT_LABEL[e.effort]]
-              .filter(Boolean)
-              .join(' · ')
-            return (
-              <button
-                key={e.id}
-                onClick={() => onEdit(e)}
-                className="-mx-1.5 flex items-center justify-between gap-3 rounded-lg px-1.5 py-2 text-left transition-colors hover:bg-fg/10"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-1.5 truncate text-sm font-medium">
-                    {e.activity === 'weightlifting' ? (
-                      <Dumbbell className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
-                    ) : (
-                      <Footprints className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
-                    )}
-                    {e.label}
-                  </span>
-                  {sub && <span className="block truncate text-xs text-fg/45">{sub}</span>}
-                </span>
-                <span className="shrink-0 text-sm font-semibold text-emerald-500">
-                  +{Math.round(e.kcal)}
-                  <span className="ml-1 text-[10px] font-normal opacity-70">kcal</span>
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      )}
+      {/* Rows sit directly in the card so each keeps its hairline separator. */}
+      {workouts.map((w, i) => (
+        <SyncedWorkoutRow key={`${w.started_at}-${i}`} workout={w} counted={watchCounted} />
+      ))}
+      {exercise.map((e) => {
+        const sub = [fmtTime(e.time_of_day), `${trim(e.minutes)} min`, EFFORT_LABEL[e.effort]]
+          .filter(Boolean)
+          .join(' · ')
+        return (
+          <button
+            key={e.id}
+            onClick={() => onEdit(e)}
+            className="db-row transition-colors hover:bg-fg/10"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center gap-1.5 truncate text-sm font-medium">
+                {e.activity === 'weightlifting' ? (
+                  <Dumbbell className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                ) : (
+                  <Footprints className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                )}
+                {e.label}
+              </span>
+              {sub && <span className="block truncate text-xs text-fg/45">{sub}</span>}
+            </span>
+            <span className="shrink-0 text-sm font-semibold text-emerald-500">
+              +{Math.round(e.kcal)}
+              <span className="ml-1 text-[10px] font-normal opacity-70">kcal</span>
+            </span>
+          </button>
+        )
+      })}
+
+      <button
+        onClick={onAdd}
+        className="db-addrow transition-colors hover:bg-accent-bright/10"
+      >
+        + Add manual exercise
+      </button>
     </section>
   )
 }
@@ -995,61 +985,46 @@ function SlotCard({
   const total = entries.reduce((sum, e) => sum + (e.calories ?? 0), 0)
 
   return (
-    <section className="glass p-4" data-slot={slot}>
-      <div className="mb-1 flex items-center justify-between">
-        <div className="flex items-baseline gap-2">
-          <h3 className="font-semibold text-fg/90">{SLOT_LABEL[slot]}</h3>
-          {entries.length > 0 && (
-            <span className="text-xs text-fg/45">{Math.round(total)} kcal</span>
-          )}
-        </div>
-        {!locked && (
-          <button
-            onClick={onAdd}
-            aria-label={`Add to ${SLOT_LABEL[slot]}`}
-            className="-m-3.5 rounded-lg p-3.5 text-accent-bright transition-colors hover:bg-accent-bright/15"
-          >
-            <Plus className="h-4.5 w-4.5" strokeWidth={2.5} />
-          </button>
-        )}
+    <section className="glass db-pad" data-slot={slot}>
+      <div className="db-card-h">
+        <h3 className="db-micro">{SLOT_LABEL[slot]}</h3>
+        {entries.length > 0 && <span className="db-sum">{Math.round(total)} kcal</span>}
       </div>
 
-      {entries.length === 0 ? (
-        locked ? (
-          <p className="mt-1 px-1 text-sm text-fg/35">Nothing logged.</p>
-        ) : (
+      {entries.length === 0 && locked && <p className="db-emptyline">Nothing logged.</p>}
+
+      {entries.map((e) => {
+        const sub = [fmtTime(e.time_of_day), portionText(e)].filter(Boolean).join(' · ')
+        return (
           <button
-            onClick={onAdd}
-            className="mt-1 w-full rounded-xl border border-dashed border-fg/20 px-3 py-2.5 text-left text-sm text-fg/40 transition-colors hover:border-accent-bright/40 hover:text-fg/60"
+            key={e.id}
+            disabled={locked}
+            onClick={() => onEdit(e)}
+            className="db-row transition-colors hover:bg-fg/10 disabled:cursor-default disabled:hover:bg-transparent"
           >
-            + Add {slot === 'snack' ? 'a snack' : slot}
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium">
+                {e.brand ? `${e.brand}, ${e.name}` : e.name}
+              </span>
+              {sub && <span className="block truncate text-xs text-fg/45">{sub}</span>}
+            </span>
+            <span className="shrink-0 text-sm font-semibold text-fg/70">
+              {kcal(e.calories)}
+              <span className="ml-1 text-[10px] font-normal text-fg/40">kcal</span>
+            </span>
           </button>
         )
-      ) : (
-        <div className="flex flex-col">
-          {entries.map((e) => {
-            const sub = [fmtTime(e.time_of_day), portionText(e)].filter(Boolean).join(' · ')
-            return (
-              <button
-                key={e.id}
-                disabled={locked}
-                onClick={() => onEdit(e)}
-                className="-mx-1.5 flex items-center justify-between gap-3 rounded-lg px-1.5 py-2 text-left transition-colors hover:bg-fg/10"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">
-                    {e.brand ? `${e.brand}, ${e.name}` : e.name}
-                  </span>
-                  {sub && <span className="block truncate text-xs text-fg/45">{sub}</span>}
-                </span>
-                <span className="shrink-0 text-sm font-semibold text-fg/70">
-                  {kcal(e.calories)}
-                  <span className="ml-1 text-[10px] font-normal text-fg/40">kcal</span>
-                </span>
-              </button>
-            )
-          })}
-        </div>
+      })}
+
+      {/* The slot's add control: a row that closes the list, not a header icon. */}
+      {!locked && (
+        <button
+          onClick={onAdd}
+          aria-label={`Add to ${SLOT_LABEL[slot]}`}
+          className="db-addrow transition-colors hover:bg-accent-bright/10"
+        >
+          + Add {slot === 'snack' ? 'a snack' : slot}
+        </button>
       )}
     </section>
   )
@@ -1117,25 +1092,25 @@ function NutritionTab() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between" data-date-nav>
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-2" data-date-nav>
         <button
           onClick={() => setDate(addDays(date, -1))}
           aria-label="Previous day"
-          className="rounded-lg p-2 text-fg/55 transition-colors hover:bg-fg/10 hover:text-fg"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-fg/55 transition-colors hover:bg-fg/10 hover:text-fg"
         >
           <ChevronLeft className="h-5 w-5" />
         </button>
         <button
           onClick={() => setDate(api.localDate())}
-          className="text-[15px] font-bold tracking-tight"
+          className="min-h-11 flex-1 text-[15px] font-bold tracking-tight"
         >
           {dateLabel(date)}
         </button>
         <button
           onClick={() => setDate(addDays(date, 1))}
           aria-label="Next day"
-          className="rounded-lg p-2 text-fg/55 transition-colors hover:bg-fg/10 hover:text-fg"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-fg/55 transition-colors hover:bg-fg/10 hover:text-fg"
         >
           <ChevronRight className="h-5 w-5" />
         </button>

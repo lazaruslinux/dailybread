@@ -147,12 +147,12 @@ export function ItemDetail({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 40 }}
         transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-        className="sheet-card max-h-[90svh] w-full max-w-sm overflow-y-auto p-6"
+        className="sheet-card max-h-[90svh] w-full max-w-sm overflow-y-auto p-4"
         role="dialog"
         aria-modal="true"
         data-item-detail
       >
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between">
           <span className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${tint}`}>
             <Icon className="h-3.5 w-3.5" strokeWidth={2.5} />
             {label}
@@ -160,20 +160,20 @@ export function ItemDetail({
           <button
             onClick={onClose}
             aria-label="Close"
-            className="rounded-lg p-1.5 text-fg/50 hover:bg-fg/10 hover:text-fg"
+            className="-m-2 rounded-lg p-3.5 text-fg/50 hover:bg-fg/10 hover:text-fg"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <h2 className={`font-display text-2xl font-semibold tracking-[-0.01em] ${item.completed ? 'text-fg/60 line-through decoration-fg/30' : ''}`}>
+        <h2 className={`font-display text-xl font-semibold tracking-[-0.01em] ${item.completed ? 'text-fg/60 line-through decoration-fg/30' : ''}`}>
           {item.title}
         </h2>
         {item.notes && <p className="mt-2 text-sm leading-relaxed text-fg/70">{item.notes}</p>}
 
-        <div className="mt-4 flex flex-col gap-2 text-sm text-fg/70">
+        <div className="mt-3 flex flex-col gap-1.5 text-sm text-fg/70">
           <div className="flex items-start gap-2">
-            <span className="w-12 shrink-0 pt-1 text-xs font-semibold uppercase tracking-wide text-fg/40">For</span>
+            <span className="db-micro w-12 shrink-0 pt-1">For</span>
             {item.assignees.length === 0 ? (
               <span className="pt-0.5">You</span>
             ) : (
@@ -189,7 +189,7 @@ export function ItemDetail({
           </div>
           {item.visibility === 'family' && (
             <div className="flex items-center gap-2">
-              <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-fg/40">
+              <span className="db-micro w-12 shrink-0">
                 Shown
               </span>
               On the family board
@@ -197,7 +197,7 @@ export function ItemDetail({
           )}
           {item.repeat && (
             <div className="flex items-center gap-2">
-              <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-fg/40">
+              <span className="db-micro w-12 shrink-0">
                 Repeats
               </span>
               {describeRepeat(item.repeat)}
@@ -205,13 +205,13 @@ export function ItemDetail({
           )}
           {whenLabel && (
             <div className="flex items-center gap-2">
-              <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-fg/40">Time</span>
+              <span className="db-micro w-12 shrink-0">Time</span>
               {whenLabel}
             </div>
           )}
           {item.date_for && (
             <div className="flex items-center gap-2">
-              <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-fg/40">
+              <span className="db-micro w-12 shrink-0">
                 {item.kind === 'task' ? 'Due' : spans ? 'Dates' : 'Date'}
               </span>
               {spans
@@ -221,7 +221,7 @@ export function ItemDetail({
           )}
           {item.location && (
             <div className="flex items-center gap-2">
-              <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-fg/40">
+              <span className="db-micro w-12 shrink-0">
                 Where
               </span>
               {locationHref ? (
@@ -242,7 +242,7 @@ export function ItemDetail({
           )}
           {villageEvent && (
             <div className="flex items-center gap-2">
-              <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-fg/40">
+              <span className="db-micro w-12 shrink-0">
                 From
               </span>
               {villageEvent.organizer_family_name} · {villageEvent.village_name}
@@ -254,7 +254,7 @@ export function ItemDetail({
           <button
             type="button"
             onClick={onChangeRsvp}
-            className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-fg/10 bg-fg/5 px-4 py-3 text-sm font-semibold text-fg/80 transition-colors hover:bg-fg/10"
+            className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-fg/10 bg-fg/5 px-4 py-2.5 text-sm font-semibold text-fg/80 transition-colors hover:bg-fg/10"
           >
             {villageEvent.is_own ? 'View Attendees' : 'View Attendees · Change RSVP'}
           </button>
@@ -262,7 +262,7 @@ export function ItemDetail({
 
         {isRoutine && item.assignee_completions && (
           <div className="mt-6">
-            <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg/40">
+            <span className="db-micro mb-1.5 block">
               Who's done
             </span>
             <div className="flex flex-col gap-2">
@@ -422,7 +422,7 @@ export function ItemDetail({
               type="button"
               disabled={cancelBusy}
               onClick={handleCancel}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-gold/40 bg-gold/10 px-4 py-3 text-sm font-semibold text-gold transition-colors hover:bg-gold/20 disabled:opacity-50"
+              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-gold/40 bg-gold/10 px-4 py-2.5 text-sm font-semibold text-gold transition-colors hover:bg-gold/20 disabled:opacity-50"
             >
               <Ban className="h-4 w-4" />
               {cancelBusy

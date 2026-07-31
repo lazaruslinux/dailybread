@@ -47,30 +47,33 @@ export function SavedFoodBox() {
       title="Saved foods"
       summary={foods.length ? String(foods.length) : undefined}
       storageKey="saved-foods"
+      flush
     >
-      <FormError message={error} />
+      <div className="px-3.5">
+        <FormError message={error} />
+      </div>
       {foods.length === 0 ? (
-        <p className="py-6 text-center text-sm text-fg/50">
+        <p className="db-emptyline">
           Tap the bookmark on any food you search or scan to keep it here for quick re-use.
         </p>
       ) : (
-        <ul className="flex flex-col gap-2">
+        <ul>
           {preview.shown.map((f) => {
             const summary = foodSummary(f, canEdit)
             return (
-              <li key={f.id} className="flex w-full items-center gap-3 rounded-xl bg-fg/5 px-3 py-2.5">
+              <li key={f.id} className="db-row">
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">
+                  <span className="block truncate text-[0.90625rem] font-medium">
                     {f.brand ? `${f.brand}, ${f.name}` : f.name}
                   </span>
-                  {summary && <span className="block truncate text-xs text-fg/45">{summary}</span>}
+                  {summary && <span className="block truncate text-[0.78125rem] text-fg/45">{summary}</span>}
                 </span>
                 {canEdit && (
                   <button
                     type="button"
                     onClick={() => unpin(f)}
                     aria-label={`Remove ${f.name} from saved foods`}
-                    className="shrink-0 rounded-lg p-1.5 text-gold transition-colors hover:bg-fg/10"
+                    className="-m-2.5 shrink-0 rounded-lg p-3.5 text-gold transition-colors hover:bg-fg/10"
                   >
                     <BookmarkCheck className="h-4 w-4" strokeWidth={2.5} />
                   </button>
@@ -135,11 +138,11 @@ export function CustomFoodBox() {
     const inner = (
       <>
         <span className="min-w-0 flex-1">
-          <span className="block truncate font-medium">{f.name}</span>
-          {summary && <span className="block truncate text-xs text-fg/45">{summary}</span>}
+          <span className="block truncate text-[0.90625rem] font-medium">{f.name}</span>
+          {summary && <span className="block truncate text-[0.78125rem] text-fg/45">{summary}</span>}
         </span>
         {f.shared_to.length > 0 && (
-          <span className="flex shrink-0 items-center gap-1 rounded-full border border-accent-bright/30 bg-accent-bright/10 px-2 py-0.5 text-[10px] font-semibold text-accent-bright">
+          <span className="db-chip db-chip-gold flex items-center gap-1">
             <Share2 className="h-3 w-3" /> Shared
           </span>
         )}
@@ -147,14 +150,14 @@ export function CustomFoodBox() {
       </>
     )
     return (
-      <li key={f.id}>
+      <li key={f.id} className={`db-row ${canEdit ? 'transition-colors hover:bg-fg/5' : ''}`}>
         {canEdit ? (
           <button type="button" onClick={() => setDetail(f)}
-            className="flex w-full items-center gap-3 rounded-xl bg-fg/5 px-3 py-2.5 text-left transition-colors hover:bg-fg/10">
+            className="-my-2 flex min-h-11 w-full items-center gap-3 py-2 text-left">
             {inner}
           </button>
         ) : (
-          <div className="flex w-full items-center gap-3 rounded-xl bg-fg/5 px-3 py-2.5">{inner}</div>
+          inner
         )}
       </li>
     )
@@ -175,37 +178,40 @@ export function CustomFoodBox() {
         title="Custom foods"
         summary={foods.length ? String(foods.length) : undefined}
         storageKey="custom-foods"
+        flush
         action={
           canEdit && (
             <button type="button" onClick={() => setEditing({ food: null })}
-              className="flex items-center gap-1 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-2.5 py-1 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25">
+              className="-my-2 flex min-h-11 shrink-0 items-center gap-1 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-2.5 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25">
               <Plus className="h-3.5 w-3.5" strokeWidth={2.5} /> New food
             </button>
           )
         }
       >
-        <FormError message={error} />
+        <div className="px-3.5">
+          <FormError message={error} />
+        </div>
 
         {foods.length === 0 ? (
-          <p className="py-6 text-center text-sm text-fg/50">
+          <p className="db-emptyline">
             {canEdit
               ? 'Add anything the food database is missing (a homemade dish, a local brand) and use it in recipes.'
               : 'No custom foods yet.'}
           </p>
         ) : !preview.folded && folderGroups.length > 0 ? (
-          <div className="flex flex-col gap-3">
+          <div>
             {folderGroups.map((g) => (
               <div key={g.name}>
-                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg/45">
-                  {g.name}
-                </p>
-                <ul className="flex flex-col gap-2">{g.items.map(renderFood)}</ul>
+                <div className="db-sect">
+                  <span>{g.name}</span>
+                </div>
+                <ul>{g.items.map(renderFood)}</ul>
               </div>
             ))}
-            {unfiled.length > 0 && <ul className="flex flex-col gap-2">{unfiled.map(renderFood)}</ul>}
+            {unfiled.length > 0 && <ul>{unfiled.map(renderFood)}</ul>}
           </div>
         ) : (
-          <ul className="flex flex-col gap-2">{preview.shown.map(renderFood)}</ul>
+          <ul>{preview.shown.map(renderFood)}</ul>
         )}
         <LibraryFoldButton
           total={foods.length}
@@ -228,7 +234,7 @@ export function CustomFoodBox() {
               )}
             </div>
             {detail.shared_to.length > 0 && (
-              <span className="flex shrink-0 items-center gap-1 rounded-full border border-accent-bright/30 bg-accent-bright/10 px-2 py-0.5 text-[10px] font-semibold text-accent-bright">
+              <span className="db-chip db-chip-gold flex items-center gap-1">
                 <Share2 className="h-3 w-3" /> Shared
               </span>
             )}

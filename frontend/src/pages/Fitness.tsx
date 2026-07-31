@@ -580,9 +580,11 @@ function MetricCard({
 }) {
   const { icon: Icon, label, colorVar, unit } = def
   return (
-    <button type="button" onClick={onOpen} className="glass relative p-4 text-left">
-      <ChevronRight className="absolute right-3 top-4 h-4 w-4 text-fg/30" />
-      <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
+    <button type="button" onClick={onOpen} className="glass relative p-3.5 text-left">
+      <ChevronRight className="absolute right-2.5 top-3.5 h-4 w-4 text-fg/30" />
+      {/* The caption stays under the label here: unlike the mockup these cards
+          are two-up on a phone, so a right-side caption would not fit. */}
+      <span className="db-micro flex items-center gap-1.5 pr-4">
         <Icon className="h-3.5 w-3.5" style={{ color: `var(${colorVar})` }} /> {label}
       </span>
       <p className="mt-1 text-[11px] text-fg/45">Today</p>
@@ -1121,7 +1123,7 @@ function WeightCard({
 }) {
   const latest = points[points.length - 1]
   const label = (
-    <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
+    <span className="db-micro flex items-center gap-1.5">
       <Scale className="h-3.5 w-3.5" style={{ color: 'var(--fit-weight)' }} /> Weight
     </span>
   )
@@ -1132,7 +1134,7 @@ function WeightCard({
         type="button"
         onClick={onReveal}
         aria-label="Show weight"
-        className="glass relative flex items-center gap-3 p-4 text-left"
+        className="glass relative flex items-center gap-3 p-3.5 text-left"
       >
         <div className="min-w-0 flex-1">
           {label}
@@ -1159,7 +1161,7 @@ function WeightCard({
   }
 
   return (
-    <div className="glass relative flex items-center gap-2 p-4">
+    <div className="glass relative flex items-center gap-2 p-3.5">
       <button
         type="button"
         onClick={onOpen}
@@ -1477,15 +1479,15 @@ function WorkoutRow({ workout, onOpen }: { workout: api.Workout; onOpen: () => v
     workout.avg_hr ? `${Math.round(workout.avg_hr)} bpm avg` : null,
   ].filter(Boolean)
   return (
-    <button type="button" onClick={onOpen} className="glass flex w-full items-center gap-3 p-4 text-left">
+    <button type="button" onClick={onOpen} className="db-row transition-colors hover:bg-fg/5">
       <div
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
         style={{ background: 'color-mix(in srgb, var(--fit-active) 16%, transparent)' }}
       >
         <Icon className="h-5 w-5" style={{ color: 'var(--fit-active)' }} />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate font-semibold text-fg/90">{workout.activity}</p>
+        <p className="truncate text-sm font-semibold text-fg/90">{workout.activity}</p>
         <p className="truncate text-xs text-fg/50">{fmtWhen(workout.started_at)}</p>
       </div>
       {workout.route && workout.route.length > 1 && <RouteThumb route={workout.route} />}
@@ -1654,7 +1656,7 @@ export function Fitness() {
         : 'your phone'
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       {!data.connected && !hasAnything && (
         <div className="glass flex flex-col items-center gap-3 p-8 text-center">
           <HeartPulse className="h-8 w-8 text-red-400" />
@@ -1669,16 +1671,15 @@ export function Fitness() {
 
       {(data.connected || hasAnything) && (
         <>
-          <div className="glass p-5">
-            {data.last_sync && (
-              <p className="mb-1 text-sm font-bold text-fg/80">
-                Last sync: {fmtWhen(data.last_sync)}
-              </p>
-            )}
-            <span className="mb-4 block text-xs font-semibold uppercase tracking-wide text-fg/50">
-              Today's activity
-            </span>
-            <div className="flex items-start gap-2">
+          <div className="glass">
+            <div className="db-card-h">
+              <span className="db-micro">Today's activity</span>
+              {data.last_sync && (
+                <span className="db-sum">Last sync: {fmtWhen(data.last_sync)}</span>
+              )}
+            </div>
+            {/* Ring geometry untouched; only the frame around it tightened. */}
+            <div className="flex items-start gap-2 px-2 pb-4 pt-3">
               <RingStat
                 colorVar="--fit-steps"
                 icon={Footprints}
@@ -1731,18 +1732,18 @@ export function Fitness() {
           )}
 
           {data.workouts.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <span className="px-1 text-xs font-semibold uppercase tracking-wide text-fg/50">
-                Workouts
-              </span>
-              {(showAllWorkouts ? data.workouts : data.workouts.slice(0, 3)).map((w) => (
-                <WorkoutRow key={w.id} workout={w} onOpen={() => setWorkoutOpen(w)} />
-              ))}
+            <div>
+              <span className="db-micro block px-1">Workouts</span>
+              <div className="glass db-pad mt-1.5">
+                {(showAllWorkouts ? data.workouts : data.workouts.slice(0, 3)).map((w) => (
+                  <WorkoutRow key={w.id} workout={w} onOpen={() => setWorkoutOpen(w)} />
+                ))}
+              </div>
               {data.workouts.length > 3 && (
                 <button
                   type="button"
                   onClick={() => setShowAllWorkouts((v) => !v)}
-                  className="self-center px-4 py-2 text-sm font-semibold text-accent-bright hover:underline"
+                  className="min-h-11 w-full px-4 py-2 text-[13px] font-semibold text-accent-bright hover:underline"
                 >
                   {showAllWorkouts
                     ? 'Show fewer'
@@ -1752,9 +1753,9 @@ export function Fitness() {
             </div>
           )}
 
-          <div className="glass flex items-center gap-3 p-4">
+          <div className="glass flex items-center gap-3 p-3.5">
             <Link2 className="h-4 w-4 shrink-0 text-fg/55" />
-            <p className="min-w-0 flex-1 text-sm text-fg/60">
+            <p className="min-w-0 flex-1 text-[13.5px] text-fg/60">
               {data.connected
                 ? data.last_sync
                   ? `Connected · last sync ${fmtWhen(data.last_sync)}`
@@ -1779,13 +1780,13 @@ export function Fitness() {
           </div>
 
           {data.connected && (
-            <div className="glass p-4">
+            <div className="glass p-3.5">
               <button
                 type="button"
                 role="switch"
                 aria-checked={data.count_watch_kcal}
                 onClick={toggleWatchKcal}
-                className="flex w-full items-center justify-between gap-3 text-left"
+                className="flex min-h-11 w-full items-center justify-between gap-3 text-left"
               >
                 <span className="flex min-w-0 items-center gap-3">
                   <Watch className="h-4 w-4 shrink-0 text-fg/55" />

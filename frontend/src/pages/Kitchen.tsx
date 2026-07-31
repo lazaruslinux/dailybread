@@ -8,7 +8,7 @@ import { SharedRecipesBox } from '../components/SharedRecipes'
 // that feed both.
 export function Kitchen() {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <DinnerPlanner />
       <GroceryPanel />
       <RecipeBox />

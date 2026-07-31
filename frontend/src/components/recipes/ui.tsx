@@ -104,11 +104,7 @@ export function LibraryFoldButton({
 }) {
   if (total <= LIBRARY_PREVIEW) return null
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className="mt-2 w-full rounded-xl border border-fg/10 bg-fg/5 py-2 text-center text-xs font-semibold text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
-    >
+    <button type="button" onClick={onToggle} className="db-addrow transition-colors hover:bg-fg/5">
       {showAll ? 'Show fewer' : `Show all ${total} ${noun}`}
     </button>
   )

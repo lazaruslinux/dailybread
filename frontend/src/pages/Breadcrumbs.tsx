@@ -73,9 +73,9 @@ export function BreadcrumbsPage() {
   }, [])
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       {me && (
-        <div className="glass flex flex-col items-center gap-2 p-5 text-center">
+        <div className="glass flex flex-col items-center gap-2 p-4 text-center">
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-fg/55">Level</span>
             <LevelBadge level={me.level} size="md" />
@@ -96,68 +96,62 @@ export function BreadcrumbsPage() {
         </div>
       )}
 
-      <div className="glass p-4">
-        <span className="mb-3 block text-xs font-semibold uppercase tracking-wide text-fg/50">
-          How to earn
-        </span>
-        <div className="flex flex-col gap-1">
-          {earns.map((earn) => (
-            <div key={earn.label} className="flex items-center gap-3 rounded-xl px-1.5 py-2">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-fg/10">
-                <earn.Icon className="h-4.5 w-4.5 text-gold" strokeWidth={2} />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold text-fg/85">{earn.label}</span>
-                <span className="block text-xs leading-snug text-fg/45">
-                  {isMinor && earn.kidDetail ? earn.kidDetail : earn.detail}
-                </span>
-              </span>
-              <span className="flex shrink-0 items-center gap-1 text-sm font-bold text-gold">
-                <Coin className="h-3.5 w-3.5" />
-                {earn.amount}
-              </span>
-            </div>
-          ))}
+      <div className="glass overflow-hidden">
+        <div className="db-card-h">
+          <span className="db-micro">How to earn</span>
         </div>
-        <p className="mt-2 px-1.5 text-xs leading-relaxed text-fg/40">
+        {earns.map((earn) => (
+          <div key={earn.label} className="db-row">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-fg/10">
+              <earn.Icon className="h-4 w-4 text-gold" strokeWidth={2} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[14.5px] font-semibold text-fg/85">{earn.label}</span>
+              <span className="block text-[12.5px] leading-snug text-fg/45">
+                {isMinor && earn.kidDetail ? earn.kidDetail : earn.detail}
+              </span>
+            </span>
+            <span className="flex shrink-0 items-center gap-1 text-sm font-bold text-gold">
+              <Coin className="h-3.5 w-3.5" />
+              {earn.amount}
+            </span>
+          </div>
+        ))}
+        <p className="px-3.5 pb-3 pt-2 text-xs leading-relaxed text-fg/40">
           Crumbs add up into levels. Each level costs a little more than the last, and nothing
           here ever needs to be bought back: the number only grows.
         </p>
       </div>
 
-      <div className="glass p-4">
-        <span className="mb-3 block text-xs font-semibold uppercase tracking-wide text-fg/50">
-          The tier ladder
-        </span>
-        <div className="flex flex-col gap-2">
-          {LADDER.map((level) => {
-            const tier = tierOf(level)
-            const here = me?.tier === tier
-            return (
-              <div
-                key={tier}
-                className={`flex items-center gap-3 rounded-xl px-1.5 py-1.5 ${
-                  here ? 'bg-accent/10 ring-1 ring-accent/40' : ''
-                }`}
-              >
-                <LevelBadge level={level} size="md" />
-                <span className={`text-sm font-bold ${TIER_META[tier].text}`}>
-                  {TIER_META[tier].label}
-                </span>
-                {here && (
-                  <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-bright">
-                    You
-                  </span>
-                )}
-                <span className="ml-auto text-xs text-fg/40">
-                  {tier === 'breadmaster'
-                    ? 'level 40 and beyond'
-                    : `levels ${Math.floor(level / 10) * 10 || 1} to ${Math.floor(level / 10) * 10 + 9}`}
-                </span>
-              </div>
-            )
-          })}
+      <div className="glass db-pad overflow-hidden">
+        <div className="db-card-h">
+          <span className="db-micro">The tier ladder</span>
         </div>
+        {LADDER.map((level) => {
+          const tier = tierOf(level)
+          const here = me?.tier === tier
+          return (
+            <div
+              key={tier}
+              className={`db-row ${here ? 'bg-accent/10 ring-1 ring-inset ring-accent/40' : ''}`}
+            >
+              <LevelBadge level={level} size="md" />
+              <span className={`text-sm font-bold ${TIER_META[tier].text}`}>
+                {TIER_META[tier].label}
+              </span>
+              {here && (
+                <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-bright">
+                  You
+                </span>
+              )}
+              <span className="ml-auto text-xs text-fg/40">
+                {tier === 'breadmaster'
+                  ? 'level 40 and beyond'
+                  : `levels ${Math.floor(level / 10) * 10 || 1} to ${Math.floor(level / 10) * 10 + 9}`}
+              </span>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

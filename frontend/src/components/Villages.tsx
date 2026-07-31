@@ -85,13 +85,13 @@ function CodeSheet({
   }
   return (
     <Sheet onClose={onClose}>
-      <h3 className="mb-1 text-lg font-bold">Invite to {village}</h3>
-      <p className="mb-4 text-sm text-fg/60">
+      <h3 className="mb-1 text-base font-bold">Invite to {village}</h3>
+      <p className="mb-3 text-sm text-fg/60">
         Pass this code to the other family's admin. They enter it under Villages on their own
         You tab. It works once, {expiresIn(expiresAt)}, and can't be shown again. Lose it and
         you just make a new one.
       </p>
-      <div className="mb-4 flex items-center justify-center gap-3 rounded-xl border border-fg/10 bg-fg/5 p-4">
+      <div className="mb-3 flex items-center justify-center gap-3 rounded-xl border border-fg/10 bg-fg/5 p-3.5">
         <span className="select-all font-mono text-2xl font-bold tracking-widest text-fg/90">
           {code}
         </span>
@@ -143,12 +143,12 @@ function CreateSheet({
 
   return (
     <Sheet onClose={onClose}>
-      <h3 className="mb-1 text-lg font-bold">New village</h3>
-      <p className="mb-4 text-sm text-fg/60">
+      <h3 className="mb-1 text-base font-bold">New village</h3>
+      <p className="mb-3 text-sm text-fg/60">
         Creating a village links your family to other families you can invite via a code.
         Boards, kitchens, and calendars stay private to each family.
       </p>
-      <form onSubmit={submit} className="flex flex-col gap-4">
+      <form onSubmit={submit} className="flex flex-col gap-3">
         <Field
           label="Village name"
           value={name}
@@ -201,11 +201,11 @@ function JoinSheet({ onClose, onJoined }: { onClose: () => void; onJoined: () =>
   if (found) {
     return (
       <Sheet onClose={onClose}>
-        <h3 className="mb-1 text-lg font-bold">Join {found.name}?</h3>
+        <h3 className="mb-1 text-base font-bold">Join {found.name}?</h3>
         <p className="mb-3 text-sm text-fg/60">
           They won't be able to see anything of yours unless you share.
         </p>
-        <div className="mb-4 flex flex-wrap gap-1.5">
+        <div className="mb-3 flex flex-wrap gap-1.5">
           {found.families.map((name) => (
             <span
               key={name}
@@ -230,11 +230,11 @@ function JoinSheet({ onClose, onJoined }: { onClose: () => void; onJoined: () =>
 
   return (
     <Sheet onClose={onClose}>
-      <h3 className="mb-1 text-lg font-bold">Join a village</h3>
-      <p className="mb-4 text-sm text-fg/60">
+      <h3 className="mb-1 text-base font-bold">Join a village</h3>
+      <p className="mb-3 text-sm text-fg/60">
         Enter the invite code given to you by another family to join their village.
       </p>
-      <form onSubmit={check} className="flex flex-col gap-4">
+      <form onSubmit={check} className="flex flex-col gap-3">
         <Field
           label="Invite code"
           value={code}
@@ -284,7 +284,7 @@ function LevelShareToggle({ onChanged }: { onChanged: () => void }) {
       aria-checked={on}
       disabled={busy}
       onClick={flip}
-      className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left"
+      className="db-setrow justify-between gap-3 transition-colors hover:bg-fg/5"
     >
       <span className="min-w-0 pr-2 text-sm font-semibold text-fg/85">
         Share my Level &amp; breadcrumbs with Villages
@@ -339,7 +339,7 @@ function KidAvatarToggle() {
       aria-checked={on}
       disabled={busy}
       onClick={flip}
-      className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left"
+      className="db-setrow justify-between gap-3 transition-colors hover:bg-fg/5"
     >
       <span className="min-w-0 pr-2">
         <span className="block text-sm font-semibold text-fg/85">
@@ -391,7 +391,7 @@ function PresenceToggle({ initial, onChanged }: { initial: boolean; onChanged: (
       aria-checked={on}
       disabled={busy}
       onClick={flip}
-      className="flex w-full items-center justify-between rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left"
+      className="db-setrow justify-between gap-3 transition-colors hover:bg-fg/5"
     >
       <span className="min-w-0 pr-2">
         <span className="block text-sm font-semibold text-fg/85">
@@ -421,14 +421,14 @@ function MiniProfileSheet({ parent, onClose }: { parent: VillageParent; onClose:
   const isPrivate = !parent.presence && parent.level == null
   return (
     <Sheet onClose={onClose}>
-      <div className="flex flex-col items-center gap-3 py-2 text-center" data-mini-profile>
+      <div className="flex flex-col items-center gap-2.5 py-1 text-center" data-mini-profile>
         <Avatar
           name={parent.display_name}
           src={avatarUrl(parent)}
           mood={parent.mood?.level ?? null}
           size="lg"
         />
-        <h3 className="flex items-center gap-2 text-xl font-bold tracking-tight">
+        <h3 className="flex items-center gap-2 text-lg font-bold tracking-tight">
           {parent.level != null && <LevelBadge level={parent.level} size="md" />}
           {parent.display_name}
         </h3>
@@ -528,10 +528,11 @@ export function VillagesCard() {
       summary={villages.length ? villages.map((v) => v.name).join(' · ') : undefined}
       storageKey="villages"
       defaultOpen
+      flush
     >
-      <div className="flex flex-col gap-4">
+      <div>
         {villages.length === 0 && (
-          <p className="text-sm text-fg/55">
+          <p className="px-3.5 pb-1 pt-1 text-sm text-fg/55">
             <span className="font-semibold text-fg/70">"It takes a village"</span> - Villages
             link your family to another to share recipes or plan get-togethers. Your family's
             board, nutrition, and Kitchen data is never shared with them. Shared
@@ -548,17 +549,17 @@ export function VillagesCard() {
         )}
 
         {villages.map((v) => (
-          <div key={v.id} className="rounded-xl border border-fg/10 bg-fg/5 p-4">
-            <div className="mb-2 flex items-center gap-2">
-              <VillageIcon className="h-4 w-4 shrink-0 text-accent-bright" />
-              <span className="min-w-0 truncate font-semibold text-fg/90">{v.name}</span>
+          <div key={v.id}>
+            <div className="db-sect db-sect-accent">
+              <span className="flex min-w-0 items-center gap-1.5">
+                <VillageIcon className="h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0 truncate">{v.name}</span>
+              </span>
             </div>
-            <div className="flex flex-col gap-2.5">
+            <div className="flex flex-col gap-2 px-3.5 pt-2">
               {v.families.map((f) => (
                 <div key={f.id}>
-                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg/45">
-                    {f.name}
-                  </p>
+                  <p className="db-micro mb-1.5">{f.name}</p>
                   <div className="flex flex-wrap gap-3">
                     {f.parents.map((p) => (
                       <button
@@ -601,7 +602,7 @@ export function VillagesCard() {
               ))}
             </div>
             {isAdmin && (
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3.5 text-xs">
                 <span className="min-w-0 flex-1 truncate text-fg/45">
                   {v.invite_active ? `Invite active · ${expiresIn(v.invite_expires_at)}` : ''}
                 </span>
@@ -636,10 +637,12 @@ export function VillagesCard() {
           </div>
         ))}
 
-        <FormError message={error} />
+        <div className="px-3.5">
+          <FormError message={error} />
+        </div>
 
         {isAdmin && (
-          <div className="flex gap-2">
+          <div className="flex gap-2 px-3.5 pb-1 pt-3">
             {!villages.some((v) => v.is_creator) && (
               <Button type="button" variant="ghost" className="flex-1" onClick={() => setCreating(true)}>
                 <Plus className="mr-1 inline h-4 w-4" /> New village
@@ -674,8 +677,8 @@ export function VillagesCard() {
         )}
         {deleting && (
           <Sheet onClose={() => setDeleting(null)}>
-            <h3 className="mb-1 text-lg font-bold">Delete {deleting.name}?</h3>
-            <p className="mb-4 text-sm text-fg/60">
+            <h3 className="mb-1 text-base font-bold">Delete {deleting.name}?</h3>
+            <p className="mb-3 text-sm text-fg/60">
               Are you sure you wish to delete this village? Every family is removed from it and
               any shared recipes disappear from their kitchens. Nobody's own data is touched.
               This can't be undone.

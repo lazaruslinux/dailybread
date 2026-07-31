@@ -533,42 +533,45 @@ export function SharedRecipesBox() {
       summary={shownCount ? `${shownCount} shared` : villages.map((v) => v.name).join(' · ')}
       storageKey="village-recipes"
       defaultOpen
+      flush
       action={
         isParent ? (
           <button
             type="button"
             onClick={() => setSharing(true)}
-            className="flex items-center gap-1.5 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-3 py-1.5 text-sm font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
+            className="-my-2 flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-3 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
           >
             <Share2 className="h-4 w-4" /> Share
           </button>
         ) : undefined
       }
     >
-      <FormError message={error} />
+      <div className="px-3.5">
+        <FormError message={error} />
+      </div>
       {theirs.length === 0 && theirsFoods.length === 0 ? (
-        <p className="text-sm text-fg/50">
+        <p className="db-emptyline">
           Nothing shared yet. Recipes and foods shared by your village families appear here for
           everyone to browse and copy.
         </p>
       ) : (
-        <div className="flex flex-col gap-4">
+        <div>
           {theirs.length > 0 && (
             <div>
-              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg/45">
-                Shared recipes
-              </p>
-              <div className="flex flex-col gap-1.5">
+              <div className="db-sect">
+                <span>Shared recipes</span>
+              </div>
+              <div>
                 {(showAll ? theirs : theirs.slice(0, 2)).map((s) => (
                   <button
                     key={s.share_id}
                     type="button"
                     onClick={() => openDetail(s.share_id)}
-                    className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left transition-colors hover:bg-fg/10"
+                    className="db-row text-left transition-colors hover:bg-fg/5"
                   >
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold text-fg/90">{s.name}</span>
-                      <span className="block truncate text-xs text-fg/45">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[0.90625rem] font-semibold text-fg/90">{s.name}</span>
+                      <span className="block truncate text-[0.78125rem] text-fg/45">
                         Shared by {s.shared_by ?? s.family_name} from {s.family_name}
                         {villages.length > 1 && ` · ${s.village_name}`}
                       </span>
@@ -587,7 +590,7 @@ export function SharedRecipesBox() {
                   <button
                     type="button"
                     onClick={() => setShowAll((v) => !v)}
-                    className="mt-0.5 w-full rounded-xl border border-fg/10 bg-fg/5 py-2 text-center text-xs font-semibold text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
+                    className="db-addrow transition-colors hover:bg-fg/5"
                   >
                     {showAll ? 'Show fewer' : `Show all ${theirs.length} recipes`}
                   </button>
@@ -598,23 +601,23 @@ export function SharedRecipesBox() {
 
           {theirsFoods.length > 0 && (
             <div>
-              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg/45">
-                Shared foods
-              </p>
-              <div className="flex flex-col gap-1.5">
+              <div className="db-sect">
+                <span>Shared foods</span>
+              </div>
+              <div>
                 {(showAllFoods ? theirsFoods : theirsFoods.slice(0, 2)).map((s) => (
                   <button
                     key={s.share_id}
                     type="button"
                     onClick={() => openFoodDetail(s.share_id)}
-                    className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left transition-colors hover:bg-fg/10"
+                    className="db-row text-left transition-colors hover:bg-fg/5"
                   >
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold text-fg/90">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[0.90625rem] font-semibold text-fg/90">
                         {s.name}
                         {s.brand && <span className="font-normal text-fg/40"> · {s.brand}</span>}
                       </span>
-                      <span className="block truncate text-xs text-fg/45">
+                      <span className="block truncate text-[0.78125rem] text-fg/45">
                         Shared by {s.shared_by ?? s.family_name} from {s.family_name}
                         {villages.length > 1 && ` · ${s.village_name}`}
                       </span>
@@ -633,7 +636,7 @@ export function SharedRecipesBox() {
                   <button
                     type="button"
                     onClick={() => setShowAllFoods((v) => !v)}
-                    className="mt-0.5 w-full rounded-xl border border-fg/10 bg-fg/5 py-2 text-center text-xs font-semibold text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
+                    className="db-addrow transition-colors hover:bg-fg/5"
                   >
                     {showAllFoods ? 'Show fewer' : `Show all ${theirsFoods.length} foods`}
                   </button>
@@ -645,19 +648,16 @@ export function SharedRecipesBox() {
       )}
 
       {(mine.length > 0 || mineFoods.length > 0) && (
-        <div className="mt-4">
-          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg/45">
-            Shared by you
-          </p>
-          <div className="flex flex-col gap-1.5">
+        <div>
+          <div className="db-sect">
+            <span>Shared by you</span>
+          </div>
+          <div>
             {mine.map((s) => (
-              <div
-                key={`r${s.share_id}`}
-                className="flex items-center gap-3 rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5"
-              >
+              <div key={`r${s.share_id}`} className="db-row">
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold text-fg/80">{s.name}</span>
-                  <span className="block truncate text-xs text-fg/40">
+                  <span className="block truncate text-[0.90625rem] font-semibold text-fg/80">{s.name}</span>
+                  <span className="block truncate text-[0.78125rem] text-fg/40">
                     Recipe · Shared by {s.shared_by ?? s.family_name}
                     {villages.length > 1 && ` · ${s.village_name}`} · Last updated{' '}
                     {compactStamp(s.updated_at)}
@@ -678,16 +678,13 @@ export function SharedRecipesBox() {
               </div>
             ))}
             {mineFoods.map((s) => (
-              <div
-                key={`f${s.share_id}`}
-                className="flex items-center gap-3 rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5"
-              >
+              <div key={`f${s.share_id}`} className="db-row">
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold text-fg/80">
+                  <span className="block truncate text-[0.90625rem] font-semibold text-fg/80">
                     {s.name}
                     {s.brand && <span className="font-normal text-fg/40"> · {s.brand}</span>}
                   </span>
-                  <span className="block truncate text-xs text-fg/40">
+                  <span className="block truncate text-[0.78125rem] text-fg/40">
                     Food · Shared by {s.shared_by ?? s.family_name}
                     {villages.length > 1 && ` · ${s.village_name}`}
                   </span>

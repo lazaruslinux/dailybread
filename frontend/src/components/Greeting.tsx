@@ -69,10 +69,10 @@ export function DailyGreeting() {
 
   return (
     <Sheet onClose={later}>
-      <h2 className="font-display text-2xl font-semibold tracking-[-0.02em]" data-greeting>
+      <h2 className="font-display text-xl font-semibold tracking-[-0.02em]" data-greeting>
         {timeGreeting()}, {firstName}
       </h2>
-      <p className="mb-4 mt-1 text-xs leading-relaxed text-fg/50">
+      <p className="mb-3 mt-1 text-xs leading-relaxed text-fg/50">
         How's your day looking? Set a mood and status for the family board, or come back to it
         later.
       </p>
@@ -86,7 +86,7 @@ export function DailyGreeting() {
               key={level}
               type="button"
               onClick={() => setMood(active ? null : level)}
-              className={`flex flex-col items-center gap-1.5 rounded-xl border px-1 py-3 transition-colors ${
+              className={`flex flex-col items-center gap-1 rounded-xl border px-1 py-2.5 transition-colors ${
                 active ? `border-fg/30 ${meta.chip}` : 'border-fg/10 bg-fg/5 hover:bg-fg/10'
               }`}
             >
@@ -99,7 +99,7 @@ export function DailyGreeting() {
         })}
       </div>
 
-      <div className="mt-4">
+      <div className="mt-3">
         <Field
           label="Status"
           value={status}
@@ -109,7 +109,7 @@ export function DailyGreeting() {
         />
       </div>
 
-      <div className="mt-5 flex flex-col gap-2">
+      <div className="mt-4 flex flex-col gap-2">
         <Button type="button" onClick={save} disabled={busy || !dirty}>
           {busy ? 'Saving' : 'Save'}
         </Button>

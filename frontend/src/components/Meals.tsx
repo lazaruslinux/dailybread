@@ -419,7 +419,7 @@ function DinnerPlanBlock({
   }
 
   return (
-    <div className="mt-3 rounded-xl border border-accent-bright/25 bg-accent-bright/5 p-3" data-dinner-plan>
+    <div className="mt-2 rounded-xl border border-accent-bright/25 bg-accent-bright/5 p-2.5" data-dinner-plan>
       <div className="flex flex-col gap-1.5">
         {CHOICES.map((c) => (
           <ChoiceRow
@@ -631,96 +631,90 @@ export function DinnerPlanner() {
         days[6].toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 
   return (
-    <section className="glass p-5" data-dinner-planner>
-      <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-bright/15 text-accent-bright">
-          <UtensilsCrossed className="h-5 w-5" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-fg/40">
-            Tonight · {tonightLabel}
-          </p>
-          <h2 className="truncate font-display text-xl font-semibold tracking-[-0.01em]">
-            {mealTitle(tonight) ?? 'Dinner Plan'}
-          </h2>
-        </div>
+    <section className="glass db-pad" data-dinner-planner>
+      <div className="db-card-h">
+        <span className="db-micro truncate">Tonight · {tonightLabel}</span>
       </div>
 
-      <div className="mt-2 flex items-center gap-2.5">
-        {tonight?.time_of_day && (
-          <span className="text-lg font-bold tracking-tight text-fg/90">
-            {fmtMealTime(tonight.time_of_day)}
-          </span>
-        )}
+      <div className="flex items-center gap-3 px-3.5 pb-1.5 pt-1">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent-bright/15 text-accent-bright">
+          <UtensilsCrossed className="h-5 w-5" />
+        </span>
+        <h2 className="min-w-0 flex-1 truncate font-display text-lg font-semibold tracking-[-0.01em]">
+          {mealTitle(tonight) ?? 'Dinner Plan'}
+        </h2>
+        {tonight?.time_of_day && <span className="db-chip">{fmtMealTime(tonight.time_of_day)}</span>}
         {isParent && (
           <button
             type="button"
             onClick={() => setSettingTime(true)}
-            className="rounded-lg border border-fg/10 bg-fg/5 px-2.5 py-1.5 text-xs font-semibold text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
+            className="-my-2 flex min-h-11 shrink-0 items-center rounded-lg border border-fg/10 bg-fg/5 px-2.5 text-xs font-semibold text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
           >
             Set Time
           </button>
         )}
       </div>
 
-      {tonight?.per_serving && <MacroPills ps={tonight.per_serving} />}
+      <div className="px-3.5 pb-3">
+        {tonight?.per_serving && <MacroPills ps={tonight.per_serving} />}
 
-      {!mealTitle(tonight) && plan && (
-        <DinnerPlanBlock
-          plan={plan}
-          isParent={!!isParent}
-          me={user?.id}
-          dayISO={todayISO}
-          onChanged={refresh}
-        />
-      )}
-      {mealTitle(tonight) && isParent && (
+        {!mealTitle(tonight) && plan && (
+          <DinnerPlanBlock
+            plan={plan}
+            isParent={!!isParent}
+            me={user?.id}
+            dayISO={todayISO}
+            onChanged={refresh}
+          />
+        )}
+        {mealTitle(tonight) && isParent && (
+          <button
+            type="button"
+            onClick={async () => {
+              await api.clearMeal(todayISO)
+              refresh()
+            }}
+            className="mt-1.5 w-full text-center text-xs font-semibold text-fg/40 hover:text-fg/60"
+          >
+            Unlock tonight's plan
+          </button>
+        )}
+
+        <FormError message={error} />
+
         <button
           type="button"
-          onClick={async () => {
-            await api.clearMeal(todayISO)
-            refresh()
-          }}
-          className="mt-1.5 w-full text-center text-xs font-semibold text-fg/40 hover:text-fg/60"
+          onClick={() => setShowWeek((v) => !v)}
+          aria-expanded={showWeek}
+          className="mt-2 flex min-h-11 w-full items-center justify-center gap-1.5 rounded-[10px] border border-accent-bright/30 bg-accent-bright/10 text-[0.8125rem] font-semibold text-accent-bright transition-colors hover:bg-accent-bright/20"
         >
-          Unlock tonight's plan
+          {showWeek ? 'Hide Week' : 'Plan Week'}
+          {showWeek ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
         </button>
-      )}
-
-      <FormError message={error} />
-
-      <button
-        type="button"
-        onClick={() => setShowWeek((v) => !v)}
-        aria-expanded={showWeek}
-        className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-accent-bright/30 bg-accent-bright/10 py-2 text-sm font-semibold text-accent-bright transition-colors hover:bg-accent-bright/20"
-      >
-        {showWeek ? 'Hide Week' : 'Plan Week'}
-        {showWeek ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-      </button>
+      </div>
 
       {showWeek && (
-        <div className="mt-2">
-          <div className="mb-1.5 flex items-center justify-between">
+        <div className="mt-1">
+          <div className="flex items-center justify-between px-3.5 pb-0.5 pt-1.5">
             <button
               type="button"
               onClick={() => setWeekStart((s) => addDays(s, -7))}
               aria-label="Previous week"
-              className="rounded-lg p-1 text-fg/50 hover:bg-fg/10 hover:text-fg"
+              className="-my-1.5 flex min-h-11 min-w-11 items-center justify-center rounded-lg text-fg/50 hover:bg-fg/10 hover:text-fg"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <span className="text-xs font-semibold uppercase tracking-wide text-fg/45">{weekLabel}</span>
+            <span className="db-micro">{weekLabel}</span>
             <button
               type="button"
               onClick={() => setWeekStart((s) => addDays(s, 7))}
               aria-label="Next week"
-              className="rounded-lg p-1 text-fg/50 hover:bg-fg/10 hover:text-fg"
+              className="-my-1.5 flex min-h-11 min-w-11 items-center justify-center rounded-lg text-fg/50 hover:bg-fg/10 hover:text-fg"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div>
             {days.map((d) => {
               const iso = toISO(d)
               const meal = dinnerOn(iso)
@@ -743,20 +737,23 @@ export function DinnerPlanner() {
                     : '') +
                   (others > 0 ? ` + ${others} other vote${others > 1 ? 's' : ''}` : '')
                 : null
+              // Day rows keep the mockup's dayslot typography (tiny caps day,
+              // accent for tonight) in a dense hairline row.
               const dayLabel = (
                 <span
-                  className={`w-10 shrink-0 text-xs font-semibold uppercase ${
+                  className={`w-9 shrink-0 text-[0.625rem] font-bold uppercase tracking-[0.07em] ${
                     isToday ? 'text-accent-bright' : 'text-fg/45'
                   }`}
                 >
                   {d.toLocaleDateString(undefined, { weekday: 'short' })}
                 </span>
               )
+              const tonite = isToday ? 'bg-accent-bright/10' : ''
               if (!isParent) {
                 return (
-                  <div key={iso} className="flex items-center gap-3 rounded-lg bg-fg/5 px-2.5 py-2">
+                  <div key={iso} className={`db-row ${tonite}`}>
                     {dayLabel}
-                    <span className={`min-w-0 flex-1 truncate text-sm ${title ?? summary ? 'text-fg/90' : 'text-fg/35'}`}>
+                    <span className={`min-w-0 flex-1 truncate text-[0.8125rem] ${title ?? summary ? 'text-fg/90' : 'text-fg/35'}`}>
                       {title ?? summary ?? '—'}
                     </span>
                   </div>
@@ -770,10 +767,10 @@ export function DinnerPlanner() {
                   key={iso}
                   type="button"
                   onClick={() => setPlanning(iso)}
-                  className="flex w-full items-center gap-3 rounded-lg bg-fg/5 px-2.5 py-2 text-left transition-colors hover:bg-fg/10"
+                  className={`db-row transition-colors hover:bg-fg/5 ${tonite}`}
                 >
                   {dayLabel}
-                  <span className="min-w-0 flex-1 truncate text-sm text-fg/90">{title}</span>
+                  <span className="min-w-0 flex-1 truncate text-[0.8125rem] text-fg/90">{title}</span>
                   {cal != null && (
                     <span className="shrink-0 text-xs text-fg/40">{Math.round(cal)} cal</span>
                   )}
@@ -784,16 +781,12 @@ export function DinnerPlanner() {
                   key={iso}
                   type="button"
                   onClick={() => setPlanning(iso)}
-                  className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors ${
-                    summary
-                      ? 'bg-fg/5 hover:bg-fg/10'
-                      : 'border border-dashed border-fg/20 hover:border-accent-bright/40 hover:bg-fg/5'
-                  }`}
+                  className={`db-row transition-colors hover:bg-fg/5 ${tonite}`}
                 >
                   {dayLabel}
                   {summary ? (
                     <>
-                      <span className="min-w-0 flex-1 truncate text-sm text-fg/80">{summary}</span>
+                      <span className="min-w-0 flex-1 truncate text-[0.8125rem] text-fg/80">{summary}</span>
                       <span className="flex shrink-0 items-center -space-x-1">
                         {(dayPlan?.votes ?? []).map((v) => (
                           <VoterBubble key={v.user.id} voter={v.user} />
@@ -801,7 +794,7 @@ export function DinnerPlanner() {
                       </span>
                     </>
                   ) : (
-                    <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-sm font-semibold text-accent-bright">
+                    <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-[0.8125rem] font-semibold text-accent-bright">
                       <Plus className="h-3.5 w-3.5" /> Vote
                     </span>
                   )}
@@ -859,17 +852,15 @@ export function TonightCard({ onOpenKitchen }: { onOpenKitchen: () => void }) {
       type="button"
       onClick={onOpenKitchen}
       data-tonight-card
-      className="glass mb-4 flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-fg/5"
+      className="glass flex min-h-11 w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-fg/5"
     >
       <UtensilsCrossed className="h-4 w-4 shrink-0 text-accent-bright" />
-      <span className="min-w-0 flex-1 truncate text-sm">
-        <span className="mr-2 text-[11px] font-semibold uppercase tracking-widest text-fg/40">
-          Dinner plan
-        </span>
+      <span className="min-w-0 flex-1 truncate">
+        <span className="db-micro mr-2">Dinner plan</span>
         {meal?.time_of_day && (
-          <span className="mr-2 font-bold text-fg/90">{fmtMealTime(meal.time_of_day)}</span>
+          <span className="mr-2 text-[0.8125rem] font-bold text-fg/90">{fmtMealTime(meal.time_of_day)}</span>
         )}
-        {title && <span className="font-semibold text-fg/90">{title}</span>}
+        {title && <span className="text-base font-bold text-fg/90">{title}</span>}
       </span>
     </button>
   )

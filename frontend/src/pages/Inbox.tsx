@@ -135,7 +135,7 @@ export function InboxPage({
 
   if (entries.length === 0) {
     return (
-      <div className="glass p-6 text-center">
+      <div className="glass p-4 text-center">
         <p className="text-sm font-semibold text-fg/70">Nothing yet</p>
         <p className="mt-1 text-xs leading-relaxed text-fg/45">
           Crumbs you earn and family activity will land here.
@@ -145,7 +145,7 @@ export function InboxPage({
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-2">
       <div className="flex justify-end">
         <button
           type="button"
@@ -156,11 +156,9 @@ export function InboxPage({
           {armed ? 'Tap again to clear' : 'Clear inbox'}
         </button>
       </div>
-      <div className="glass overflow-hidden p-4">
-        {/* Hairline dividers, not per-row cards: an inbox is a list. Unread rows
-          get a warm accent wash bleeding to the card edges plus a full-contrast
-          title, so "new" reads at a glance on both themes. */}
-      <div className="flex flex-col divide-y divide-fg/10">
+      {/* Hairlines, not per-row cards: an inbox is a list. Unread rows keep the
+        warm accent wash plus a full-contrast title, so "new" reads at a glance. */}
+      <div className="glass db-pad overflow-hidden">
         {entries.map((entry) => {
           const { Icon, tint } = KIND_ICON[entry.kind] ?? KIND_ICON.board
           return (
@@ -168,23 +166,23 @@ export function InboxPage({
               key={entry.id}
               type="button"
               onClick={() => onGo?.(entry.kind)}
-              className={`-mx-4 flex w-[calc(100%+2rem)] items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-fg/5 active:bg-fg/10 ${
+              className={`db-row transition-colors hover:bg-fg/5 active:bg-fg/10 ${
                 entry.read ? '' : 'bg-accent-bright/10'
               }`}
             >
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-fg/10">
-                <Icon className={`h-4.5 w-4.5 ${tint}`} strokeWidth={2} />
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-fg/10">
+                <Icon className={`h-4 w-4 ${tint}`} strokeWidth={2} />
               </span>
               <span className="min-w-0 flex-1">
                 <span
-                  className={`block text-sm font-semibold ${
+                  className={`block text-[14.5px] font-semibold ${
                     entry.read ? 'text-fg/85' : 'text-fg'
                   }`}
                 >
                   {entry.title}
                 </span>
                 {entry.body && (
-                  <span className="block text-xs leading-snug text-fg/45">{entry.body}</span>
+                  <span className="block text-[12.5px] leading-snug text-fg/45">{entry.body}</span>
                 )}
               </span>
               <span className="flex shrink-0 flex-col items-end gap-1">
@@ -194,7 +192,6 @@ export function InboxPage({
             </button>
           )
         })}
-        </div>
       </div>
     </div>
   )

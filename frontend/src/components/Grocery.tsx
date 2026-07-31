@@ -150,55 +150,54 @@ export function GroceryPanel() {
       ...lists.map((l) => ({ id: l.id as number | null, label: l.name })),
     ].filter((d) => d.id !== item.list_id)
     return (
-      <li key={item.id} className="flex flex-col">
-        <div className="flex items-center gap-1">
+      // The row wraps: the "move to" chips ride a second line inside it.
+      <li key={item.id} className="db-row flex-wrap gap-x-1 gap-y-0">
+        <button
+          type="button"
+          disabled={!canEdit || busy}
+          onClick={() => run(() => api.updateGrocery(item.id, { checked: !item.checked }))}
+          className="-my-2 flex min-h-11 min-w-0 flex-1 items-center gap-3 py-2 text-left"
+        >
+          <span
+            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors ${
+              item.checked ? 'border-emerald-400/60 bg-emerald-400/25' : 'border-fg/25'
+            }`}
+          >
+            {item.checked && <Check className="h-3.5 w-3.5 text-emerald-300" strokeWidth={3} />}
+          </span>
+          <span
+            className={`truncate text-[0.9375rem] ${item.checked ? 'text-fg/45 line-through decoration-fg/30' : 'text-fg/90'}`}
+          >
+            {item.title}
+          </span>
+        </button>
+        {canEdit && destinations.length > 0 && (
           <button
             type="button"
-            disabled={!canEdit || busy}
-            onClick={() => run(() => api.updateGrocery(item.id, { checked: !item.checked }))}
-            className="flex min-w-0 flex-1 items-center gap-3 rounded-xl p-2.5 text-left transition-colors enabled:hover:bg-fg/5"
+            disabled={busy}
+            onClick={() => setMovingId((m) => (m === item.id ? null : item.id))}
+            aria-label={`Move ${item.title}`}
+            aria-expanded={movingId === item.id}
+            className={`-m-2.5 shrink-0 rounded-lg p-3.5 transition-colors hover:bg-fg/10 ${
+              movingId === item.id ? 'text-accent-bright' : 'text-fg/30 hover:text-fg/70'
+            }`}
           >
-            <span
-              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors ${
-                item.checked ? 'border-emerald-400/60 bg-emerald-400/25' : 'border-fg/25'
-              }`}
-            >
-              {item.checked && <Check className="h-3.5 w-3.5 text-emerald-300" strokeWidth={3} />}
-            </span>
-            <span
-              className={`truncate ${item.checked ? 'text-fg/45 line-through decoration-fg/30' : 'text-fg/90'}`}
-            >
-              {item.title}
-            </span>
+            <FolderInput className="h-4 w-4" />
           </button>
-          {canEdit && destinations.length > 0 && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => setMovingId((m) => (m === item.id ? null : item.id))}
-              aria-label={`Move ${item.title}`}
-              aria-expanded={movingId === item.id}
-              className={`-m-1.5 shrink-0 rounded-lg p-3.5 transition-colors hover:bg-fg/10 ${
-                movingId === item.id ? 'text-accent-bright' : 'text-fg/30 hover:text-fg/70'
-              }`}
-            >
-              <FolderInput className="h-4 w-4" />
-            </button>
-          )}
-          {canEdit && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => run(() => api.deleteGrocery(item.id))}
-              aria-label={`Delete ${item.title}`}
-              className="-m-1.5 shrink-0 rounded-lg p-3.5 text-fg/30 transition-colors hover:bg-fg/10 hover:text-rose-300"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-          )}
-        </div>
+        )}
+        {canEdit && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => run(() => api.deleteGrocery(item.id))}
+            aria-label={`Delete ${item.title}`}
+            className="-m-2.5 shrink-0 rounded-lg p-3.5 text-fg/30 transition-colors hover:bg-fg/10 hover:text-rose-300"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
         {movingId === item.id && (
-          <div className="mb-1 ml-11 flex flex-wrap gap-1.5 pb-1">
+          <div className="ml-8 flex w-full flex-wrap gap-1.5 pb-1">
             <span className="self-center text-[11px] font-semibold uppercase tracking-wide text-fg/40">
               Move to
             </span>
@@ -225,38 +224,41 @@ export function GroceryPanel() {
       summary={toGrab > 0 ? `${toGrab} to grab` : undefined}
       storageKey="grocery"
       defaultOpen
+      flush
     >
-      {/* Tabs: All (combined) + Unsorted (store-less) + one per store; parents add more. */}
-      <div className="-mx-1 mb-3 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
-        <button type="button" onClick={() => setActive('all')} className={chip(isAll)}>
-          All
-          {toGrab > 0 && <span className="text-xs text-fg/50">{toGrab}</span>}
-        </button>
-        {(hasUnsorted || active === null) && (
-          <button type="button" onClick={() => setActive(null)} className={chip(active === null)}>
-            Unsorted
-            {unchecked(null) > 0 && <span className="text-xs text-fg/50">{unchecked(null)}</span>}
+      {/* Tabs, store form and the add line stay padded; the list below is full bleed. */}
+      <div className="px-3.5">
+        {/* Tabs: All (combined) + Unsorted (store-less) + one per store; parents add more. */}
+        <div className="-mx-1 mb-2 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
+          <button type="button" onClick={() => setActive('all')} className={chip(isAll)}>
+            All
+            {toGrab > 0 && <span className="text-xs text-fg/50">{toGrab}</span>}
           </button>
-        )}
-        {lists.map((l) => (
-          <button key={l.id} type="button" onClick={() => setActive(l.id)} className={chip(active === l.id)}>
-            {l.name}
-            {unchecked(l.id) > 0 && <span className="text-xs text-fg/50">{unchecked(l.id)}</span>}
-          </button>
-        ))}
-        {canEdit && !addingStore && (
-          <button
-            type="button"
-            onClick={() => setAddingStore(true)}
-            className="flex min-h-11 shrink-0 items-center gap-1 rounded-full border border-dashed border-fg/25 px-3 py-1.5 text-sm font-semibold text-fg/55 transition-colors hover:bg-fg/10"
-          >
-            <Store className="h-3.5 w-3.5" /> Add store
-          </button>
-        )}
+          {(hasUnsorted || active === null) && (
+            <button type="button" onClick={() => setActive(null)} className={chip(active === null)}>
+              Unsorted
+              {unchecked(null) > 0 && <span className="text-xs text-fg/50">{unchecked(null)}</span>}
+            </button>
+          )}
+          {lists.map((l) => (
+            <button key={l.id} type="button" onClick={() => setActive(l.id)} className={chip(active === l.id)}>
+              {l.name}
+              {unchecked(l.id) > 0 && <span className="text-xs text-fg/50">{unchecked(l.id)}</span>}
+            </button>
+          ))}
+          {canEdit && !addingStore && (
+            <button
+              type="button"
+              onClick={() => setAddingStore(true)}
+              className="flex min-h-11 shrink-0 items-center gap-1 rounded-full border border-dashed border-fg/25 px-3 py-1.5 text-sm font-semibold text-fg/55 transition-colors hover:bg-fg/10"
+            >
+              <Store className="h-3.5 w-3.5" /> Add store
+            </button>
+          )}
       </div>
 
       {addingStore && (
-        <form onSubmit={onAddStore} className="mb-4 flex gap-2">
+        <form onSubmit={onAddStore} className="mb-2.5 flex gap-2">
           <input
             value={storeName}
             onChange={(e) => setStoreName(e.target.value)}
@@ -289,7 +291,7 @@ export function GroceryPanel() {
       )}
 
       {canEdit && (
-        <form onSubmit={onAdd} className="mb-3 flex gap-2">
+        <form onSubmit={onAdd} className="mb-1.5 flex gap-2">
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -309,20 +311,22 @@ export function GroceryPanel() {
         </form>
       )}
 
+      </div>
+
       {isAll ? (
         // Combined view: every store that has items, then Unsorted.
         groups().length === 0 ? (
-          <p className="py-6 text-center text-sm text-fg/50">
+          <p className="db-emptyline">
             The list is empty.{canEdit ? ' Add the first item above.' : ''}
           </p>
         ) : (
-          <div className="flex flex-col gap-2.5">
+          <div>
             {groups().map((g) => (
               <div key={g.key}>
-                <p className="mb-1 px-2.5 text-[11px] font-semibold uppercase tracking-wide text-fg/40">
-                  {g.label}
-                </p>
-                <ul className="flex flex-col gap-0.5">{g.items.map(renderItem)}</ul>
+                <div className="db-sect">
+                  <span>{g.label}</span>
+                </div>
+                <ul>{g.items.map(renderItem)}</ul>
               </div>
             ))}
           </div>
@@ -330,36 +334,38 @@ export function GroceryPanel() {
       ) : (
         <>
           {visible.length === 0 && (
-            <p className="py-6 text-center text-sm text-fg/50">
+            <p className="db-emptyline">
               {activeStore ? `Nothing for ${activeStore.name} yet.` : 'Nothing unsorted.'}
               {canEdit ? ' Add the first item above.' : ''}
             </p>
           )}
-          <ul className="flex flex-col gap-0.5">{visible.map(renderItem)}</ul>
+          <ul>{visible.map(renderItem)}</ul>
         </>
       )}
 
-      <FormError message={error} />
-      {canEdit && checkedItems.length > 0 && (
-        <Button type="button" variant="danger" disabled={busy} onClick={clearChecked} className="mt-3 w-full">
-          Clear checked ({checkedItems.length})
-        </Button>
-      )}
-      {canEdit && activeStore && (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() =>
-            run(async () => {
-              await api.removeGroceryStore(activeStore.id)
-              setActive('all')
-            })
-          }
-          className="mt-3 w-full text-center text-xs font-semibold text-fg/35 transition-colors hover:text-rose-300"
-        >
-          Remove {activeStore.name} (its items move to Unsorted)
-        </button>
-      )}
+      <div className="px-3.5">
+        <FormError message={error} />
+        {canEdit && checkedItems.length > 0 && (
+          <Button type="button" variant="danger" disabled={busy} onClick={clearChecked} className="mt-2.5 w-full">
+            Clear checked ({checkedItems.length})
+          </Button>
+        )}
+        {canEdit && activeStore && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              run(async () => {
+                await api.removeGroceryStore(activeStore.id)
+                setActive('all')
+              })
+            }
+            className="mt-2.5 w-full text-center text-xs font-semibold text-fg/35 transition-colors hover:text-rose-300"
+          >
+            Remove {activeStore.name} (its items move to Unsorted)
+          </button>
+        )}
+      </div>
     </CollapsibleCard>
   )
 }

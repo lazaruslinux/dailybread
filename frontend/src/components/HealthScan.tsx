@@ -124,7 +124,7 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
   if (phase === 'loading') {
     return (
       <Sheet onClose={onClose}>
-        <p className="py-6 text-center text-sm text-fg/50">Checking the label…</p>
+        <p className="py-4 text-center text-sm text-fg/50">Checking the label…</p>
       </Sheet>
     )
   }
@@ -132,15 +132,13 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
   if (phase === 'error') {
     return (
       <Sheet onClose={onClose}>
-        <div className="mb-4 flex items-center justify-between">
-          <span className="text-xs font-semibold uppercase tracking-wide text-accent-bright">
-            Health check
-          </span>
+        <div className="mb-3 flex items-center justify-between">
+          <span className="db-micro text-accent-bright">Health check</span>
           <button onClick={onClose} aria-label="Close" className="-m-2 rounded-lg p-2 text-fg/50 hover:bg-fg/10 hover:text-fg">
             <X className="h-5 w-5" />
           </button>
         </div>
-        <p className="py-4 text-sm text-fg/70">{error}</p>
+        <p className="py-3 text-sm text-fg/70">{error}</p>
         <Button onClick={() => setPhase('scan')}>Try another</Button>
       </Sheet>
     )
@@ -150,10 +148,8 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
     return (
       <>
         <Sheet onClose={onClose}>
-          <div className="mb-4 flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wide text-accent-bright">
-              Health check
-            </span>
+          <div className="mb-3 flex items-center justify-between">
+            <span className="db-micro text-accent-bright">Health check</span>
             <button onClick={onClose} aria-label="Close" className="-m-2 rounded-lg p-2 text-fg/50 hover:bg-fg/10 hover:text-fg">
               <X className="h-5 w-5" />
             </button>
@@ -164,7 +160,7 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
               ? ' You can enter its label once as a custom food, and a later scan will find it right away.'
               : ' A parent can enter its label once as a custom food, and a later scan will find it right away.'}
           </p>
-          <div className="mt-5 flex flex-col gap-2">
+          <div className="mt-4 flex flex-col gap-2">
             {/* Custom foods are a parent's to write (the endpoint 403s anyone
                 else), so the button only shows for one. */}
             {isParent && (
@@ -218,7 +214,7 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
       <Sheet onClose={onClose}>
         <div className="mb-3 flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="text-lg font-bold leading-snug">{food.name}</h2>
+            <h2 className="text-base font-bold leading-snug">{food.name}</h2>
             <div className="mt-1">
               <FoodIdentity food={food} />
             </div>
@@ -228,13 +224,13 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        <div className={`rounded-2xl border px-4 py-3 ${v.box}`}>
+        <div className={`rounded-2xl border px-3.5 py-2.5 ${v.box}`}>
           <p className={`text-base font-bold ${v.text}`}>{v.label}</p>
           <p className="mt-0.5 text-xs text-fg/60">{v.sub}</p>
         </div>
 
         {sorted.length > 0 && (
-          <ul className="mt-4 flex flex-col gap-3">
+          <ul className="mt-3 flex flex-col gap-2">
             {sorted.map((f, i) => (
               <li key={`${f.category}-${i}`} className="flex gap-2.5">
                 <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${SEV_DOT[f.severity]}`} />
@@ -247,9 +243,9 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
           </ul>
         )}
 
-        <div className="mt-5">
+        <div className="mt-4">
           {hasServing ? (
-            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
+            <p className="db-micro mb-1.5">
               Per serving{' '}
               <span className="normal-case">
                 ({trim(food.servings[0].grams)} {unitLabel})
@@ -257,7 +253,7 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
             </p>
           ) : (
             <>
-              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg/50">
+              <p className="db-micro mb-1.5">
                 Per <span className="normal-case">100 {unitLabel}</span>
               </p>
               <p className="mb-2 text-xs text-fg/50">
@@ -269,7 +265,7 @@ export function HealthScan({ onClose }: { onClose: () => void }) {
           <NutritionPanel m={perServe} />
         </div>
 
-        <div className="mt-6 flex flex-col gap-2">
+        <div className="mt-4 flex flex-col gap-2">
           <Button className="min-h-11" onClick={() => setAction('diary')}>
             Add to diary
           </Button>
@@ -414,10 +410,8 @@ function RecipePickSheet({
 
   return (
     <Sheet onClose={onClose}>
-      <div className="mb-4 flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-wide text-accent-bright">
-          Add to a recipe
-        </span>
+      <div className="mb-3 flex items-center justify-between">
+        <span className="db-micro text-accent-bright">Add to a recipe</span>
         <button onClick={onClose} aria-label="Close" className="-m-2 rounded-lg p-2 text-fg/50 hover:bg-fg/10 hover:text-fg">
           <X className="h-5 w-5" />
         </button>
@@ -427,9 +421,9 @@ function RecipePickSheet({
         can set the amount in the recipe after.
       </p>
       {recipes === null ? (
-        <p className="py-4 text-sm text-fg/45">Loading your recipes…</p>
+        <p className="py-3 text-sm text-fg/45">Loading your recipes…</p>
       ) : recipes.length === 0 ? (
-        <p className="py-4 text-sm text-fg/45">You don't have any recipes yet.</p>
+        <p className="py-3 text-sm text-fg/45">You don't have any recipes yet.</p>
       ) : (
         <div className="flex flex-col">
           {recipes.map((r) => (

@@ -206,12 +206,12 @@ function RecurrenceSheet({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 40 }}
         transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-        className="sheet-card max-h-[90svh] w-full max-w-sm overflow-y-auto p-6"
+        className="sheet-card max-h-[90svh] w-full max-w-sm overflow-y-auto p-4"
         role="dialog"
         aria-modal="true"
         data-recurrence-sheet
       >
-        <div className="mb-5 flex items-center justify-between">
+        <div className="mb-3.5 flex items-center justify-between">
           <h2 className="font-display text-xl font-semibold tracking-[-0.01em]">How often</h2>
           <button
             type="button"
@@ -223,9 +223,9 @@ function RecurrenceSheet({
           </button>
         </div>
 
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3">
           <div>
-            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
+            <span className="db-micro mb-1.5 block">
               Pattern
             </span>
             <div className="grid grid-cols-3 gap-2">
@@ -254,7 +254,7 @@ function RecurrenceSheet({
 
           {d.pattern === 'weekly' && (
             <div>
-              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
+              <span className="db-micro mb-1.5 block">
                 On these days
               </span>
               <div className="flex gap-1">
@@ -304,7 +304,7 @@ function RecurrenceSheet({
           )}
 
           <div className="border-t border-fg/10 pt-4">
-            <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg/50">
+            <span className="db-micro mb-1.5 block">
               How long it runs
             </span>
             <Field
@@ -624,12 +624,12 @@ export function ItemSheet({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 40 }}
         transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-        className="sheet-card max-h-[90svh] w-full max-w-sm overflow-y-auto p-6"
+        className="sheet-card max-h-[90svh] w-full max-w-sm overflow-y-auto p-4"
         role="dialog"
         aria-modal="true"
         data-item-sheet
       >
-        <div className="mb-5 flex items-center justify-between">
+        <div className="mb-3.5 flex items-center justify-between">
           <h2 className="font-display text-xl font-semibold tracking-[-0.01em]">
             {creating ? 'Add to the board' : 'Edit card'}
           </h2>
@@ -642,11 +642,11 @@ export function ItemSheet({
           </button>
         </div>
 
-        <form onSubmit={onSubmit} className="flex flex-col gap-4">
+        <form onSubmit={onSubmit} className="flex flex-col gap-3">
           <div>
             <label
               htmlFor="item-kind"
-              className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50"
+              className="db-micro mb-1.5 block"
             >
               Type
             </label>
@@ -760,7 +760,7 @@ export function ItemSheet({
             <div>
               {recurs ? (
                 <div className="rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5">
-                  <span className="block text-xs font-semibold uppercase tracking-wide text-fg/50">
+                  <span className="db-micro block">
                     Repeats
                   </span>
                   <p className="mt-0.5 text-sm font-semibold text-fg/85">{repeatSummary(repeat)}</p>
@@ -818,7 +818,7 @@ export function ItemSheet({
           <div>
             <label
               htmlFor="item-notes"
-              className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50"
+              className="db-micro mb-1.5 block"
             >
               Notes (optional)
             </label>
@@ -834,7 +834,7 @@ export function ItemSheet({
           </div>
 
           <div>
-            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
+            <span className="db-micro mb-1.5 block">
               Assign to
             </span>
             {/* Who is responsible and checks it off. Empty means just you. This

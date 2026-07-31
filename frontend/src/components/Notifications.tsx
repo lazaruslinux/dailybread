@@ -139,7 +139,7 @@ function PrefRow({
       role="switch"
       aria-checked={checked}
       onClick={onToggle}
-      className="flex w-full items-center justify-between gap-3 rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left"
+      className="db-setrow justify-between transition-colors hover:bg-fg/5"
     >
       <span className="min-w-0">
         <span className="block text-sm font-semibold text-fg/85">{label}</span>
@@ -292,21 +292,21 @@ export function NotificationsCard() {
   if (user?.is_minor) return null
 
   return (
-    <div className="glass p-4" data-notifications>
-      <span className="mb-3 block text-xs font-semibold uppercase tracking-wide text-fg/50">
-        Notifications
-      </span>
+    <div className="glass db-pad overflow-hidden" data-notifications>
+      <div className="db-card-h">
+        <span className="db-micro">Notifications</span>
+      </div>
 
       {state.kind === 'unsupported' && (
-        <p className="text-xs leading-relaxed text-fg/50">{state.reason}</p>
+        <p className="px-3.5 pb-3 text-xs leading-relaxed text-fg/50">{state.reason}</p>
       )}
       {state.kind === 'unconfigured' && (
-        <p className="text-xs leading-relaxed text-fg/50">
+        <p className="px-3.5 pb-3 text-xs leading-relaxed text-fg/50">
           This server doesn't have push notifications set up.
         </p>
       )}
       {state.kind === 'denied' && (
-        <p className="text-xs leading-relaxed text-fg/50">
+        <p className="px-3.5 pb-3 text-xs leading-relaxed text-fg/50">
           Notifications are blocked for dailybread in this browser. Allow them in your
           browser/site settings, then come back here.
         </p>
@@ -314,12 +314,12 @@ export function NotificationsCard() {
 
       {(state.kind === 'off' || on) && (
         <>
-          <p className="mb-3 text-xs leading-relaxed text-fg/50">
+          <p className="mb-2.5 px-3.5 text-xs leading-relaxed text-fg/50">
             {on
               ? 'Turned on for this device.'
               : 'Reminders before timed cards, daily check-ins, and family activity, straight to this device. Each person turns this on per device.'}
           </p>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 px-3.5 pb-1">
             <button
               type="button"
               disabled={busy}
@@ -354,17 +354,17 @@ export function NotificationsCard() {
           </div>
 
           {on && prefs && (
-            <div className="mt-4 flex flex-col gap-3" data-push-prefs>
+            <div className="mt-1" data-push-prefs>
               {PREF_GROUPS.map((group) => {
                 const rows = group.rows.filter(
                   (row) => (!row.verses || versesOn) && (!row.owner || user?.is_owner),
                 )
                 if (rows.length === 0) return null
                 return (
-                  <div key={group.name} className="flex flex-col gap-1.5">
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-fg/40">
-                      {group.name}
-                    </span>
+                  <div key={group.name}>
+                    <div className="db-sect">
+                      <span>{group.name}</span>
+                    </div>
                     {rows.map((row) => (
                       <PrefRow
                         key={row.kind}
@@ -382,8 +382,8 @@ export function NotificationsCard() {
         </>
       )}
 
-      {note && <p className="mt-2.5 text-xs text-emerald-300">{note}</p>}
-      {error && <p className="mt-2.5 text-xs text-rose-300">{error}</p>}
+      {note && <p className="px-3.5 pb-1 pt-2.5 text-xs text-emerald-300">{note}</p>}
+      {error && <p className="px-3.5 pb-1 pt-2.5 text-xs text-rose-300">{error}</p>}
     </div>
   )
 }

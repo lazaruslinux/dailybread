@@ -116,7 +116,7 @@ function AgendaRow({
     .map((a) => family.find((m) => m.id === a.id))
     .filter((m): m is api.FamilyMember => Boolean(m))
   return (
-    <div onClick={onOpen} className="glass flex cursor-pointer items-center gap-3 p-3">
+    <div onClick={onOpen} className="db-row cursor-pointer">
       {checkable && onToggle ? (
         <button
           type="button"
@@ -125,11 +125,11 @@ function AgendaRow({
             e.stopPropagation()
             onToggle()
           }}
-          className="-m-1 shrink-0 p-1"
+          className="-m-3 shrink-0 p-3"
           data-check
         >
           <span
-            className={`flex h-6 w-6 items-center justify-center rounded-full border-2 transition-colors ${
+            className={`flex h-[22px] w-[22px] items-center justify-center rounded-full border-2 transition-colors ${
               item.completed ? 'border-emerald-300/70 bg-emerald-400/25' : 'border-fg/30 bg-fg/5'
             }`}
           >
@@ -137,31 +137,30 @@ function AgendaRow({
           </span>
         </button>
       ) : null}
-      {/* Untimed cards skip the time column entirely — a blank fixed-width
-          box would push the title far from its checkbox. */}
-      {when != null && (
-        <div className="w-14 shrink-0 text-right text-[11px] font-semibold leading-tight text-fg/55">
-          {when}
-          {until && <span className="block text-fg/40">– {until}</span>}
-        </div>
-      )}
       <div className="min-w-0 flex-1">
-        <span className={`flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide ${tint}`}>
-          <Icon className="h-3 w-3" strokeWidth={2.5} /> {label}
-        </span>
-        <p className={`truncate font-semibold ${item.completed ? 'text-fg/50 line-through decoration-fg/30' : 'text-fg/90'}`}>
+        <p className={`truncate text-[14.5px] font-semibold ${item.completed ? 'text-fg/50 line-through decoration-fg/30' : 'text-fg/90'}`}>
           {item.title}
         </p>
-        {spansDays(item) && (
-          <p className="truncate text-[11px] font-semibold text-fg/45">
-            {dateSpanLabel(item.date_for!, item.end_date)}
-          </p>
-        )}
+        <span className="flex min-w-0 items-center gap-2 text-[11.5px] font-semibold">
+          <span className={`flex shrink-0 items-center gap-1 uppercase tracking-wide ${tint}`}>
+            <Icon className="h-3 w-3" strokeWidth={2.5} /> {label}
+          </span>
+          {spansDays(item) && (
+            <span className="truncate text-fg/45">{dateSpanLabel(item.date_for!, item.end_date)}</span>
+          )}
+        </span>
       </div>
+      {/* Untimed cards skip the time chip entirely rather than showing a blank. */}
+      {when != null && (
+        <span className="db-chip whitespace-nowrap tabular-nums">
+          {when}
+          {until && <span className="ml-1 opacity-70">– {until}</span>}
+        </span>
+      )}
       {people.length > 0 && (
         <div className="flex -space-x-2">
           {people.slice(0, 3).map((m) => (
-            <Avatar key={m.id} name={m.display_name} src={api.avatarUrl(m)} size="sm" className="ring-2 ring-[var(--bg-base)]" />
+            <Avatar key={m.id} name={m.display_name} src={api.avatarUrl(m)} size="sm" className="ring-2 ring-[var(--card)]" />
           ))}
         </div>
       )}
@@ -170,39 +169,89 @@ function AgendaRow({
   )
 }
 
+// How many marks one grid cell carries before it stops drawing them. The
+// overview below the grid is the complete list; the cell is a glance.
+const CELL_MARKS = 3
+
 // One day in the grid. Shared by the two-week and month layouts; month passes
-// dimmed=true for days that spill in from the neighbouring month.
+// dimmed=true for days that spill in from the neighbouring month. Above 700px a
+// cell is tall enough to name its cards (a chip each, a full-bleed bar for a
+// multi-day run); below that the same marks collapse to dots.
 function DayCell({
   day,
-  count,
+  items,
   isToday,
   isSelected,
   dimmed,
+  firstInRow,
   onSelect,
 }: {
   day: Date
-  count: number
+  items: api.FeedItem[]
   isToday: boolean
   isSelected: boolean
   dimmed: boolean
+  firstInRow: boolean
   onSelect: () => void
 }) {
+  const iso = toISO(day)
+  // Multi-day runs are picked first, so the CELL_MARKS cut can never drop a
+  // middle segment and break a bar mid-run. sort is stable, so everything
+  // else keeps the order it arrived in.
+  const marks = [...items]
+    .sort((a, b) => Number(spansDays(b)) - Number(spansDays(a)))
+    .slice(0, CELL_MARKS)
   return (
     <button
       onClick={onSelect}
       aria-pressed={isSelected}
-      className={`flex flex-col items-center gap-1 rounded-xl py-1.5 transition-colors ${
-        isSelected ? 'bg-accent-bright/20 ring-1 ring-accent-bright/50' : 'hover:bg-fg/5'
-      } ${dimmed ? 'opacity-35' : ''}`}
+      className={`flex min-h-12 flex-col items-center gap-[3px] border-t border-[var(--line-soft)] pb-1 pt-[5px] transition-colors min-[700px]:min-h-24 min-[700px]:items-stretch min-[700px]:gap-0 min-[700px]:px-[5px] min-[700px]:pb-[5px] min-[700px]:pt-1.5 ${
+        firstInRow ? '' : 'border-l border-l-[var(--line-soft)]'
+      } ${isSelected ? 'bg-accent-bright/20' : 'hover:bg-fg/5'} ${dimmed ? 'opacity-35' : ''}`}
     >
       <span
-        className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold ${
-          isToday ? 'bg-accent text-white' : 'text-fg/85'
+        className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
+          isToday ? 'bg-accent text-white' : 'text-fg/60'
         }`}
       >
         {day.getDate()}
       </span>
-      <span className={`h-1.5 w-1.5 rounded-full ${count > 0 ? 'bg-accent-bright' : 'bg-transparent'}`} />
+      {marks.map((item) => {
+        if (spansDays(item)) {
+          // A run reads as one bar: only its first day carries the title, and
+          // the bar bleeds through the cell's padding to meet its neighbour.
+          const start = item.date_for === iso
+          const end = item.end_date === iso
+          const edge = start
+            ? 'min-[700px]:ml-0 min-[700px]:-mr-[5px] min-[700px]:rounded-l-[5px]'
+            : end
+              ? 'min-[700px]:-ml-[5px] min-[700px]:mr-0 min-[700px]:rounded-r-[5px]'
+              : 'min-[700px]:-ml-[5px] min-[700px]:-mr-[5px]'
+          return (
+            <span
+              key={item.id}
+              aria-hidden={!start}
+              className={`-ml-px -mr-px mt-px block h-1 w-[calc(100%+2px)] overflow-hidden bg-accent text-[0px] font-semibold text-white min-[700px]:mt-[3px] min-[700px]:h-auto min-[700px]:w-auto min-[700px]:whitespace-nowrap min-[700px]:px-1.5 min-[700px]:py-[2px] min-[700px]:text-left min-[700px]:text-[10.5px] ${edge} ${
+                start ? '' : 'min-[700px]:text-transparent'
+              }`}
+            >
+              {item.title}
+            </span>
+          )
+        }
+        return (
+          <span
+            key={item.id}
+            className={`block h-[5px] w-[5px] shrink-0 overflow-hidden rounded-full text-[0px] font-semibold min-[700px]:mt-[3px] min-[700px]:h-auto min-[700px]:w-auto min-[700px]:truncate min-[700px]:rounded-[5px] min-[700px]:px-1.5 min-[700px]:py-[2px] min-[700px]:text-left min-[700px]:text-[10.5px] ${
+              item.repeat
+                ? 'bg-fg/40 min-[700px]:border min-[700px]:border-dashed min-[700px]:border-[var(--glass-border)] min-[700px]:bg-transparent min-[700px]:text-fg/60'
+                : 'bg-accent min-[700px]:bg-[var(--accent-soft)] min-[700px]:text-accent-bright'
+            }`}
+          >
+            {item.title}
+          </span>
+        )
+      })}
     </button>
   )
 }
@@ -274,7 +323,7 @@ export function Calendar() {
   const rangeStartISO = toISO(rangeStart)
   useEffect(() => setShown(PERIOD_PAGE), [mode, rangeStartISO])
 
-  const countFor = (iso: string) => cal?.days.find((d) => d.date === iso)?.items.length ?? 0
+  const itemsFor = (iso: string) => cal?.days.find((d) => d.date === iso)?.items ?? []
   const selectedItems = selected ? cal?.days.find((d) => d.date === selected)?.items ?? [] : []
 
   // The whole-period overview: every scheduled card across the view, in date
@@ -388,12 +437,6 @@ export function Calendar() {
     )
   }
 
-  const weeks = useMemo(() => {
-    const rows: Date[][] = []
-    for (let i = 0; i < gridDays.length; i += 7) rows.push(gridDays.slice(i, i + 7))
-    return rows
-  }, [gridDays])
-
   const label =
     mode === 'fortnight'
       ? fortnightLabel(fortnightStart, addDays(fortnightStart, 13))
@@ -418,17 +461,17 @@ export function Calendar() {
         monthAnchor.getFullYear() === new Date().getFullYear()
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="glass p-4">
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <div className="flex rounded-full border border-fg/10 bg-fg/5 p-0.5 text-xs font-semibold">
+    <div className="flex flex-col gap-3">
+      <div className="glass px-[11px] pb-[9px] pt-[11px]">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="flex rounded-[10px] border border-[var(--glass-border)] bg-[var(--card)] p-[3px]">
             {(['fortnight', 'month'] as Mode[]).map((m) => (
               <button
                 key={m}
                 onClick={() => setMode(m)}
                 aria-pressed={mode === m}
-                className={`rounded-full px-3 py-1 transition-colors ${
-                  mode === m ? 'bg-accent-bright/25 text-fg' : 'text-fg/55 hover:text-fg'
+                className={`db-tap44 min-h-[38px] min-w-[52px] rounded-lg px-3 text-[13px] font-semibold transition-colors min-[700px]:min-w-[60px] ${
+                  mode === m ? 'bg-[var(--accent-soft)] text-accent-bright' : 'text-fg/55 hover:text-fg'
                 }`}
               >
                 {m === 'fortnight' ? '2 weeks' : 'Month'}
@@ -438,57 +481,56 @@ export function Calendar() {
           {!onCurrent && (
             <button
               onClick={goToday}
-              className="rounded-full bg-fg/10 px-3 py-1 text-xs font-semibold text-fg/70 hover:bg-fg/15"
+              className="min-h-11 rounded-full bg-fg/10 px-3.5 text-[13px] font-semibold text-fg/70 hover:bg-fg/15"
             >
               Today
             </button>
           )}
         </div>
 
-        <div className="mb-2 flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <button
             onClick={() => page(-1)}
             aria-label={mode === 'fortnight' ? 'Previous two weeks' : 'Previous month'}
-            className="rounded-lg p-1.5 text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-[10px] text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
           >
-            <ChevronLeft className="h-5 w-5" />
+            <ChevronLeft className="h-[18px] w-[18px]" strokeWidth={2.4} />
           </button>
-          <span className="font-display text-lg font-semibold tracking-[-0.01em]">{label}</span>
+          <span className="font-display text-[16.5px] font-bold tracking-[-0.01em] tabular-nums min-[700px]:text-lg">
+            {label}
+          </span>
           <button
             onClick={() => page(1)}
             aria-label={mode === 'fortnight' ? 'Next two weeks' : 'Next month'}
-            className="rounded-lg p-1.5 text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-[10px] text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
           >
-            <ChevronRight className="h-5 w-5" />
+            <ChevronRight className="h-[18px] w-[18px]" strokeWidth={2.4} />
           </button>
         </div>
 
-        <div className="mb-1 grid grid-cols-7">
+        {/* One grid, hairline-ruled like the mockup: no gaps between days, so a
+            multi-day bar can run from one cell into the next. */}
+        <div className="grid grid-cols-7 overflow-hidden rounded-xl">
           {DOW.map((lbl, i) => (
-            <span key={i} className="text-center text-[10px] font-semibold uppercase tracking-wide text-fg/40">
+            <span key={i} className="pb-2 pt-2.5 text-center text-[10.5px] font-bold uppercase tracking-[0.08em] text-fg/40">
               {lbl}
             </span>
           ))}
-        </div>
-        <div className="flex flex-col gap-1">
-          {weeks.map((week) => (
-            <div key={toISO(week[0])} className="grid grid-cols-7 gap-1">
-              {week.map((day) => {
-                const iso = toISO(day)
-                return (
-                  <DayCell
-                    key={iso}
-                    day={day}
-                    count={countFor(iso)}
-                    isToday={iso === todayISO}
-                    isSelected={iso === selected}
-                    dimmed={mode === 'month' && day.getMonth() !== monthAnchor.getMonth()}
-                    onSelect={() => setSelected((s) => (s === iso ? null : iso))}
-                  />
-                )
-              })}
-            </div>
-          ))}
+          {gridDays.map((day, i) => {
+            const iso = toISO(day)
+            return (
+              <DayCell
+                key={iso}
+                day={day}
+                items={itemsFor(iso)}
+                isToday={iso === todayISO}
+                isSelected={iso === selected}
+                dimmed={mode === 'month' && day.getMonth() !== monthAnchor.getMonth()}
+                firstInRow={i % 7 === 0}
+                onSelect={() => setSelected((s) => (s === iso ? null : iso))}
+              />
+            )
+          })}
         </div>
       </div>
 
@@ -497,14 +539,12 @@ export function Calendar() {
       {selected ? (
         // ONE DAY: the selected day's cards, routines included, with its own Add.
         <div>
-          <div className="mb-2 flex items-center justify-between pl-1">
+          <div className="mb-1.5 flex items-center justify-between gap-2 pl-[3px]">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-widest text-fg/40">
-                {fullDay(selected)}
-              </p>
+              <p className="db-micro">{fullDay(selected)}</p>
               <button
                 onClick={() => setSelected(null)}
-                className="mt-0.5 text-[11px] font-semibold text-accent-bright hover:underline"
+                className="text-[11px] font-semibold text-accent-bright hover:underline"
               >
                 Show the whole {mode === 'fortnight' ? 'two weeks' : 'month'}
               </button>
@@ -512,74 +552,74 @@ export function Calendar() {
             {isParent && (
               <button
                 onClick={() => setSheet({ item: null, date: selected })}
-                className="flex items-center gap-1 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-2.5 py-1 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
+                className="flex min-h-11 items-center gap-1 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-3 text-[13px] font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
               >
                 <Plus className="h-3.5 w-3.5" strokeWidth={2.5} /> Add
               </button>
             )}
           </div>
-          {selectedItems.length === 0 ? (
-            <p className="glass p-6 text-center text-sm text-fg/50">Nothing scheduled.</p>
-          ) : (
-            <div className="flex flex-col gap-2.5">
-              {openItems.length > 0 ? (
-                openItems.map((item) => renderRow(item, selected))
-              ) : (
-                <p className="glass p-6 text-center text-sm text-fg/55">All done for this day.</p>
-              )}
-              {doneItems.length > 0 && (
-                <>
-                  <SectionDivider label="Completed" />
-                  {doneItems.map((item) => renderRow(item, selected))}
-                </>
-              )}
-            </div>
-          )}
+          <div className="glass db-pad overflow-hidden">
+            {selectedItems.length === 0 ? (
+              <p className="db-emptyline">Nothing scheduled.</p>
+            ) : (
+              <>
+                {openItems.length > 0 ? (
+                  openItems.map((item) => renderRow(item, selected))
+                ) : (
+                  <p className="db-emptyline">All done for this day.</p>
+                )}
+                {doneItems.length > 0 && (
+                  <>
+                    <SectionDivider label="Completed" />
+                    {doneItems.map((item) => renderRow(item, selected))}
+                  </>
+                )}
+              </>
+            )}
+          </div>
         </div>
       ) : (
         // WHOLE PERIOD: every scheduled one-off across the view, grouped by day.
         <div>
-          <p className="mb-2 pl-1 text-xs font-semibold uppercase tracking-widest text-fg/40">
-            Scheduled · tap a day to focus
-          </p>
-          {overview.length === 0 ? (
-            <p className="glass p-6 text-center text-sm text-fg/50">Nothing scheduled in this period.</p>
-          ) : (
-            <div className="flex flex-col gap-4">
-              {overviewOpen.map((g) => (
-                <div key={g.date}>
-                  <p className="mb-1.5 pl-1 text-[11px] font-semibold text-fg/45">{dayHeading(g.date, todayISO)}</p>
-                  <div className="flex flex-col gap-2.5">
+          <p className="db-micro block pb-[7px] pl-[3px]">Scheduled · tap a day to focus</p>
+          <div className="glass db-pad overflow-hidden">
+            {overview.length === 0 ? (
+              <p className="db-emptyline">Nothing scheduled in this period.</p>
+            ) : (
+              <>
+                {overviewOpen.map((g) => (
+                  <div key={g.date}>
+                    <p className="px-3.5 pb-[3px] pt-[11px] text-[11.5px] font-semibold text-fg/55">
+                      {dayHeading(g.date, todayISO)}
+                    </p>
                     {g.items.map((item) => renderRow(item, g.date))}
                   </div>
-                </div>
-              ))}
-              {overviewOpen.length === 0 && (
-                <p className="glass p-6 text-center text-sm text-fg/55">All done in this period.</p>
-              )}
-              {overviewDone.length > 0 && (
-                <>
-                  <SectionDivider label="Completed" />
-                  {overviewDone.map((g) => (
-                    <div key={`done-${g.date}`}>
-                      <p className="mb-1.5 pl-1 text-[11px] font-semibold text-fg/45">{dayHeading(g.date, todayISO)}</p>
-                      <div className="flex flex-col gap-2.5">
+                ))}
+                {overviewOpen.length === 0 && <p className="db-emptyline">All done in this period.</p>}
+                {overviewDone.length > 0 && (
+                  <>
+                    <SectionDivider label="Completed" />
+                    {overviewDone.map((g) => (
+                      <div key={`done-${g.date}`}>
+                        <p className="px-3.5 pb-[3px] pt-[11px] text-[11.5px] font-semibold text-fg/55">
+                          {dayHeading(g.date, todayISO)}
+                        </p>
                         {g.items.map((item) => renderRow(item, g.date))}
                       </div>
-                    </div>
-                  ))}
-                </>
-              )}
-              {overview.length > shown && (
-                <button
-                  onClick={() => setShown((n) => n + PERIOD_PAGE)}
-                  className="glass py-2.5 text-center text-sm font-semibold text-fg/70 transition-colors hover:text-fg"
-                >
-                  Load more ({overview.length - shown} more)
-                </button>
-              )}
-            </div>
-          )}
+                    ))}
+                  </>
+                )}
+                {overview.length > shown && (
+                  <button
+                    onClick={() => setShown((n) => n + PERIOD_PAGE)}
+                    className="db-addrow justify-center transition-colors hover:bg-fg/5"
+                  >
+                    Load more ({overview.length - shown} more)
+                  </button>
+                )}
+              </>
+            )}
+          </div>
         </div>
       )}
 
