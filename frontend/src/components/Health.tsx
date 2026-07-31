@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import * as api from '../lib/api'
 import { Button, Field, FormError } from './ui'
-import { Sheet } from './Recipes'
+import { Sheet } from './recipes'
 
 // The health layer: an OPTIONAL profile (birthdate, sex, height, activity),
 // a weight log, and a goal that turns into a computed daily calorie target.

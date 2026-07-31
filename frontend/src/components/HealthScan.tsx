@@ -9,7 +9,7 @@ import {
   NutritionPanel,
   Sheet,
   foldersOf,
-} from './Recipes'
+} from './recipes'
 import { PortionSheet, foodTotals, trim } from './PortionSheet'
 import { Button } from './ui'
 

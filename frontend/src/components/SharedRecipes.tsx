@@ -5,7 +5,8 @@ import { createPortal } from 'react-dom'
 import { useAuth } from '../auth/AuthContext'
 import * as api from '../lib/api'
 import { CollapsibleCard } from './CollapsibleCard'
-import { NutritionPanel, Sheet } from './Recipes'
+import { Sheet } from './recipes/Sheet'
+import { NutritionPanel } from './recipes/ui'
 import { Button, FormError } from './ui'
 
 function compactStamp(iso: string): string {

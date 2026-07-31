@@ -24,7 +24,7 @@ import {
 import { Avatar } from './Avatar'
 import { LevelBadge, TIER_META, tierOf } from './LevelBadge'
 import { CollapsibleCard } from './CollapsibleCard'
-import { Sheet } from './Recipes'
+import { Sheet } from './recipes'
 import { Button, Field, FormError } from './ui'
 
 // Villages: private circles of linked families. This card is the whole

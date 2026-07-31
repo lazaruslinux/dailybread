@@ -3,7 +3,7 @@ import { useAuth } from '../auth/AuthContext'
 import * as api from '../lib/api'
 import { MOODS, MOOD_ORDER, timeGreeting } from '../lib/moods'
 import { Button, Field } from './ui'
-import { Sheet } from './Recipes'
+import { Sheet } from './recipes'
 
 // The first open of the day says hello and offers to set today's mood and
 // status. Once is once: saving, a mood already set on another device, or

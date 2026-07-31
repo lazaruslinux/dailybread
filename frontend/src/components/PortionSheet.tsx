@@ -8,7 +8,7 @@ import {
   UNIT_TO_BASE,
   servingIndex,
   unitsForBase,
-} from './Recipes'
+} from './recipes'
 import { Button, Field, FormError } from './ui'
 
 // The portion sheet: how much of a picked food or recipe to log, with an

@@ -3,7 +3,7 @@ import { CalendarClock, Check, ChevronRight, HelpCircle, MapPin, X as XIcon } fr
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { Avatar } from './Avatar'
-import { Sheet } from './Recipes'
+import { Sheet } from './recipes'
 import { compactDate, mapsUrl } from '../lib/items'
 import { formatTime } from '../lib/moods'
 

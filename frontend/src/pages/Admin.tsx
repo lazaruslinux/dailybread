@@ -5,7 +5,7 @@ import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { Avatar } from '../components/Avatar'
 import { LevelBadge } from '../components/LevelBadge'
-import { Sheet } from '../components/Recipes'
+import { Sheet } from '../components/recipes'
 import { Button, Field, FormError } from '../components/ui'
 
 // Admin dashboard v1: family member management. List, add, edit, reset

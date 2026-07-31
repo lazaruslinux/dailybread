@@ -21,7 +21,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useState, type ComponentType, type CSSProperties } from 'react'
 import * as api from '../lib/api'
-import { Sheet } from '../components/Recipes'
+import { Sheet } from '../components/recipes'
 import { Button, Field, FormError } from '../components/ui'
 
 // The Fitness tab: imported Apple Health numbers, self-only like the diary.

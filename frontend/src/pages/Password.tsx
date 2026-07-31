@@ -3,7 +3,7 @@ import { Check, KeyRound, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { ApiError } from '../lib/api'
-import { Sheet } from '../components/Recipes'
+import { Sheet } from '../components/recipes'
 import { AuthShell, Brand, Button, Field, FormError } from '../components/ui'
 
 // Both ways a member sets their own password: the Preferences sheet on the

@@ -3,7 +3,7 @@ import { Bike, Car, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CookingPo
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
-import { Sheet } from './Recipes'
+import { Sheet } from './recipes'
 import { Button, Field, FormError } from './ui'
 
 // The Kitchen's hero: tonight's dinner, with the week's menu underneath.

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from './ui'
-import { Sheet } from './Recipes'
+import { Sheet } from './recipes'
 
 // Manual avatar framing: pinch (or wheel) to zoom, drag to position, with a
 // circle mask previewing exactly what the round Avatar will show. Exports the

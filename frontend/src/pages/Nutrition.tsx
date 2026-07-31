@@ -23,7 +23,7 @@ import {
   UNIT_LABEL,
   servingIndex,
   unitsForBase,
-} from '../components/Recipes'
+} from '../components/recipes'
 import {
   PortionSheet,
   SLOTS,
