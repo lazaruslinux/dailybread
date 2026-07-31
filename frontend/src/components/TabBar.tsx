@@ -14,8 +14,9 @@ const TABS: { id: Tab; label: string; Icon: LucideIcon }[] = [
   { id: 'you', label: 'You', Icon: CircleUser },
 ]
 
-// Floating bottom navigation. Thumb-reachable, always visible, one tap to
-// anywhere. The pb-safe padding keeps it above the iPhone home indicator.
+// Bottom navigation bar. Thumb-reachable, always visible, one tap to
+// anywhere. Solid card surface with a hairline top edge, no blur; the pb-safe
+// padding keeps it above the iPhone home indicator.
 // `tabs` narrows the set for accounts that don't get every area (kid mode).
 // `dot` marks one tab with an attention dot (unread Inbox lives under You).
 // It stays put even while that tab is active — it only clears once the unread
@@ -39,10 +40,10 @@ export function TabBar({
     // page flow pins to the viewport bottom without that failure mode.
     <nav
       aria-label="Main"
-      className="sticky bottom-0 z-30 -mx-5 mt-auto pt-3 pb-[env(safe-area-inset-bottom)]"
+      className="sticky bottom-0 z-30 -mx-5 mt-auto border-t border-[var(--glass-border)] bg-[var(--card)] pt-1.5 pb-[env(safe-area-inset-bottom)]"
     >
-      <div className="mx-auto mb-3 flex w-full max-w-md justify-center px-5">
-        <div className="glass flex w-full items-stretch justify-around p-1.5">
+      <div className="mx-auto mb-1.5 flex w-full max-w-md justify-center px-5">
+        <div className="flex w-full items-stretch justify-around p-1.5">
           {visible.map(({ id, label, Icon }) => {
             const isActive = id === active
             return (

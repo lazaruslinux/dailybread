@@ -6,7 +6,10 @@
     <!-- iOS ignores manifest icons; Add to Home Screen uses this instead. -->
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0b1220" />
+    <!-- Browser chrome matches --bg-base. Keyed to the system scheme, which is
+         the only signal available before the app picks up the account's theme. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f1ea" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f0c08" />
     <title>dailybread</title>
   </head>
   <body>

@@ -32,8 +32,8 @@ import { Profile } from './Profile'
 
 // Little preview swatch per theme so the choice reads at a glance.
 const SWATCH: Record<Theme, string> = {
-  light: 'bg-[linear-gradient(135deg,#f7f4ee,#b45309)]',
-  dark: 'bg-[linear-gradient(135deg,#eab04e,#0b0906)]',
+  light: 'bg-[linear-gradient(135deg,#f4f1ea,#b45309)]',
+  dark: 'bg-[linear-gradient(135deg,#eab04e,#0f0c08)]',
 }
 
 function ThemePicker({ userId, stored }: { userId: number; stored: Theme | null }) {

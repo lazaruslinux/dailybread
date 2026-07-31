@@ -33,8 +33,8 @@ export default defineConfig({
         name: 'dailybread',
         short_name: 'dailybread',
         description: 'A self-hosted family life planner.',
-        theme_color: '#0b1220',
-        background_color: '#0b1220',
+        theme_color: '#f4f1ea',
+        background_color: '#f4f1ea',
         display: 'standalone',
         icons: [
           { src: 'pwa-192.png', sizes: '192x192', type: 'image/png' },

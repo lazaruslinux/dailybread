@@ -84,7 +84,7 @@ export function FormError({ message }: { message: string | null }) {
   )
 }
 
-// Centered glass panel used by the login and first-run screens.
+// Centered card panel used by the login and first-run screens.
 export function AuthShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-svh items-center justify-center px-5 py-10">

@@ -4,11 +4,11 @@ import { createPortal } from 'react-dom'
 import { Button } from '../ui'
 
 // The modal shell shared by the view and the editor. Rendered through a portal
-// to <body>: the Kitchen page's frosted `.glass` cards use backdrop-filter,
-// which makes position:fixed anchor to the card instead of the viewport — so a
-// modal nested under one only covers a band (and on iOS the page shows through).
-// The portal lifts it out to the top of the DOM where `fixed inset-0` fills the
-// screen. Body scroll is locked while it's open so the page can't drift behind.
+// to <body>: an ancestor with a transform or filter (the animated cards on the
+// Kitchen page) makes position:fixed anchor to that ancestor instead of the
+// viewport, so a modal nested under one only covers a band. The portal lifts it
+// out to the top of the DOM where `fixed inset-0` fills the screen. Body scroll
+// is locked while it's open so the page can't drift behind.
 // Ref-counted so stacked sheets can't strand the lock: when one sheet opens
 // while another is still exit-animating (Nutrition's AddSheet → PortionSheet),
 // a save/restore of the previous value would capture 'hidden' and re-apply it
@@ -33,7 +33,7 @@ export function Sheet({ children, onClose }: { children: React.ReactNode; onClos
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <motion.div

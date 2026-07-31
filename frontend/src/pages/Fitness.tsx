@@ -31,7 +31,7 @@ import { Button, Field, FormError } from '../components/ui'
 // summary (rings up top, a grid of metric cards with mini charts) but the
 // rendering is deliberately our own — three separate rings rather than the
 // trademark concentric trio, our validated metric palette rather than
-// red/green/cyan, our labels, our glass. Familiar shape, our identity.
+// red/green/cyan, our labels, our cards. Familiar shape, our identity.
 
 // Everything the tab knows about one metric, in one place: the cards, the
 // rings, and the detail sheets all read from this. goalKey marks the metrics

@@ -1,11 +1,16 @@
 @import 'tailwindcss';
 
-/* dailybread theme system: frosted glass over a soft background. Every color
-   lives in a CSS variable so a theme is just a set of overrides on the root
-   (data-theme). Tailwind v4 is configured here in CSS; the accent + foreground
-   tokens map to runtime variables so utilities like bg-accent / text-fg switch
-   with the theme. Dark themes keep --fg white (so text-fg == text-white and the
-   neutral utilities are unchanged); Light flips --fg to dark ink. */
+/* dailybread theme system: solid warm surfaces on a solid warm background. No
+   glass, no blur, no gradient wash. Every color lives in a CSS variable so a
+   theme is just a set of overrides on the root (data-theme). Tailwind v4 is
+   configured here in CSS; the accent + foreground tokens map to runtime
+   variables so utilities like bg-accent / text-fg switch with the theme. Dark
+   themes keep --fg white (so text-fg == text-white and the neutral utilities
+   are unchanged); Light flips --fg to dark ink.
+
+   Blur is gone for good: stacked backdrop-filter cards over a gradient
+   background re-blurred the whole page every scroll frame and warmed the
+   phone. An opaque card composites once. Do not reintroduce backdrop-filter. */
 
 @theme {
   --color-accent: var(--accent);
@@ -35,16 +40,18 @@
 
   --fg: #26201a; /* warm near-black ink; the dark theme flips this to white */
 
-  --bg-base: #f7f4ee; /* warm paper */
-  --aurora-1: rgba(217, 119, 6, 0.12);
-  --aurora-2: rgba(245, 200, 120, 0.1);
-  --aurora-3: rgba(180, 120, 40, 0.08);
-
-  --glass-bg: rgba(255, 255, 255, 0.66);
-  --glass-border: rgba(38, 32, 26, 0.1);
-  --surface: #fdfbf6; /* opaque elevated surface for dialogs (glass would let the backdrop bleed through) */
-  --field-bg: rgba(255, 255, 255, 0.72);
-  --field-bg-focus: rgba(255, 255, 255, 0.95);
+  --bg-base: #f4f1ea; /* warm paper */
+  --card: #fffefa; /* the card surface, a shade lighter than the paper */
+  --glass-border: rgba(38, 32, 26, 0.11);
+  /* Alias for the few places that name the surface inline (the time dropdown,
+     the chart dot strokes). Points at the card so they stay in step. */
+  --surface: var(--card);
+  --card-shadow:
+    0 1px 2px rgba(24, 18, 10, 0.05),
+    0 8px 24px rgba(24, 18, 10, 0.05);
+  --sheet-shadow: 0 12px 40px rgba(24, 18, 10, 0.18); /* stronger: sheets float over a dimmed page */
+  --field-bg: #ffffff;
+  --field-bg-focus: #ffffff;
 
   --accent: #b45309; /* amber-700, solid fills (buttons, FAB, toggles) */
   --accent-strong: #92400e; /* amber-800, gradient partner */
@@ -88,17 +95,13 @@
 :root[data-theme='dark'] {
   --fg: #ffffff;
 
-  --bg-base: #0b0906; /* near-black with only a whisper of crust warmth */
-  /* A faint amber hearth-glow, felt not seen. */
-  --aurora-1: rgba(175, 118, 42, 0.12);
-  --aurora-2: rgba(60, 40, 18, 0);
-  --aurora-3: rgba(140, 96, 30, 0.10);
-
-  --glass-bg: rgba(255, 255, 255, 0.05);
+  --bg-base: #0f0c08; /* dark toasted crust, never a neutral black */
+  --card: #1a140c; /* a warm step above the base, the only elevation cue here */
   --glass-border: rgba(255, 255, 255, 0.1);
-  --surface: #17120c; /* opaque elevated surface, a warm dark above the base */
-  --field-bg: rgba(255, 255, 255, 0.05);
-  --field-bg-focus: rgba(255, 255, 255, 0.08);
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --sheet-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  --field-bg: rgba(255, 255, 255, 0.06);
+  --field-bg-focus: rgba(255, 255, 255, 0.09);
 
   --accent: #b45309; /* amber-700 solid fills; white text stays readable on it */
   --accent-strong: #92400e; /* amber-800 gradient partner */
@@ -154,29 +157,18 @@ body {
   font-family: var(--font-body);
   font-optical-sizing: auto;
   -webkit-font-smoothing: antialiased;
-  background:
-    radial-gradient(1100px 700px at 85% -10%, var(--aurora-1), transparent 60%),
-    radial-gradient(900px 650px at -15% 25%, var(--aurora-2), transparent 55%),
-    radial-gradient(950px 900px at 55% 115%, var(--aurora-3), transparent 60%),
-    var(--bg-base);
-  /* NOT background-attachment: fixed — a fixed background repaints on every
-     scroll frame, which (with the backdrop-blur cards over it) pegged the phone
-     GPU and warmed the device. A normally-scrolling gradient composites once. */
+  background: var(--bg-base);
 }
 
-/* The signature surface: translucent card with backdrop blur. Blur radius kept
-   moderate (12px, no saturate pass): backdrop-filter cost scales with radius and
-   every card is its own layer, so a page full of them is the app's heaviest GPU
-   cost. 12px still reads as frosted glass at a fraction of blur(20px) saturate. */
+/* The signature surface: a solid warm card. The class is still named .glass
+   because every page consumes it by that name; the frosted look it was named
+   for is gone. Opaque background, hairline border, a shadow soft enough to
+   read as paper on paper. */
 .glass {
-  border-radius: 1.4rem;
+  border-radius: 0.85rem;
   border: 1px solid var(--glass-border);
-  background: var(--glass-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  background: var(--card);
+  box-shadow: var(--card-shadow);
 }
 
 /* The bread token (Coin). Full-colour artwork swapped by theme: light is the
@@ -195,21 +187,19 @@ body {
   background-image: url('/breadtoken-dark.svg');
 }
 
-/* Opaque dialog surface. Same geometry as .glass but solid, so a modal over the
-   dimmed backdrop doesn't let the darkness bleed through the card. */
+/* Dialog surface. Same card geometry, deeper shadow: a sheet has to lift off
+   the dimmed page behind it, where a card only sits on the paper. */
 .sheet-card {
-  border-radius: 1.4rem;
+  border-radius: 0.85rem;
   border: 1px solid var(--glass-border);
-  background: var(--surface);
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  background: var(--card);
+  box-shadow: var(--sheet-shadow);
 }
 
-/* Form fields on glass. */
+/* Form fields. Solid, so a field on a card reads as a well, not a wash. */
 .field {
   width: 100%;
-  border-radius: 0.9rem;
+  border-radius: 0.7rem;
   border: 1px solid var(--glass-border);
   background: var(--field-bg);
   padding: 0.7rem 1rem;
@@ -270,24 +260,4 @@ body {
 
 ::selection {
   background: color-mix(in oklab, var(--accent-bright) 40%, transparent);
-}
-
-/* Faint film grain over the aurora for tactile depth. Sits above the board
-   content but below the fixed chrome (tab bar, FAB, sheets), and never eats a
-   tap. */
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  /* No mix-blend-mode: a blend mode on a full-screen fixed layer forces the
-     whole page into one composited group and defeats the backdrop-blur layer
-     cache, so every scroll frame re-blurs every card. A plain low-opacity film
-     gives almost the same texture without that cost. */
-  opacity: 0.03; /* light default: a whisper of grain */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-:root[data-theme='dark'] body::after {
-  opacity: 0.05;
 }

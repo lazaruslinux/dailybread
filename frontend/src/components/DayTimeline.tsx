@@ -7,8 +7,8 @@ import { KIND_STYLE } from './ItemCard'
 
 // The board's day view: a static time gutter from 12 AM to midnight on the
 // left, and today's timed cards laid onto it, sized by their time slot the way
-// a desktop calendar does it. Cards keep the app's glass look rather than
-// Outlook's solid blocks. Untimed cards stay in the list sections around this.
+// a desktop calendar does it. Cards keep the app's own card surface rather than
+// Outlook's flat blocks. Untimed cards stay in the list sections around this.
 
 const HOUR_PX = 64
 const PX_PER_MIN = HOUR_PX / 60
