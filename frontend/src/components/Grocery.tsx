@@ -141,9 +141,15 @@ export function GroceryPanel() {
 
   const activeStore = lists.find((l) => l.id === active)
 
-  const chip = (selected: boolean) =>
-    `flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold transition-colors ${
-      selected ? 'bg-accent-bright/25 text-fg' : 'bg-fg/5 text-fg/55 hover:bg-fg/10'
+  // The button keeps the full 44px touch box; the coloured pill inside it is
+  // deliberately shorter, so the row reads light without shrinking the target.
+  // The invisible-slop trick (db-tap44) cannot help on this row: the card
+  // header sits hard above it and the add-item field hard below, and both win
+  // the hit test inside the slop.
+  const chipButton = 'group flex min-h-11 shrink-0 items-center'
+  const chipPill = (selected: boolean) =>
+    `flex h-8 items-center gap-1.5 rounded-full px-3 text-sm font-semibold transition-colors ${
+      selected ? 'bg-accent-bright/25 text-fg' : 'bg-fg/5 text-fg/55 group-hover:bg-fg/10'
     }`
 
   const toGrab = items.filter((i) => !i.checked).length
@@ -242,29 +248,33 @@ export function GroceryPanel() {
       <div className="px-3.5">
         {/* Tabs: All (combined) + Unsorted (store-less) + one per store; parents add more. */}
         <div className="-mx-1 mb-2 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
-          <button type="button" onClick={() => setActive('all')} className={chip(isAll)}>
-            All
-            {toGrab > 0 && <span className="text-xs text-fg/50">{toGrab}</span>}
+          <button type="button" onClick={() => setActive('all')} className={chipButton}>
+            <span className={chipPill(isAll)}>
+              All
+              {toGrab > 0 && <span className="text-xs text-fg/50">{toGrab}</span>}
+            </span>
           </button>
           {(hasUnsorted || active === null) && (
-            <button type="button" onClick={() => setActive(null)} className={chip(active === null)}>
-              Unsorted
-              {unchecked(null) > 0 && <span className="text-xs text-fg/50">{unchecked(null)}</span>}
+            <button type="button" onClick={() => setActive(null)} className={chipButton}>
+              <span className={chipPill(active === null)}>
+                Unsorted
+                {unchecked(null) > 0 && <span className="text-xs text-fg/50">{unchecked(null)}</span>}
+              </span>
             </button>
           )}
           {lists.map((l) => (
-            <button key={l.id} type="button" onClick={() => setActive(l.id)} className={chip(active === l.id)}>
-              {l.name}
-              {unchecked(l.id) > 0 && <span className="text-xs text-fg/50">{unchecked(l.id)}</span>}
+            <button key={l.id} type="button" onClick={() => setActive(l.id)} className={chipButton}>
+              <span className={chipPill(active === l.id)}>
+                {l.name}
+                {unchecked(l.id) > 0 && <span className="text-xs text-fg/50">{unchecked(l.id)}</span>}
+              </span>
             </button>
           ))}
           {canEdit && !addingStore && (
-            <button
-              type="button"
-              onClick={() => setAddingStore(true)}
-              className="flex min-h-11 shrink-0 items-center gap-1 rounded-full border border-dashed border-fg/25 px-3 py-1.5 text-sm font-semibold text-fg/55 transition-colors hover:bg-fg/10"
-            >
-              <Store className="h-3.5 w-3.5" /> Add store
+            <button type="button" onClick={() => setAddingStore(true)} className={chipButton}>
+              <span className="flex h-8 items-center gap-1 rounded-full border border-dashed border-fg/25 px-3 text-sm font-semibold text-fg/55 transition-colors group-hover:bg-fg/10">
+                <Store className="h-3.5 w-3.5" /> Add store
+              </span>
             </button>
           )}
       </div>
@@ -358,7 +368,7 @@ export function GroceryPanel() {
       <div className="px-3.5">
         <FormError message={error} />
         {canEdit && checkedItems.length > 0 && (
-          <Button type="button" variant="danger" disabled={busy} onClick={clearChecked} className="mt-2.5 w-full">
+          <Button type="button" variant="danger" disabled={busy} onClick={clearChecked} className="mt-2.5 min-h-11 w-full">
             Clear checked ({checkedItems.length})
           </Button>
         )}

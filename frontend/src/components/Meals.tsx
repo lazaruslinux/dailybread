@@ -648,7 +648,7 @@ export function DinnerPlanner() {
           <button
             type="button"
             onClick={() => setSettingTime(true)}
-            className="-my-2 flex min-h-11 shrink-0 items-center rounded-lg border border-fg/10 bg-fg/5 px-2.5 text-xs font-semibold text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
+            className="db-tap44 -my-2 flex min-h-8 shrink-0 items-center rounded-lg border border-fg/10 bg-fg/5 px-2.5 text-xs font-semibold text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
           >
             Set Time
           </button>
@@ -674,7 +674,7 @@ export function DinnerPlanner() {
               await api.clearMeal(todayISO)
               refresh()
             }}
-            className="mt-1.5 w-full text-center text-xs font-semibold text-fg/40 hover:text-fg/60"
+            className="db-tap44 mt-1.5 w-full text-center text-xs font-semibold text-fg/40 hover:text-fg/60"
           >
             Unlock tonight's plan
           </button>
@@ -686,7 +686,7 @@ export function DinnerPlanner() {
           type="button"
           onClick={() => setShowWeek((v) => !v)}
           aria-expanded={showWeek}
-          className="mt-2 flex min-h-11 w-full items-center justify-center gap-1.5 rounded-[10px] border border-accent-bright/30 bg-accent-bright/10 text-[0.8125rem] font-semibold text-accent-bright transition-colors hover:bg-accent-bright/20"
+          className="db-tap44 mt-2 flex min-h-9 w-full items-center justify-center gap-1.5 rounded-[10px] border border-accent-bright/30 bg-accent-bright/10 text-[0.8125rem] font-semibold text-accent-bright transition-colors hover:bg-accent-bright/20"
         >
           {showWeek ? 'Hide Week' : 'Plan Week'}
           {showWeek ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}

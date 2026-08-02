@@ -744,7 +744,10 @@ export function Home({
       <div className="glass db-pad overflow-hidden">
       {/* The board's control bar: List/Timeline swap the view in place (enclosed
           segmented pill), Calendar navigates away (free-standing accent pill). */}
-      <div className="flex items-center gap-2 px-3.5 pb-0.5 pt-2.5" data-view-toggle>
+      {/* pb-1, not pb-0.5: the pills are 32px with a 44px invisible tap band,
+          and that band needs a few px of clearance below the group or the
+          filter row underneath wins the hit test inside it. */}
+      <div className="flex items-center gap-2 px-3.5 pb-1 pt-2" data-view-toggle>
         <div className="flex gap-1 rounded-full border border-fg/10 bg-fg/5 p-[3px]">
           {(
             [
@@ -757,7 +760,7 @@ export function Home({
               type="button"
               onClick={() => pickView(id)}
               aria-pressed={view === id}
-              className={`db-tap44 flex min-h-9 items-center gap-1.5 rounded-full px-3 text-[12.5px] font-semibold transition-colors ${
+              className={`db-tap44 flex min-h-8 items-center gap-1.5 rounded-full px-3 text-[12.5px] font-semibold transition-colors ${
                 view === id ? 'bg-accent-bright/20 text-fg' : 'text-fg/50 hover:text-fg/80'
               }`}
             >
@@ -769,7 +772,7 @@ export function Home({
           type="button"
           onClick={onOpenCalendar}
           aria-label="View calendar"
-          className="ml-auto flex min-h-11 items-center gap-1.5 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-3 text-[13px] font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
+          className="db-tap44 ml-auto flex min-h-8 items-center gap-1.5 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-3 text-[13px] font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
         >
           <CalendarDays className="h-3.5 w-3.5" strokeWidth={2.5} /> Calendar
         </button>
@@ -1017,29 +1020,26 @@ export function Home({
 
       {!wide && <VerseCard />}
 
-      {/* db-fab keeps the add button on the content well's right edge at every
-          width, which also leaves its transform free for whileTap's scale.
-          Both floating elements are PORTALLED to the body on purpose: they are
-          position:fixed, and the page-transition wrapper in App.tsx animates a
-          transform, which makes that wrapper their containing block for as long
-          as the transition runs. Left inside it, every 100% in their left-calc
-          resolves against the content well instead of the viewport and the
-          button visibly jumps on each tab change. Out here the calc always
-          measures what it was written against. */}
-      {isParent &&
-        createPortal(
-          <motion.button
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={() => openEditor(null)}
-            aria-label="Add to the board"
-            className="db-fab fixed z-30 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-r from-accent to-accent-strong shadow-xl shadow-accent/30"
-          >
-            <Plus className="h-6 w-6" strokeWidth={2.5} />
-          </motion.button>,
-          document.body,
-        )}
+      {/* The add button belongs to the CONTENT, not to the window: it is the
+          last thing in the board's own flow, right-aligned, and sticky rather
+          than fixed. On a long board that behaves exactly like a floating
+          button; on a short one — a wide desktop window with three cards on it
+          — it sits just under the content instead of stranded at the foot of
+          the screen with a lake of empty space above it. Being in the flow also
+          means no percentage left-calc against a containing block that changes
+          mid page-transition, and it fades with the page again. */}
+      {isParent && (
+        <motion.button
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={() => openEditor(null)}
+          aria-label="Add to the board"
+          className="db-fab z-30 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-r from-accent to-accent-strong shadow-xl shadow-accent/30"
+        >
+          <Plus className="h-6 w-6" strokeWidth={2.5} />
+        </motion.button>
+      )}
 
       {createPortal(
         <AnimatePresence>

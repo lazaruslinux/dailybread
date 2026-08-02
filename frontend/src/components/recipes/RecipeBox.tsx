@@ -251,7 +251,7 @@ export function RecipeBox() {
             <button
               type="button"
               onClick={() => setView({ mode: 'edit', recipe: null })}
-              className="-my-2 flex min-h-11 shrink-0 items-center gap-1 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-2.5 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
+              className="db-tap44 -my-2 flex min-h-8 shrink-0 items-center gap-1 rounded-full border border-accent-bright/40 bg-accent-bright/15 px-2.5 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/25"
             >
               <Plus className="h-3.5 w-3.5" strokeWidth={2.5} /> New recipe
             </button>

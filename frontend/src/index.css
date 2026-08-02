@@ -420,12 +420,20 @@ body {
      no-tab-bar shapes below can lower them: the 6rem only ever existed to clear
      the bar, and on a 390px-tall landscape phone it parks the button a third of
      the way up the screen, over the content. */
+  /* The add button rides at the end of the board's own flow, right-aligned and
+     sticky. Sticky, not fixed, is the whole point: on a long board it floats
+     above the content like a fixed button, and on a short one it comes to rest
+     just under the content instead of at the foot of the window. It also means
+     no percentage arithmetic against a containing block that the page
+     transition changes underneath it. The bottom offset is the tab bar's
+     clearance; the no-bar shapes below lower it. */
   .db-fab {
+    position: sticky;
     bottom: 6rem;
-    left: calc(
-      var(--db-rail-w) + (100% - var(--db-rail-w)) / 2 + min(45rem, 100% - var(--db-rail-w)) / 2 -
-        5.5rem
-    );
+    align-self: flex-end;
+    /* Reclaims the space it would otherwise add to the end of the column, so
+       the footer sits where it always did. */
+    margin-bottom: -3.5rem;
   }
   .db-toast {
     bottom: 10rem;
@@ -534,6 +542,12 @@ body {
   .db-deskgreet {
     display: none;
   }
+  /* Phone-only control, so its display lives here rather than in a Tailwind
+     utility — a utility would outrank the width rules that switch it off. */
+  .db-scanbtn {
+    display: flex;
+    flex-direction: column;
+  }
 
   @media (min-width: 900px) {
     .db-rail {
@@ -575,6 +589,12 @@ body {
       display: none;
     }
     .db-pagegreet {
+      display: none;
+    }
+    /* Barcode scanning is a phone-in-hand job — there is no camera worth
+       using on a desktop window, so the entry point goes. The landscape-phone
+       block below puts it back: that is still a phone. */
+    .db-scanbtn {
       display: none;
     }
     /* No bottom bar to clear here. */
@@ -622,14 +642,9 @@ body {
     /* The well stopped being "45rem centered in the main column" and became
        "the 1120rem group, less the aside", so the two floating elements need
        the same story told the new way: rail, then the group's left gutter,
-       then across the column. The FAB lands 2rem inside its right edge; the
-       toast centers on it. */
-    .db-fab {
-      left: calc(
-        var(--db-rail-w) + (100% - var(--db-rail-w) - min(70rem, 100% - var(--db-rail-w))) / 2 +
-          min(70rem, 100% - var(--db-rail-w)) - 19.75rem - 5.5rem
-      );
-    }
+       then across the column. The toast centers on it. (The add button needs
+       none of this any more — it is sticky inside the column and simply
+       right-aligns itself.) */
     .db-toast {
       left: calc(
         var(--db-rail-w) + (100% - var(--db-rail-w) - min(70rem, 100% - var(--db-rail-w))) / 2 +
@@ -699,6 +714,10 @@ body {
     }
     .db-deskgreet {
       display: none;
+    }
+    /* Still a phone, so the scanner comes back. */
+    .db-scanbtn {
+      display: flex;
     }
     /* The brand is back in the header, so the greeting goes back to being
        Home's first line of content. */

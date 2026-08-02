@@ -146,7 +146,10 @@ function AppShell() {
     <button
       onClick={() => setScanning(true)}
       aria-label="Health check a barcode"
-      className="-mx-2 -my-1.5 flex min-h-11 flex-col items-center justify-center rounded-lg px-2 py-1.5 text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
+      // No flex/flex-col utility here on purpose: this button's display has to
+      // be switchable by width, and a utility outranks the layered rules that
+      // do the switching. Same trap as .db-brand. See .db-scanbtn in index.css.
+      className="db-scanbtn -mx-2 -my-1.5 min-h-11 items-center justify-center rounded-lg px-2 py-1.5 text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
     >
       <ScanBarcode className="h-5 w-5" />
       <span className="text-[9px] font-semibold leading-tight">Scan a food</span>

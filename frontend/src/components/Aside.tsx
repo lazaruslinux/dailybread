@@ -99,9 +99,23 @@ export function Aside({ onOpenItem }: { onOpenItem: (id: number) => void }) {
     }
   }, [loadBoard, loadGrocery])
 
+  // Grouped by store, in the Kitchen card's own order (each store as it was
+  // added, then Unsorted last). A flat list here contradicted the Kitchen tab
+  // and lost the only thing that makes the list useful in a shop. The row cap
+  // is applied across the whole list first, so the glance never runs long, and
+  // a store whose items all fall past the cut simply doesn't appear.
   const open = grocery?.items.filter((i) => !i.checked) ?? []
   const shown = open.slice(0, GROCERY_ROWS)
   const hidden = open.length - shown.length
+  const groups: { key: string; label: string; items: api.GroceryItem[] }[] = []
+  for (const list of grocery?.lists ?? []) {
+    const items = shown.filter((i) => i.list_id === list.id)
+    if (items.length) groups.push({ key: `l${list.id}`, label: list.name, items })
+  }
+  const unsorted = shown.filter((i) => i.list_id === null)
+  if (unsorted.length) groups.push({ key: 'unsorted', label: 'Unsorted', items: unsorted })
+  // One unnamed bucket is just "the list"; a heading over it would be noise.
+  const showStoreHeadings = groups.length > 1
 
   const check = async (item: api.GroceryItem) => {
     setBusy(true)
@@ -252,21 +266,28 @@ export function Aside({ onOpenItem }: { onOpenItem: (id: number) => void }) {
           </p>
         ) : (
           <>
-            {shown.map((item) => (
-              <div key={item.id} className="db-row">
-                <button
-                  type="button"
-                  disabled={!canEditGrocery || busy}
-                  onClick={() => check(item)}
-                  className="-my-2 flex min-h-11 min-w-0 flex-1 items-center gap-3 py-2 text-left"
-                >
-                  {/* Only unchecked items reach this list, so the box is always
-                      empty; ticking one drops it off the glance. */}
-                  <span className="h-5 w-5 shrink-0 rounded-md border border-fg/25" />
-                  <span className="min-w-0 flex-1 truncate text-[14.5px] font-semibold">
-                    {item.title}
-                  </span>
-                </button>
+            {groups.map((group) => (
+              <div key={group.key}>
+                {showStoreHeadings && (
+                  <p className="db-micro px-0.5 pt-2 pb-0.5 text-fg/45">{group.label}</p>
+                )}
+                {group.items.map((item) => (
+                  <div key={item.id} className="db-row">
+                    <button
+                      type="button"
+                      disabled={!canEditGrocery || busy}
+                      onClick={() => check(item)}
+                      className="-my-2 flex min-h-11 min-w-0 flex-1 items-center gap-3 py-2 text-left"
+                    >
+                      {/* Only unchecked items reach this list, so the box is
+                          always empty; ticking one drops it off the glance. */}
+                      <span className="h-5 w-5 shrink-0 rounded-md border border-fg/25" />
+                      <span className="min-w-0 flex-1 truncate text-[14.5px] font-semibold">
+                        {item.title}
+                      </span>
+                    </button>
+                  </div>
+                ))}
               </div>
             ))}
             {hidden > 0 && <p className="db-emptyline">+{hidden} more on the Kitchen tab.</p>}
@@ -274,10 +295,11 @@ export function Aside({ onOpenItem }: { onOpenItem: (id: number) => void }) {
         )}
       </div>
 
-      {/* Pinned to the bottom of the sticky column: the day's last word. */}
-      <div className="mt-auto">
-        <VerseCard />
-      </div>
+      {/* Follows the card above it rather than being pinned to the bottom of
+          the column. On a tall widescreen the sticky column is far taller than
+          its contents, and mt-auto stranded the verse at the foot of the
+          screen with a lake of empty space above it. */}
+      <VerseCard />
     </aside>
   )
 }
