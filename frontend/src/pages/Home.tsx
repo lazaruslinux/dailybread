@@ -1,15 +1,18 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { CalendarClock, CalendarDays, Check, ChevronLeft, ChevronRight, Hourglass, Plus, Rows3, Undo2, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import * as api from '../lib/api'
 import { avatarUrl } from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
+import { useWideLayout } from '../hooks/useWideLayout'
+import { announceChange } from '../lib/changes'
 import { canCheckItem, continuesOn } from '../lib/items'
-import { timeGreeting } from '../lib/moods'
 import { Avatar } from '../components/Avatar'
 import { DayTimeline } from '../components/DayTimeline'
 import { Coin } from '../components/BreadIcon'
 import { FamilyStrip } from '../components/FamilyStrip'
+import { MastheadGreeting } from '../components/Greeting'
 import { ItemCard, SectionDivider } from '../components/ItemCard'
 import { ItemDetail } from '../components/ItemDetail'
 import { ItemSheet } from '../components/ItemSheet'
@@ -45,6 +48,9 @@ function FilterChip({
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
+
+// How long a card handed over by the desktop aside stays worth opening.
+const FOCUS_MAX_WAIT_MS = 15_000
 
 // "Today" / "Yesterday" / "Tomorrow" / "Mon, Jul 6" for approval rows and the
 // timeline's day header.
@@ -199,14 +205,22 @@ export function Home({
   onOpenProfile,
   onOpenKitchen,
   onOpenCalendar,
+  focusItem,
+  onFocusHandled,
 }: {
   onOpenProfile: (id: number) => void
   onOpenKitchen: () => void
   onOpenCalendar: () => void
+  // Set when the desktop aside's Next-7-days list asked for a card: the board
+  // owns the detail sheet, so the tap arrives here as an id to open.
+  focusItem?: number | null
+  onFocusHandled?: () => void
 }) {
   const { user } = useAuth()
   const isParent = user?.role === 'parent'
   const isMinor = user?.is_minor ?? false
+  // Above 1200px the right aside carries Next 7 days and the verse instead.
+  const wide = useWideLayout()
 
   const [feed, setFeed] = useState<api.Feed | null>(null)
   const [family, setFamily] = useState<api.FamilyMember[]>([])
@@ -219,6 +233,11 @@ export function Home({
   const [eventSheet, setEventSheet] = useState<api.VillageEvent | null>(null)
   const [shareSheet, setShareSheet] = useState<api.FeedItem | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // When the desktop aside last handed a card over, so a feed that arrives long
+  // afterwards doesn't open a sheet nobody is waiting for any more.
+  const focusStamp = useRef<{ id: number; at: number } | null>(null)
+  // Read-ordering guard for refresh(); see there.
+  const boardSeq = useRef(0)
   const [sheet, setSheet] = useState<{ open: boolean; item: api.FeedItem | null }>({ open: false, item: null })
   // checkable rides along so the detail sheet knows whether to offer "Mark done".
   const [detail, setDetail] = useState<{ item: api.FeedItem; checkable: boolean } | null>(null)
@@ -263,12 +282,18 @@ export function Home({
   }, [timelineDate, feed])
 
   const refresh = useCallback(async () => {
+    // Only the newest read may paint. Retiring the shared-read generation stops
+    // a new request from JOINING a stale one; it cannot stop a slow pre-write
+    // request from landing late and putting the old board back on screen.
+    const seq = ++boardSeq.current
     try {
       const [f, fam] = await Promise.all([api.getFeed(), api.getFamily()])
+      if (seq !== boardSeq.current) return
       setFeed(f)
       setFamily(fam)
       setError(null)
     } catch (err) {
+      if (seq !== boardSeq.current) return
       setError(err instanceof api.ApiError ? err.message : 'Could not load the board.')
     }
     // The header's team name; separate so a hiccup never blanks the board.
@@ -279,6 +304,18 @@ export function Home({
       api.villageEvents().then(setVEvents).catch(() => {})
     }
   }, [isParent])
+
+  // Every board MUTATION ends here rather than calling refresh() directly: the
+  // desktop aside carries its own copy of Next 7 days, and at >=1200px it is
+  // the only copy, so a change nobody announced leaves a row there that looks
+  // live and answers no taps. Announcing before the reload (not after) lets the
+  // aside's refetch and this one coalesce into a single request.
+  // Mount and visibility refreshes deliberately do NOT come through here: they
+  // are not changes, and the aside already refetches on visibility itself.
+  const refreshAndAnnounce = useCallback(async () => {
+    announceChange('db:board-changed')
+    await refresh()
+  }, [refresh])
 
   useEffect(() => {
     refresh()
@@ -399,7 +436,7 @@ export function Home({
       setItemPending(item.id, false)
       try {
         await api.uncompleteItem(item.id)
-        refresh()
+        refreshAndAnnounce()
       } catch (err) {
         setItemPending(item.id, true)
         setError(err instanceof api.ApiError ? err.message : 'Could not update the card.')
@@ -410,7 +447,7 @@ export function Home({
       setItemPending(item.id, true)
       try {
         await api.completeItem(item.id)
-        refresh()
+        refreshAndAnnounce()
       } catch (err) {
         setItemPending(item.id, false)
         setError(err instanceof api.ApiError ? err.message : 'Could not update the card.')
@@ -427,7 +464,7 @@ export function Home({
       if (next) celebrate(item.id, await api.completeItem(item.id, undefined, undefined, api.localDate()))
       else await api.uncompleteItem(item.id)
       if (next) showUndoToast(item)
-      refresh()
+      refreshAndAnnounce()
     } catch (err) {
       setItemCompleted(item.id, !next)
       // Most likely a 403 on someone else's card; surface it briefly.
@@ -449,7 +486,7 @@ export function Home({
       try {
         if (done) await api.completeItem(item.id, userId)
         else await api.uncompleteItem(item.id, userId)
-        refresh()
+        refreshAndAnnounce()
       } catch (err) {
         setItemPending(item.id, !done)
         setError(err instanceof api.ApiError ? err.message : 'Could not update the card.')
@@ -466,10 +503,10 @@ export function Home({
         // dated one-off lands in Done today (undated/routines ignore it).
         if (done) celebrate(item.id, await api.completeItem(item.id, userId, undefined, api.localDate()))
         else await api.uncompleteItem(item.id, userId)
-        refresh()
+        refreshAndAnnounce()
       } catch (err) {
         setError(err instanceof api.ApiError ? err.message : 'Could not update the card.')
-        refresh()
+        refreshAndAnnounce()
       }
       return
     }
@@ -479,7 +516,7 @@ export function Home({
       // the approval day (ignored by the backend on a plain complete).
       if (done) celebrate(item.id, await api.completeItem(item.id, userId, undefined, api.localDate()))
       else await api.uncompleteItem(item.id, userId)
-      refresh()
+      refreshAndAnnounce()
     } catch (err) {
       setAssigneeCompleted(item.id, userId, !done)
       setError(err instanceof api.ApiError ? err.message : 'Could not update the card.')
@@ -494,7 +531,7 @@ export function Home({
     setItemCompleted(item.id, false)
     try {
       await api.uncompleteItem(item.id)
-      refresh()
+      refreshAndAnnounce()
     } catch (err) {
       setItemCompleted(item.id, true)
       setError(err instanceof api.ApiError ? err.message : 'Could not update the card.')
@@ -505,7 +542,7 @@ export function Home({
     try {
       await api.deleteItem(item.id)
       setDetail(null)
-      refresh()
+      refreshAndAnnounce()
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Could not remove the card.')
     }
@@ -540,6 +577,37 @@ export function Home({
     }
   }
 
+  // A tap on the desktop aside's Next-7-days list. The board is the only place
+  // that card can be checked, edited or deleted, so the tap lands here and
+  // opens the same sheet a row on the board would. cardProps decides checkable
+  // so the two routes can't drift apart. Waits for the feed: the aside can hand
+  // the id over before this page's own fetch has landed.
+  useEffect(() => {
+    if (focusItem == null) {
+      focusStamp.current = null
+      return
+    }
+    if (focusStamp.current?.id !== focusItem) {
+      focusStamp.current = { id: focusItem, at: Date.now() }
+    }
+    if (!feed) {
+      // The load failed, so there is nothing to open. Let the id go: holding it
+      // would pop a sheet unprompted whenever a much later refresh succeeds.
+      if (error) onFocusHandled?.()
+      return
+    }
+    // The feed did arrive, but so long after the tap that opening a sheet now
+    // would read as a surprise rather than an answer (a request that hung, then
+    // settled minutes later when the tab came back to the front).
+    if (Date.now() - focusStamp.current.at > FOCUS_MAX_WAIT_MS) {
+      onFocusHandled?.()
+      return
+    }
+    const item = feed.next7.find((i) => i.id === focusItem)
+    if (item) setDetail({ item, checkable: cardProps(item).canCheck })
+    onFocusHandled?.()
+  }, [focusItem, feed, error])
+
   // Answer an approval row. The row leaves the list optimistically; the
   // refresh brings back the truth (and the card's new state with it).
   async function answerApproval(a: api.PendingApproval, approve: boolean) {
@@ -551,7 +619,7 @@ export function Home({
     try {
       if (approve) await api.completeItem(a.item_id, a.user.id, a.date_for, api.localDate())
       else await api.uncompleteItem(a.item_id, a.user.id, a.date_for)
-      refresh()
+      refreshAndAnnounce()
     } catch (err) {
       setApprovals((prev) => [...prev, a])
       setError(err instanceof api.ApiError ? err.message : 'Could not update the card.')
@@ -616,7 +684,13 @@ export function Home({
     comingCards.length === 0 &&
     anytimeCards.length === 0 &&
     done.length === 0
-  const allEmpty = todayEmpty && next7Open.length === 0
+  // "Nothing on this board", which is not the same as "nothing this week": at
+  // >=1200px the next-7 list is rendered by the aside, not here, so counting it
+  // would leave a filtered board showing its view pills and filter chips over
+  // an empty well with no line explaining why. The filter itself stays a BOARD
+  // control and deliberately does not reach into the aside — the aside persists
+  // onto tabs where the chips are not even visible.
+  const allEmpty = todayEmpty && (wide || next7Open.length === 0)
 
   // Rows, not cards: the board is one card and these are lines inside it.
   const renderCards = (items: api.FeedItem[]) => (
@@ -634,19 +708,10 @@ export function Home({
       {/* The home masthead, in reading order: who you are to us (greeting),
           what day it is, whose house this is (team name), then the family.
           One line each: the greeting used to run two lines on a phone. */}
-      <div>
-        <h1 className="font-display text-[1.6rem] font-semibold leading-[1.15] tracking-[-0.02em]">
-          {timeGreeting()}, {user?.display_name.split(/\s+/)[0] ?? ''}
-        </h1>
-        <p className="mt-0.5 text-[13px] text-fg/50">
-          It's{' '}
-          {clock.toLocaleDateString(undefined, {
-            weekday: 'long',
-            month: 'long',
-            day: 'numeric',
-            year: 'numeric',
-          })}
-        </p>
+      {/* Hidden once the rail is labelled: the header row carries the greeting
+          from that width up, and repeating it here would read as a stutter. */}
+      <div className="db-pagegreet">
+        <MastheadGreeting />
       </div>
       {familyName && (
         <div className="flex items-center gap-3">
@@ -934,8 +999,12 @@ export function Home({
       )}
       </div>
 
-      {/* What's ahead is its own card: it belongs to the week, not to today. */}
-      {feed && !(filter.length > 0 && allEmpty) && (
+      {/* What's ahead is its own card: it belongs to the week, not to today.
+          Above 1200px this list and the verse move into the right aside, so
+          they are skipped here rather than drawn twice. The aside's rows tap
+          back through to this page's detail sheet (see focusItem), which is
+          where checking and editing still happen. */}
+      {!wide && feed && !(filter.length > 0 && allEmpty) && (
         <div className="glass db-pad overflow-hidden">
           <SectionDivider label="Next 7 days" />
           {next7Open.length > 0 ? (
@@ -946,43 +1015,57 @@ export function Home({
         </div>
       )}
 
-      <VerseCard />
+      {!wide && <VerseCard />}
 
-      {isParent && (
-        <motion.button
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          whileTap={{ scale: 0.9 }}
-          onClick={() => openEditor(null)}
-          aria-label="Add to the board"
-          className="fixed bottom-24 right-1/2 z-30 flex h-14 w-14 translate-x-[calc(min(50vw,14rem)-2rem)] items-center justify-center rounded-full bg-gradient-to-r from-accent to-accent-strong shadow-xl shadow-accent/30"
-        >
-          <Plus className="h-6 w-6" strokeWidth={2.5} />
-        </motion.button>
-      )}
-
-      <AnimatePresence>
-        {toast && (
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 16 }}
-            className="glass fixed bottom-40 left-1/2 z-30 flex w-[calc(100%-2.5rem)] max-w-sm -translate-x-1/2 items-center gap-3 px-4 py-3"
-            data-undo-toast
+      {/* db-fab keeps the add button on the content well's right edge at every
+          width, which also leaves its transform free for whileTap's scale.
+          Both floating elements are PORTALLED to the body on purpose: they are
+          position:fixed, and the page-transition wrapper in App.tsx animates a
+          transform, which makes that wrapper their containing block for as long
+          as the transition runs. Left inside it, every 100% in their left-calc
+          resolves against the content well instead of the viewport and the
+          button visibly jumps on each tab change. Out here the calc always
+          measures what it was written against. */}
+      {isParent &&
+        createPortal(
+          <motion.button
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={() => openEditor(null)}
+            aria-label="Add to the board"
+            className="db-fab fixed z-30 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-r from-accent to-accent-strong shadow-xl shadow-accent/30"
           >
-            <p className="min-w-0 flex-1 truncate text-sm text-fg/85">
-              Done: <span className="font-semibold">{toast.title}</span>
-            </p>
-            <button
-              type="button"
-              onClick={undo}
-              className="flex shrink-0 items-center gap-1 rounded-lg bg-fg/10 px-2.5 py-1.5 text-sm font-semibold text-fg/85 hover:bg-fg/20"
-            >
-              <Undo2 className="h-3.5 w-3.5" /> Undo
-            </button>
-          </motion.div>
+            <Plus className="h-6 w-6" strokeWidth={2.5} />
+          </motion.button>,
+          document.body,
         )}
-      </AnimatePresence>
+
+      {createPortal(
+        <AnimatePresence>
+          {toast && (
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 16 }}
+              className="glass db-toast fixed z-30 flex w-[calc(100%-2.5rem)] max-w-sm items-center gap-3 px-4 py-3"
+              data-undo-toast
+            >
+              <p className="min-w-0 flex-1 truncate text-sm text-fg/85">
+                Done: <span className="font-semibold">{toast.title}</span>
+              </p>
+              <button
+                type="button"
+                onClick={undo}
+                className="flex shrink-0 items-center gap-1 rounded-lg bg-fg/10 px-2.5 py-1.5 text-sm font-semibold text-fg/85 hover:bg-fg/20"
+              >
+                <Undo2 className="h-3.5 w-3.5" /> Undo
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
 
       <AnimatePresence>
         {detail && (() => {
@@ -1021,7 +1104,7 @@ export function Home({
                       const call = detail.item.cancelled ? api.uncancelItem : api.cancelItem
                       await call(detail.item.id, api.localDate())
                       setDetail(null)
-                      refresh()
+                      refreshAndAnnounce()
                     }
                   : undefined
               }
@@ -1049,12 +1132,14 @@ export function Home({
         })()}
       </AnimatePresence>
 
+      {/* An RSVP materializes or removes this family's copy of the event, so
+          onChanged is a board mutation like any other and has to announce. */}
       {eventSheet && (
         <VillageEventSheet
           event={eventSheet}
           family={family}
           onClose={() => setEventSheet(null)}
-          onChanged={refresh}
+          onChanged={refreshAndAnnounce}
         />
       )}
       {shareSheet && (
@@ -1063,7 +1148,7 @@ export function Home({
           onClose={() => setShareSheet(null)}
           onShared={() => {
             setShareSheet(null)
-            refresh()
+            refreshAndAnnounce()
           }}
         />
       )}
@@ -1076,7 +1161,7 @@ export function Home({
             onClose={() => setSheet({ open: false, item: null })}
             onSaved={() => {
               setSheet({ open: false, item: null })
-              refresh()
+              refreshAndAnnounce()
             }}
           />
         )}

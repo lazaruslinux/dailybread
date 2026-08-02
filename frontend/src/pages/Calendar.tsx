@@ -8,6 +8,7 @@ import { ItemDetail } from '../components/ItemDetail'
 import { KIND_STYLE, SectionDivider } from '../components/ItemCard'
 import { ItemSheet } from '../components/ItemSheet'
 import { FormError } from '../components/ui'
+import { announceChange } from '../lib/changes'
 import { canCheckItem, continuesOn, dateSpanLabel, spansDays } from '../lib/items'
 import { formatTime } from '../lib/moods'
 
@@ -315,6 +316,15 @@ export function Calendar() {
     }
   }, [rangeStart, rangeEnd])
 
+  // Same rule as the board: a MUTATION announces itself so the desktop aside's
+  // copy of Next 7 days cannot be left showing a card that has been completed
+  // or deleted here. The calendar is an overlay inside the content column, so
+  // at >=1200px the aside is on screen the whole time this page is.
+  const refreshAndAnnounce = useCallback(async () => {
+    announceChange('db:board-changed')
+    await refresh()
+  }, [refresh])
+
   useEffect(() => {
     refresh()
   }, [refresh])
@@ -378,7 +388,7 @@ export function Calendar() {
       // slot on the approval day (now), not the day being viewed.
       if (done) await api.completeItem(item.id, undefined, markDay(dayISO), api.localDate())
       else await api.uncompleteItem(item.id, undefined, markDay(dayISO))
-      refresh()
+      refreshAndAnnounce()
     } catch (err) {
       patch(dayISO, item.id, (it) => ({ ...it, completed: !done }))
       setError(err instanceof api.ApiError ? err.message : 'Could not update the card.')
@@ -399,7 +409,7 @@ export function Calendar() {
       // parity with every other approval path (the backend ignores it here).
       if (done) await api.completeItem(item.id, userId, dayISO, api.localDate())
       else await api.uncompleteItem(item.id, userId, dayISO)
-      refresh()
+      refreshAndAnnounce()
     } catch (err) {
       patch(dayISO, item.id, set(!done))
       setError(err instanceof api.ApiError ? err.message : 'Could not update the card.')
@@ -410,7 +420,7 @@ export function Calendar() {
     try {
       await api.deleteItem(item.id)
       setDetail(null)
-      refresh()
+      refreshAndAnnounce()
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Could not remove the card.')
     }
@@ -655,7 +665,7 @@ export function Calendar() {
                         const call = detail.item.cancelled ? api.uncancelItem : api.cancelItem
                         await call(detail.item.id, detail.day)
                         setDetail(null)
-                        refresh()
+                        refreshAndAnnounce()
                       }
                     : undefined
                 }
@@ -676,7 +686,7 @@ export function Calendar() {
             onSaved={() => {
               setSheet(null)
               setDetail(null)
-              refresh()
+              refreshAndAnnounce()
             }}
           />
         )}

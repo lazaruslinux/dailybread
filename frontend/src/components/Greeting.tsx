@@ -12,6 +12,42 @@ import { Sheet } from './recipes'
 
 const dayKey = (id: number) => `db_greet_${id}`
 
+// The greeting and today's date. One markup, two homes: Home's masthead on a
+// phone, and the left half of the header row once the left rail has taken over
+// the wordmark (`compact`). It keeps its own minute clock so the wording follows
+// the hour in either place without Home having to pass its tick down.
+export function MastheadGreeting({ compact = false }: { compact?: boolean }) {
+  const { user } = useAuth()
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const tick = setInterval(() => setNow(new Date()), 60_000)
+    return () => clearInterval(tick)
+  }, [])
+
+  return (
+    <>
+      <h1
+        className={
+          compact
+            ? 'truncate font-display text-[1.4375rem] font-bold leading-tight tracking-[-0.02em]'
+            : 'font-display text-[1.6rem] font-semibold leading-[1.15] tracking-[-0.02em]'
+        }
+      >
+        {timeGreeting()}, {user?.display_name.split(/\s+/)[0] ?? ''}
+      </h1>
+      <p className="mt-0.5 text-[13px] text-fg/50">
+        It's{' '}
+        {now.toLocaleDateString(undefined, {
+          weekday: 'long',
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric',
+        })}
+      </p>
+    </>
+  )
+}
+
 export function DailyGreeting() {
   const { user } = useAuth()
   const [profile, setProfile] = useState<api.Profile | null>(null)

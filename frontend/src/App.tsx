@@ -3,11 +3,13 @@ import { ChevronLeft, ScanBarcode } from 'lucide-react'
 import { Suspense, lazy, useEffect, useState } from 'react'
 import { useAuth } from './auth/AuthContext'
 import { useInboxUnread } from './hooks/useInboxUnread'
+import { useWideLayout } from './hooks/useWideLayout'
 import { applyTheme, getTheme } from './lib/theme'
 import { resyncPushSubscription } from './lib/push'
 import { LoafMark } from './components/BreadIcon'
-import { DailyGreeting } from './components/Greeting'
+import { DailyGreeting, MastheadGreeting } from './components/Greeting'
 import { HealthBadge } from './components/HealthBadge'
+import { SideRail } from './components/SideRail'
 import { TabBar, type Tab } from './components/TabBar'
 // Home stays in the main bundle - it's the first paint after login. Every
 // other page loads on demand as its own chunk; the service worker precaches
@@ -67,6 +69,8 @@ const You = lazy(() => withReload(import('./pages/You').then((m) => ({ default: 
 const HealthScan = lazy(() =>
   withReload(import('./components/HealthScan').then((m) => ({ default: m.HealthScan })))
 )
+// Desktop-only, so it stays out of the phone bundle entirely.
+const Aside = lazy(() => withReload(import('./components/Aside').then((m) => ({ default: m.Aside }))))
 
 // An overlay sits on top of the current tab (a member's profile opened from
 // the family strip, or the admin dashboard opened from You). Back returns to
@@ -94,6 +98,13 @@ function AppShell() {
   // One poller owns the unread count; the tab-bar dot and the You row badge
   // read the same number, and opening the Inbox zeroes both at once.
   const { count: inboxUnread, zero: zeroInbox } = useInboxUnread()
+  // Room for the right aside. Home reads the same hook and stops drawing the
+  // two cards that move into it.
+  const wide = useWideLayout()
+  // At that width the aside owns the only Next-7-days list, so tapping one of
+  // its rows has to land on the board with that card's sheet open. Home clears
+  // the id once it has acted on it.
+  const [focusItem, setFocusItem] = useState<number | null>(null)
   // Kid mode: minors get Home / Kitchen / You — no nutrition or fitness area.
   // The server 403s those APIs regardless; this keeps the door out of sight too.
   const isMinor = user?.is_minor ?? false
@@ -142,117 +153,153 @@ function AppShell() {
     </button>
   ) : null
 
-  // Flex column: the sticky tab bar rides at the end of the flow (mt-auto
-  // keeps it at the screen bottom even when a page is short), so content no
-  // longer needs bottom padding to clear a fixed bar.
+  // The shell: an optional left rail beside the main column, with the sticky
+  // tab bar at the end of that column's flow (mt-auto keeps it at the screen
+  // bottom even when a page is short), so content never needs bottom padding to
+  // clear a fixed bar. Which navigation you get is entirely CSS's call — rail
+  // and bar are both always mounted, and each hides itself at the widths the
+  // other owns. See the responsive shell block in index.css.
   return (
-    <div className="mx-auto flex min-h-svh w-full max-w-md flex-col px-4 pt-5">
-      <header className="mb-4">
-        {tab === 'home' && !overlay ? (
-          // Home wears the brand: loaf + lettering centered, the health badge
-          // kept reachable at the row's edge. The greeting lives in Home now.
-          <div className="relative flex min-h-11 items-center justify-center">
-            <span className="flex items-center gap-2 font-display text-xl font-semibold tracking-[-0.02em]">
-              <LoafMark className="h-[34px] w-[34px] text-gold" />
-              <span>
-                daily
-                <span className="bg-gradient-to-r from-accent-bright to-accent-strong bg-clip-text text-transparent">
-                  bread
-                </span>
-              </span>
-            </span>
-            <div className="absolute right-0 flex items-center gap-1">
-              {scanBtn}
-              <HealthBadge />
-            </div>
-          </div>
-        ) : (
-          <div className="mb-1 flex items-center justify-between gap-3">
-            {overlay ? (
-              <button
-                onClick={() => setOverlay(null)}
-                className="-ml-1 flex items-center gap-1 rounded-lg py-1 pr-2 text-sm font-semibold text-fg/60 transition-colors hover:text-fg"
-              >
-                <ChevronLeft className="h-4 w-4" /> Back
-              </button>
-            ) : (
-              <p className="text-sm font-semibold text-fg/70">{TAB_TITLE[tab]}</p>
-            )}
-            <div className="flex items-center gap-1">
-              {scanBtn}
-              <HealthBadge />
-            </div>
-          </div>
-        )}
-      </header>
-
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={overlay ? `${overlay.name}-${'id' in overlay ? overlay.id : ''}` : tab}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          transition={{ duration: 0.18 }}
-        >
-          {/* The null fallback is deliberate: chunks come from the service
-              worker cache in a few ms, so a spinner would only flash. */}
-          <Suspense fallback={null}>
-            {overlay?.name === 'profile' && <Profile userId={overlay.id} />}
-            {overlay?.name === 'admin' && (
-              <Admin onOpenProfile={(id) => setOverlay({ name: 'profile', id })} />
-            )}
-            {overlay?.name === 'calendar' && <Calendar />}
-            {!overlay && tab === 'home' && (
-              <Home
-                onOpenProfile={(id) => setOverlay({ name: 'profile', id })}
-                onOpenKitchen={() => setTab('kitchen')}
-                onOpenCalendar={() => setOverlay({ name: 'calendar' })}
-              />
-            )}
-            {!overlay && tab === 'nutrition' && !isMinor && <Nutrition />}
-            {!overlay && tab === 'fitness' && !isMinor && <Fitness />}
-            {!overlay && tab === 'kitchen' && <Kitchen />}
-            {!overlay && tab === 'you' && (
-              <You
-                onOpenAdmin={() => setOverlay({ name: 'admin' })}
-                inboxUnread={inboxUnread}
-                onInboxRead={zeroInbox}
-                onGoTo={switchTab}
-                reselect={youReselect}
-              />
-            )}
-          </Suspense>
-        </motion.div>
-      </AnimatePresence>
-
-      <footer className="mt-8 text-center text-xs text-fg/30">
-        {/* The source link doubles as the AGPL section-13 offer for anyone
-            hosting this for others; the padding keeps the tap target at the
-            44px floor without changing the footer's quiet look. */}
-        dailybread v{__APP_VERSION__} ·{' '}
-        <a
-          href="https://github.com/lazaruslinux/dailybread"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-block px-2 py-3 -my-3 underline underline-offset-2 decoration-fg/30 hover:text-fg/60"
-        >
-          source
-        </a>
-      </footer>
-
-      {scanning && (
-        <Suspense fallback={null}>
-          <HealthScan onClose={() => setScanning(false)} />
-        </Suspense>
-      )}
-
-      <DailyGreeting />
-      <TabBar
+    <div className="db-shell">
+      <SideRail
         active={tab}
         onChange={switchTab}
         tabs={tabs}
         dot={inboxUnread > 0 ? 'you' : undefined}
       />
+      {/* Above 1200px the main column and the aside travel together as one
+          centered group, so the reading column doesn't drift left as the window
+          grows. Below it this wrapper is inert and the column centers itself. */}
+      <div className="db-withrail">
+        <div className="db-main">
+          <div className="db-content">
+            <header className="mb-4">
+              {tab === 'home' && !overlay ? (
+                // Home wears the brand: loaf + lettering centered, the health
+                // badge kept reachable at the row's edge. Once the rail carries
+                // the wordmark instead, the brand gives way to the greeting (which
+                // Home then stops drawing) and the row reads left to right.
+                <div className="db-topbar-home">
+                  <div className="db-deskgreet">
+                    <MastheadGreeting compact />
+                  </div>
+                  <span className="db-brand font-display text-xl font-semibold tracking-[-0.02em]">
+                    <LoafMark className="h-[34px] w-[34px] text-gold" />
+                    <span>
+                      daily
+                      <span className="bg-gradient-to-r from-accent-bright to-accent-strong bg-clip-text text-transparent">
+                        bread
+                      </span>
+                    </span>
+                  </span>
+                  <div className="db-tools flex items-center gap-1">
+                    {scanBtn}
+                    <HealthBadge />
+                  </div>
+                </div>
+              ) : (
+                <div className="mb-1 flex items-center justify-between gap-3">
+                  {overlay ? (
+                    <button
+                      onClick={() => setOverlay(null)}
+                      className="-ml-1 flex items-center gap-1 rounded-lg py-1 pr-2 text-sm font-semibold text-fg/60 transition-colors hover:text-fg"
+                    >
+                      <ChevronLeft className="h-4 w-4" /> Back
+                    </button>
+                  ) : (
+                    <p className="text-sm font-semibold text-fg/70">{TAB_TITLE[tab]}</p>
+                  )}
+                  <div className="flex items-center gap-1">
+                    {scanBtn}
+                    <HealthBadge />
+                  </div>
+                </div>
+              )}
+            </header>
+
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={overlay ? `${overlay.name}-${'id' in overlay ? overlay.id : ''}` : tab}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.18 }}
+              >
+                {/* The null fallback is deliberate: chunks come from the service
+                    worker cache in a few ms, so a spinner would only flash. */}
+                <Suspense fallback={null}>
+                  {overlay?.name === 'profile' && <Profile userId={overlay.id} />}
+                  {overlay?.name === 'admin' && (
+                    <Admin onOpenProfile={(id) => setOverlay({ name: 'profile', id })} />
+                  )}
+                  {overlay?.name === 'calendar' && <Calendar />}
+                  {!overlay && tab === 'home' && (
+                    <Home
+                      onOpenProfile={(id) => setOverlay({ name: 'profile', id })}
+                      onOpenKitchen={() => setTab('kitchen')}
+                      onOpenCalendar={() => setOverlay({ name: 'calendar' })}
+                      focusItem={focusItem}
+                      onFocusHandled={() => setFocusItem(null)}
+                    />
+                  )}
+                  {!overlay && tab === 'nutrition' && !isMinor && <Nutrition />}
+                  {!overlay && tab === 'fitness' && !isMinor && <Fitness />}
+                  {!overlay && tab === 'kitchen' && <Kitchen />}
+                  {!overlay && tab === 'you' && (
+                    <You
+                      onOpenAdmin={() => setOverlay({ name: 'admin' })}
+                      inboxUnread={inboxUnread}
+                      onInboxRead={zeroInbox}
+                      onGoTo={switchTab}
+                      reselect={youReselect}
+                    />
+                  )}
+                </Suspense>
+              </motion.div>
+            </AnimatePresence>
+
+            <footer className="mt-8 text-center text-xs text-fg/30">
+              {/* The source link doubles as the AGPL section-13 offer for anyone
+                  hosting this for others; the padding keeps the tap target at the
+                  44px floor without changing the footer's quiet look. */}
+              dailybread v{__APP_VERSION__} ·{' '}
+              <a
+                href="https://github.com/lazaruslinux/dailybread"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block px-2 py-3 -my-3 underline underline-offset-2 decoration-fg/30 hover:text-fg/60"
+              >
+                source
+              </a>
+            </footer>
+
+            {scanning && (
+              <Suspense fallback={null}>
+                <HealthScan onClose={() => setScanning(false)} />
+              </Suspense>
+            )}
+
+            <DailyGreeting />
+          </div>
+          <TabBar
+            active={tab}
+            onChange={switchTab}
+            tabs={tabs}
+            dot={inboxUnread > 0 ? 'you' : undefined}
+          />
+        </div>
+        {wide && (
+          <Suspense fallback={null}>
+            <Aside
+              onOpenItem={(id) => {
+                setOverlay(null)
+                setTab('home')
+                setFocusItem(id)
+              }}
+            />
+          </Suspense>
+        )}
+      </div>
     </div>
   )
 }

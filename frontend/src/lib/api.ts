@@ -40,6 +40,53 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json()
 }
 
+// ---- shared reads ----------------------------------------------------------
+// Two surfaces can want the same list at the same moment: at desktop widths the
+// board and the right aside both read the feed, and a write announces itself to
+// both at once. Coalescing makes that pair cost ONE request instead of two, and
+// keeps an event-driven refresh from turning into a burst against the API.
+//
+// Only IN-FLIGHT requests are shared and nothing is kept past settling, so this
+// is not a cache and can never hand back data the server has already moved on
+// from. The generation counter closes the one hole that would otherwise open:
+// without it, a read issued just after a write could join a request that left
+// before the write landed and come back with pre-write data. Every announced
+// change bumps the generation first (see lib/changes.ts), which retires the
+// old key so post-write reads always go to the server.
+let readGeneration = 0
+const inFlightReads = new Map<string, Promise<unknown>>()
+
+export function invalidateReads() {
+  readGeneration += 1
+}
+
+// Whoever is signed in just changed. Sign-in and sign-out swap React state
+// without reloading the page, so without this a read still in flight for the
+// OUTGOING account could be handed to the incoming one: log out and back in as
+// somebody else inside one round trip and the next getFeed() would join the
+// previous session's promise and paint that family's board. Dropping the map
+// as well as the generation means those promises can never be found again.
+export function resetReads() {
+  readGeneration += 1
+  inFlightReads.clear()
+}
+
+function sharedRead<T>(path: string, run: () => Promise<T>): Promise<T> {
+  const key = `${readGeneration}:${path}`
+  const existing = inFlightReads.get(key) as Promise<T> | undefined
+  if (existing) return existing
+  const pending = run()
+  inFlightReads.set(key, pending)
+  // Settled either way: a rejection must not be left behind to poison the next
+  // caller. Handling both arms here also keeps this from looking like an
+  // unhandled rejection when every real caller has its own catch.
+  pending.then(
+    () => inFlightReads.delete(key),
+    () => inFlightReads.delete(key),
+  )
+  return pending
+}
+
 // ---- health ----------------------------------------------------------------
 
 export interface Health {
@@ -95,17 +142,25 @@ export const getSetup = () => request<SetupState>('/auth/setup')
 
 export const getMe = () => request<User>('/auth/me')
 
-export const login = (username: string, password: string) =>
-  request<User>('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) })
+// Every session boundary clears the shared reads. Done here rather than in the
+// callers so no future sign-in path can forget to.
+export const login = async (username: string, password: string) => {
+  const me = await request<User>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
+  })
+  resetReads()
+  return me
+}
 
-export const bootstrap = (
+export const bootstrap = async (
   username: string,
   display_name: string,
   password: string,
   family_name: string,
   birthdate: string | null,
-) =>
-  request<User>('/auth/bootstrap', {
+) => {
+  const me = await request<User>('/auth/bootstrap', {
     method: 'POST',
     body: JSON.stringify({
       username,
@@ -116,8 +171,18 @@ export const bootstrap = (
       timezone: browserTimezone(),
     }),
   })
+  resetReads()
+  return me
+}
 
-export const logout = () => request<void>('/auth/logout', { method: 'POST' })
+export const logout = async () => {
+  try {
+    await request<void>('/auth/logout', { method: 'POST' })
+  } finally {
+    // The UI locks even when the request fails, so the reads must drop too.
+    resetReads()
+  }
+}
 
 // ---- the dinner plan ---------------------------------------------------------------
 
@@ -332,17 +397,21 @@ export const checkInvite = (code: string) =>
 
 // The invitee picks their own username (and may adjust the display name the
 // admin typed) at redemption.
-export const redeemInvite = (
+export const redeemInvite = async (
   code: string,
   username: string,
   display_name: string,
   password: string,
   birthdate: string | null,
-) =>
-  request<User>('/auth/invites/redeem', {
+) => {
+  const me = await request<User>('/auth/invites/redeem', {
     method: 'POST',
     body: JSON.stringify({ code, username, display_name, password, birthdate }),
   })
+  // Another session boundary: this call signs the new account straight in.
+  resetReads()
+  return me
+}
 
 export const changePassword = (current_password: string, new_password: string) =>
   request<User>('/auth/change-password', {
@@ -676,7 +745,10 @@ export interface ItemPayload {
   shared_to_feed?: boolean
 }
 
-export const getFeed = () => request<Feed>(`/items/feed?date=${localDate()}`)
+export const getFeed = () => {
+  const path = `/items/feed?date=${localDate()}`
+  return sharedRead(path, () => request<Feed>(path))
+}
 
 export interface CalendarDay {
   date: string
@@ -756,7 +828,7 @@ export interface GroceryState {
   items: GroceryItem[]
 }
 
-export const getGrocery = () => request<GroceryState>('/grocery')
+export const getGrocery = () => sharedRead('/grocery', () => request<GroceryState>('/grocery'))
 
 export const addGroceryStore = (name: string) =>
   request<GroceryList>('/grocery/lists', { method: 'POST', body: JSON.stringify({ name }) })

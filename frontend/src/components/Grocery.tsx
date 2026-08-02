@@ -1,7 +1,8 @@
 import { Check, FolderInput, Plus, Store, Trash2, X } from 'lucide-react'
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import * as api from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
+import { announceChange } from '../lib/changes'
 import { Button, FormError } from './ui'
 import { CollapsibleCard } from './CollapsibleCard'
 
@@ -28,6 +29,8 @@ export function GroceryPanel() {
   const [busy, setBusy] = useState(false)
   // The item whose "move to…" chips are showing, if any.
   const [movingId, setMovingId] = useState<number | null>(null)
+  // Read-ordering guard for refresh(); see there.
+  const listSeq = useRef(0)
 
   const isAll = active === 'all'
   // Items shown in the flat (single-store / Unsorted) views.
@@ -52,8 +55,12 @@ export function GroceryPanel() {
   }
 
   const refresh = useCallback(async () => {
+    // Only the newest read may paint: a slow pre-write request can otherwise
+    // land after the post-write one and put the old list back on screen.
+    const seq = ++listSeq.current
     try {
       const state = await api.getGrocery()
+      if (seq !== listSeq.current) return
       setLists(state.lists)
       setItems(state.items)
       // If the active store was removed elsewhere, fall back to the All view.
@@ -62,6 +69,7 @@ export function GroceryPanel() {
       )
       setError(null)
     } catch (err) {
+      if (seq !== listSeq.current) return
       setError(err instanceof api.ApiError ? err.message : 'Could not load the list.')
     }
   }, [])
@@ -85,6 +93,10 @@ export function GroceryPanel() {
     setBusy(true)
     try {
       await action()
+      // Announce before reloading, not after: the desktop aside shows the same
+      // list and its refetch then coalesces with this one into a single
+      // request instead of arriving as a second round trip.
+      announceChange('db:grocery-changed')
       await refresh()
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Something went wrong. Try again.')

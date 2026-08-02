@@ -1126,19 +1126,23 @@ function NutritionTab() {
           <LockCard day={day} onChanged={refresh} />
           {/* The health calculator (body, plan, weigh-ins) lives only under
               You now; Nutrition keeps the day's food and the Targets card. */}
-          {SLOTS.map((s) => (
-            <SlotCard
-              key={s.id}
-              slot={s.id}
-              entries={bySlot[s.id]}
-              locked={day.locked}
-              onAdd={() => {
-                setFlow((f) => f + 1)
-                setAdding(s.id)
-              }}
-              onEdit={setEditing}
-            />
-          ))}
+          {/* The four meals pair off two-up once there is desktop room; on a
+              phone db-grid2 is the same single column this page already is. */}
+          <div className="db-grid2">
+            {SLOTS.map((s) => (
+              <SlotCard
+                key={s.id}
+                slot={s.id}
+                entries={bySlot[s.id]}
+                locked={day.locked}
+                onAdd={() => {
+                  setFlow((f) => f + 1)
+                  setAdding(s.id)
+                }}
+                onEdit={setEditing}
+              />
+            ))}
+          </div>
           <ExerciseCard
             exercise={day.exercise}
             workouts={day.workouts}

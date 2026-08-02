@@ -2,6 +2,7 @@ import { BookOpen, Pencil, Plus, Share2, ShoppingBasket, Trash2, X } from 'lucid
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../../lib/api'
 import { useAuth } from '../../auth/AuthContext'
+import { announceChange } from '../../lib/changes'
 import { Button, FormError } from '../ui'
 import { CollapsibleCard } from '../CollapsibleCard'
 import { ShareToVillage } from '../SharedRecipes'
@@ -36,7 +37,11 @@ function SendToGrocery({ recipe }: { recipe: api.Recipe }) {
       const res = await api.pushRecipeToGrocery(recipe.id, listId)
       setAdded(res.added)
       setPicking(false)
-      window.dispatchEvent(new Event('db:grocery-changed'))
+      // Via announceChange, not a raw dispatch: it retires the shared-read
+      // generation first, so the listeners it wakes cannot join a /grocery
+      // request that left before these ingredients landed and paint a list
+      // without them.
+      announceChange('db:grocery-changed')
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Could not add the ingredients.')
     } finally {

@@ -333,6 +333,389 @@ body {
     height: 44px;
     transform: translateY(-50%);
   }
+
+  /* A run of sibling cards that pairs off once the window is wide enough.
+     Inert on a phone: it reproduces the single column with the same gap its
+     page already uses, so the markup reads the same at every width. The
+     desktop half lives in the 900px block further down. gap matches the
+     pages' own flex-col gap-3 rather than growing at width — these are dense
+     cards, and a wider gutter between two short columns reads as a gap in the
+     page, not as breathing room. */
+  .db-grid2 {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+}
+
+/* How much horizontal room the shell is currently spending on its left rail.
+   The two things that float over the page (the board's add button, the undo
+   toast) use it to find the content well's edges instead of assuming the phone
+   column they were written against. Declared unlayered like the theme tokens so
+   the media overrides sit in the same layer and actually win. */
+:root {
+  --db-rail-w: 0px;
+}
+@media (min-width: 900px) {
+  :root {
+    --db-rail-w: 14.5rem;
+  }
+}
+@media (max-height: 560px) and (min-width: 620px) and (max-width: 1100px) {
+  :root {
+    /* Must include the inset the slim rail actually pads by, or the floating
+       elements measure from a rail narrower than the rendered one. */
+    --db-rail-w: calc(4.5rem + env(safe-area-inset-left));
+  }
+}
+
+/* ---- Responsive shell -------------------------------------------------
+   Portrait phone is unchanged: one column, bottom tab bar. Wider or shorter
+   viewports trade the bottom bar for a left rail — a persistent bottom bar
+   costs a third of a landscape phone's height, and on a desktop window it
+   reads as a phone app blown up.
+
+     landscape phone   slim icon rail, no labels, brand stays in the header
+     >= 900px          labelled rail carrying the wordmark, no bottom bar
+     >= 1200px         room for a right aside beside the content column
+
+   Declared inside @layer components like the density classes, so a Tailwind
+   utility on the same element still wins. */
+@layer components {
+  .db-shell {
+    display: flex;
+    min-height: 100svh;
+  }
+
+  /* The main column, and the content well centered inside it. min-width: 0 on
+     both the column and its children is load-bearing: without it a wide
+     horizontal scroller deep inside a page (the week planner strip) pushes its
+     min-content width up the tree and pans the whole page sideways. */
+  .db-main {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+  }
+  .db-content {
+    display: flex;
+    width: 100%;
+    max-width: 45rem;
+    flex: 1;
+    flex-direction: column;
+    margin: 0 auto;
+    padding: 1.25rem 1rem 0;
+  }
+  .db-content > * {
+    min-width: 0;
+  }
+
+  /* Horizontal anchoring for the two elements that float over the page. Both
+     belong to the content well, not to the window, so they walk out from the
+     middle of the main column: half the rail plus half of what's left, then to
+     the well's own edge. 100% rather than 100vw, so a desktop scrollbar doesn't
+     nudge them sideways. The FAB lands 2rem inside the well's right edge (a
+     56px button, hence the extra 3.5rem); the toast centers on the well. */
+  /* The vertical offsets are here rather than in a bottom-* utility so the
+     no-tab-bar shapes below can lower them: the 6rem only ever existed to clear
+     the bar, and on a 390px-tall landscape phone it parks the button a third of
+     the way up the screen, over the content. */
+  .db-fab {
+    bottom: 6rem;
+    left: calc(
+      var(--db-rail-w) + (100% - var(--db-rail-w)) / 2 + min(45rem, 100% - var(--db-rail-w)) / 2 -
+        5.5rem
+    );
+  }
+  .db-toast {
+    bottom: 10rem;
+    left: calc(var(--db-rail-w) + (100% - var(--db-rail-w)) / 2 - min(24rem, 100% - 2.5rem) / 2);
+  }
+
+  /* Wraps the main column and the aside. Inert until there is room for the
+     aside; from there it becomes the centered group, so the reading column
+     stops drifting left as the window grows. min-width: 0 for the same
+     shrink-below-content reason as .db-main. */
+  .db-withrail {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+  }
+  .db-aside {
+    display: none;
+  }
+
+  /* ---- Left rail. Absent on a portrait phone, which keeps its tab bar. ---- */
+  .db-rail {
+    display: none;
+  }
+  .db-railmark {
+    display: flex;
+    align-items: center;
+    gap: 0.4375rem;
+    padding: 0.375rem 0.625rem 1rem;
+  }
+  .db-navitem {
+    display: flex;
+    align-items: center;
+    gap: 0.6875rem;
+    min-height: 44px;
+    padding: 0 0.75rem;
+    border: 1px solid transparent;
+    border-radius: 0.625rem;
+    font-size: 0.90625rem;
+    font-weight: 600;
+    /* 66%, not the 58% the quieter secondary text uses: these are the primary
+       navigation labels at desktop widths, and 58% measures 3.89:1 on the light
+       theme's paper. */
+    color: color-mix(in oklab, var(--fg) 66%, transparent);
+  }
+  .db-navitem:hover {
+    background: var(--accent-soft);
+    color: var(--fg);
+  }
+  /* The current page reads as a raised card in the rail — the same surface the
+     content beside it is made of. */
+  .db-navitem[aria-current='page'] {
+    border-color: var(--glass-border);
+    background: var(--card);
+    box-shadow: var(--card-shadow);
+    color: var(--fg);
+  }
+  /* A real nav control, so it answers the same 44px floor and hover as the
+     items above it. */
+  .db-railfoot {
+    display: flex;
+    width: 100%;
+    min-height: 44px;
+    align-items: center;
+    gap: 0.625rem;
+    margin-top: auto;
+    border-radius: 0.625rem;
+    padding: 0.625rem;
+    font-size: 0.84375rem;
+    text-align: left;
+    color: color-mix(in oklab, var(--fg) 66%, transparent);
+    transition: background-color 0.15s;
+  }
+  .db-railfoot:hover {
+    background: var(--accent-soft);
+    color: var(--fg);
+  }
+
+  /* ---- Header row. Home wears the brand centered on a phone; once the rail
+     carries the wordmark, the row's left half takes the greeting instead. ---- */
+  /* The tools are taken OUT of the flow so the brand is centered on the row
+     itself and nothing the right-hand side does can shift it. A 1fr/auto/1fr
+     grid looks like it would do the same and does not: once the tools' width
+     outgrows their fr share the third column takes its min-content and the
+     first absorbs the rest, which slid the wordmark 49px left the moment the
+     HealthBadge showed its "Connecting" pill. */
+  .db-topbar-home {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.75rem;
+  }
+  .db-topbar-home .db-tools {
+    position: absolute;
+    right: 0;
+  }
+  /* The brand and the greeting swap places by width, so their display lives
+     here and NOT in a Tailwind flex/block utility on the element — a utility
+     would outrank the layered rules below and pin one of them on at every
+     width. */
+  .db-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .db-deskgreet {
+    display: none;
+  }
+
+  @media (min-width: 900px) {
+    .db-rail {
+      position: sticky;
+      top: 0;
+      display: flex;
+      width: 14.5rem;
+      height: 100svh;
+      flex: none;
+      flex-direction: column;
+      gap: 0.25rem;
+      border-right: 1px solid var(--line-soft);
+      padding: 1.25rem 0.75rem;
+      /* A short desktop window must still reach the last nav item. */
+      overflow-y: auto;
+    }
+    /* The bottom padding is the shell's own now: the tab bar used to supply both
+       the closing gap and the only safe-area-inset-bottom in the shell, and
+       there is no bar at this width. */
+    .db-content {
+      padding: 1.375rem 1.75rem 2rem;
+    }
+    .db-tabbar {
+      display: none;
+    }
+    /* A real left-to-right row here: greeting, then the tools back in the flow. */
+    .db-topbar-home {
+      justify-content: flex-start;
+    }
+    .db-topbar-home .db-tools {
+      position: static;
+    }
+    .db-deskgreet {
+      display: block;
+      min-width: 0;
+      margin-right: auto;
+    }
+    .db-brand {
+      display: none;
+    }
+    .db-pagegreet {
+      display: none;
+    }
+    /* No bottom bar to clear here. */
+    .db-fab {
+      bottom: 1.75rem;
+    }
+    .db-toast {
+      bottom: 6.5rem;
+    }
+    /* Cards pair off. align-items: start so a long column doesn't stretch the
+       short one beside it into a card full of dead space. */
+    .db-grid2 {
+      display: grid;
+      align-items: start;
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+
+  /* Room for the right aside. The main column and the aside now travel as one
+     1120px group centered in what the rail left over, and the content well
+     drops its own cap so it fills its share of that group instead of leaving a
+     gutter inside it. */
+  @media (min-width: 1200px) {
+    .db-withrail {
+      width: 100%;
+      max-width: 70rem;
+      margin: 0 auto;
+    }
+    .db-content {
+      max-width: none;
+      margin: 0;
+    }
+    .db-aside {
+      position: sticky;
+      top: 0;
+      display: flex;
+      width: 19.75rem;
+      height: 100svh;
+      flex: none;
+      flex-direction: column;
+      gap: 0.875rem;
+      padding: 1.375rem 1.5rem 2rem 0;
+      overflow-y: auto;
+    }
+    /* The well stopped being "45rem centered in the main column" and became
+       "the 1120rem group, less the aside", so the two floating elements need
+       the same story told the new way: rail, then the group's left gutter,
+       then across the column. The FAB lands 2rem inside its right edge; the
+       toast centers on it. */
+    .db-fab {
+      left: calc(
+        var(--db-rail-w) + (100% - var(--db-rail-w) - min(70rem, 100% - var(--db-rail-w))) / 2 +
+          min(70rem, 100% - var(--db-rail-w)) - 19.75rem - 5.5rem
+      );
+    }
+    .db-toast {
+      left: calc(
+        var(--db-rail-w) + (100% - var(--db-rail-w) - min(70rem, 100% - var(--db-rail-w))) / 2 +
+          (min(70rem, 100% - var(--db-rail-w)) - 19.75rem) / 2 - min(24rem, 100% - 2.5rem) / 2
+      );
+    }
+  }
+
+  /* Landscape phone: a slim icon rail instead of the bottom bar. The safe-area
+     padding keeps the rail clear of the iPhone island when the phone is rotated
+     island-left, and the content clear of it the other way. Deliberately AFTER
+     the 900px block so it wins on a landscape phone wider than 900px (a Pro Max
+     is 932px across). The max-width bound only rules out desktop windows WIDER
+     than 1100px; a deliberately short-and-narrow window (1000x520, or a
+     1024x600 panel) does get the phone treatment, which is the right call for a
+     panel and merely unusual for a resized browser. */
+  @media (max-height: 560px) and (min-width: 620px) and (max-width: 1100px) {
+    .db-tabbar {
+      display: none;
+    }
+    .db-rail {
+      position: sticky;
+      top: 0;
+      display: flex;
+      width: calc(4.5rem + env(safe-area-inset-left));
+      height: 100svh;
+      flex: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.125rem;
+      border-right: 1px solid var(--line-soft);
+      padding: 0.625rem 0.6875rem;
+      padding-left: calc(0.6875rem + env(safe-area-inset-left));
+      overflow-y: auto;
+    }
+    /* No second loaf: the header brand carries identity in landscape. */
+    .db-railmark {
+      display: none;
+    }
+    .db-navitem {
+      width: 48px;
+      min-height: 44px;
+      justify-content: center;
+      gap: 0;
+      padding: 0;
+    }
+    .db-navlabel {
+      display: none;
+    }
+    /* Slim shape: the label is hidden, so the avatar centers like the icons. */
+    .db-railfoot {
+      width: 48px;
+      justify-content: center;
+      padding: 0.25rem 0 0;
+    }
+    .db-content {
+      padding: 0.625rem calc(1.125rem + env(safe-area-inset-right))
+        calc(0.875rem + env(safe-area-inset-bottom)) 1.125rem;
+    }
+    /* Back to a centered brand with the tools lifted out of the flow. */
+    .db-topbar-home {
+      justify-content: center;
+    }
+    .db-topbar-home .db-tools {
+      position: absolute;
+      right: 0;
+    }
+    .db-deskgreet {
+      display: none;
+    }
+    /* The brand is back in the header, so the greeting goes back to being
+       Home's first line of content. */
+    .db-brand {
+      display: flex;
+    }
+    .db-pagegreet {
+      display: block;
+    }
+    /* No bottom bar, and only ~390px of height to work with. */
+    .db-fab {
+      bottom: 1.75rem;
+    }
+    .db-toast {
+      bottom: 6.5rem;
+    }
+  }
 }
 
 /* The bread token (Coin). Full-colour artwork swapped by theme: light is the

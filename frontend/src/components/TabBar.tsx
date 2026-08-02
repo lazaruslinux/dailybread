@@ -6,7 +6,9 @@ export type Tab = 'home' | 'nutrition' | 'fitness' | 'kitchen' | 'you'
 // Kitchen rides beside Home (his flow: the kitchen sits next to the living
 // room); Health keeps the center seat. The fitness id (and the whole backend)
 // keeps its name; only the label reads Health.
-const TABS: { id: Tab; label: string; Icon: LucideIcon }[] = [
+// Exported for SideRail, which shows the same tabs in the same order wherever
+// the bar steps aside. One list, so the two navigations can't drift.
+export const TABS: { id: Tab; label: string; Icon: LucideIcon }[] = [
   { id: 'home', label: 'Home', Icon: House },
   { id: 'kitchen', label: 'Kitchen', Icon: ShoppingBasket },
   { id: 'fitness', label: 'Health', Icon: HeartPulse },
@@ -34,13 +36,18 @@ export function TabBar({
 }) {
   const visible = tabs ? TABS.filter(({ id }) => tabs.includes(id)) : TABS
   return (
+    // db-tabbar is the hook the shell uses to retire the bar in favour of the
+    // left rail (desktop widths, landscape phone). The bar sits outside the
+    // padded content well now, so it spans the full width by itself and no
+    // longer needs a negative margin to bleed past the page padding.
+    //
     // sticky, not fixed: iOS Safari freezes fixed elements into the page
     // after the keyboard opens (his prod screenshot 2026-07-12 showed the bar
     // stuck mid-scroll beside the journal). A sticky bar at the end of the
     // page flow pins to the viewport bottom without that failure mode.
     <nav
       aria-label="Main"
-      className="sticky bottom-0 z-30 -mx-5 mt-auto border-t border-[var(--glass-border)] bg-[var(--card)] pt-1.5 pb-[env(safe-area-inset-bottom)]"
+      className="db-tabbar sticky bottom-0 z-30 mt-auto border-t border-[var(--glass-border)] bg-[var(--card)] pt-1.5 pb-[env(safe-area-inset-bottom)]"
     >
       <div className="mx-auto mb-1.5 flex w-full max-w-md justify-center px-5">
         <div className="flex w-full items-stretch justify-around p-1.5">
