@@ -88,15 +88,19 @@ def test_uncomplete_reverses_a_checkoff(owner):
     assert owner.delete(f"/items/{item['id']}/complete?date={TODAY}").json()["completed"] is False
 
 
-def test_a_missed_day_can_be_marked_on_its_own_day(owner):
+def test_a_missed_day_can_be_marked_on_its_own_day(owner, child):
     # The calendar's whole point: check a routine off on the day it actually
     # was. It then reads done on that day and stays open on the others.
+    kid_id = user_id(child)
     routine = make_item(
-        owner, kind="routine", title="Vitamins",
+        owner, kind="routine", title="Vitamins", assignee_ids=[kid_id],
         repeat={"type": "weekly", "days": [0, 1, 2, 3, 4, 5, 6]},
     )
     three_ago = (dt.date.today() - dt.timedelta(days=3)).isoformat()
-    assert owner.post(f"/items/{routine['id']}/complete?date={three_ago}").status_code == 200
+    assert child.post(f"/items/{routine['id']}/complete?date={three_ago}").status_code == 200
+    assert owner.post(
+        f"/items/{routine['id']}/complete?date={three_ago}&for={kid_id}"
+    ).status_code == 200
 
     back = owner.get(f"/items/calendar?start={three_ago}&end={three_ago}").json()
     assert next(i for i in back["days"][0]["items"] if i["id"] == routine["id"])["completed"] is True
@@ -122,8 +126,7 @@ def test_dated_completion_is_a_single_shot_across_days(owner):
     # lands on today, yet the card reads done on its own past day too, and
     # undoing from that day clears the single completion wherever it landed.
     yesterday = (dt.date.today() - dt.timedelta(days=1)).isoformat()
-    appt = make_item(owner, kind="appointment", title="Missed call", date_for=yesterday,
-                     time_of_day="09:00", end_time="09:30")
+    appt = make_item(owner, title="Missed call", date_for=yesterday)
     owner.post(f"/items/{appt['id']}/complete?date={TODAY}")  # overdue-clear, recorded today
 
     back = owner.get(f"/items/calendar?start={yesterday}&end={yesterday}").json()
@@ -235,8 +238,7 @@ def test_task_due_today_checked_today_shows_done_today_then_drops(owner):
     # A one-off due today, checked today, sits in Done today (unchanged), then
     # leaves the board on the following day (existing past-branch behavior).
     tomorrow = (dt.date.today() + dt.timedelta(days=1)).isoformat()
-    task = make_item(owner, kind="appointment", title="Dentist", date_for=TODAY,
-                     time_of_day="09:00", end_time="09:30")
+    task = make_item(owner, title="Post the parcel", date_for=TODAY)
 
     owner.post(f"/items/{task['id']}/complete?date={TODAY}")
     feed = owner.get(f"/items/feed?date={TODAY}").json()
@@ -265,24 +267,39 @@ def test_future_task_with_pending_kid_mark_stays_on_the_board(owner, child):
     assert mine[0]["pending_by"] == user_id(child)
 
 
-def test_overdue_carries_past_due_oneoffs_forward(owner):
-    # A one-off whose date slipped by keeps showing under "overdue" until done.
+def test_overdue_carries_past_due_tasks_forward(owner):
+    # A TASK whose date slipped by keeps showing under "overdue" until done.
     yesterday = (dt.date.today() - dt.timedelta(days=1)).isoformat()
-    appt = make_item(owner, kind="appointment", title="Missed call", date_for=yesterday,
-                     time_of_day="09:00", end_time="09:30")
+    task = make_item(owner, title="Call the plumber", date_for=yesterday)
     # Routines are habits, not one-offs, so a scheduled-yesterday routine is
     # never overdue; a card older than the 90-day lookback also drops off.
     make_item(owner, kind="routine", title="Daily",
               repeat={"type": "weekly", "days": [0, 1, 2, 3, 4, 5, 6]})
     ancient = (dt.date.today() - dt.timedelta(days=120)).isoformat()
-    old = make_item(owner, kind="appointment", title="Ancient", date_for=ancient,
-                    time_of_day="09:00", end_time="09:30")
+    old = make_item(owner, title="Ancient", date_for=ancient)
 
     feed = owner.get(f"/items/feed?date={TODAY}").json()
     overdue_ids = {i["id"] for i in feed["overdue"]}
-    assert appt["id"] in overdue_ids
-    assert all(i["kind"] != "routine" for i in feed["overdue"])
+    assert task["id"] in overdue_ids
+    assert all(i["kind"] == "task" for i in feed["overdue"])
     assert old["id"] not in overdue_ids
+
+
+def test_a_passed_appointment_or_activity_leaves_the_board(owner):
+    # Calendar entries are not a to-do list: once their day has gone by they
+    # simply stop showing. The calendar keeps the record.
+    yesterday = (dt.date.today() - dt.timedelta(days=1)).isoformat()
+    appt = make_item(owner, kind="appointment", title="Dentist", date_for=yesterday,
+                     time_of_day="09:00", end_time="09:30")
+    act = make_item(owner, kind="activity", title="Soccer", date_for=yesterday,
+                    time_of_day="17:00", end_time="18:00")
+
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    shown = {i["id"] for i in feed["overdue"] + feed["today"] + feed["next7"]}
+    assert appt["id"] not in shown and act["id"] not in shown
+
+    cal = owner.get(f"/items/calendar?start={yesterday}&end={yesterday}").json()
+    assert {i["id"] for i in cal["days"][0]["items"]} == {appt["id"], act["id"]}
 
 
 def test_completing_an_overdue_card_archives_it_immediately(owner):
@@ -291,8 +308,7 @@ def test_completing_an_overdue_card_archives_it_immediately(owner):
     # still shows, completed, on its own day in the calendar; undoing the
     # check brings it back to overdue.
     yesterday = (dt.date.today() - dt.timedelta(days=1)).isoformat()
-    appt = make_item(owner, kind="appointment", title="Late chore", date_for=yesterday,
-                     time_of_day="09:00", end_time="09:30")
+    appt = make_item(owner, title="Late chore", date_for=yesterday)
 
     owner.post(f"/items/{appt['id']}/complete?date={TODAY}")
     feed = owner.get(f"/items/feed?date={TODAY}").json()
@@ -441,7 +457,8 @@ def test_family_board_card_is_visible_to_all(owner, child):
 
 def test_family_board_card_is_read_only_for_non_assignees(owner, child):
     # The "solo run" case: a routine the owner does alone, shown to the whole
-    # family. Everyone sees it; only the owner (its sole participant) checks it.
+    # family. Everyone sees it; a non-participant can't touch it, and since
+    # routines are the kids' to check, neither can the adult who owns it.
     today_wd = dt.date.today().weekday()
     run = make_item(
         owner, kind="routine", title="Morning run", visibility="family",
@@ -450,7 +467,7 @@ def test_family_board_card_is_read_only_for_non_assignees(owner, child):
     feed = child.get(f"/items/feed?date={TODAY}").json()
     assert any(i["id"] == run["id"] for i in feed["today"])  # child sees it
     assert child.post(f"/items/{run['id']}/complete?date={TODAY}").status_code == 403  # read-only
-    assert owner.post(f"/items/{run['id']}/complete?date={TODAY}").status_code == 200  # owner does it
+    assert owner.post(f"/items/{run['id']}/complete?date={TODAY}").status_code == 400
 
 
 def test_family_task_not_assigned_is_read_only_for_child(owner, child):
@@ -461,13 +478,11 @@ def test_family_task_not_assigned_is_read_only_for_child(owner, child):
 
 
 def test_either_parent_can_check_a_family_board_card(owner, parent):
-    # A co-parent can complete a family-board appointment the other parent added,
+    # A co-parent can complete a family-board task the other parent added,
     # even though they're neither its owner nor an assignee.
-    appt = make_item(
-        owner, kind="appointment", title="School pickup", visibility="family",
-        date_for=TODAY, time_of_day="15:00", end_time="15:30",
-    )
-    assert parent.post(f"/items/{appt['id']}/complete?date={TODAY}").status_code == 200
+    task = make_item(owner, title="Book the school photos", visibility="family",
+                     date_for=TODAY)
+    assert parent.post(f"/items/{task['id']}/complete?date={TODAY}").status_code == 200
 
 
 def test_parent_cannot_check_a_private_card_they_are_not_on(owner, parent):
@@ -476,7 +491,7 @@ def test_parent_cannot_check_a_private_card_they_are_not_on(owner, parent):
     assert parent.post(f"/items/{card['id']}/complete?date={TODAY}").status_code == 404
 
 
-def test_parent_can_check_a_childs_routine_on_behalf(owner, child):
+def test_parent_approves_a_childs_routine_but_cannot_check_it_first(owner, child):
     today_wd = dt.date.today().weekday()
     kid = user_id(child)
     routine = make_item(
@@ -485,7 +500,12 @@ def test_parent_can_check_a_childs_routine_on_behalf(owner, child):
     )
     # Without 'for', the parent isn't a participant, so there's nothing to check.
     assert owner.post(f"/items/{routine['id']}/complete?date={TODAY}").status_code == 403
-    # With 'for', the parent checks it off on the child's behalf.
+    # With 'for' but nothing waiting, a routine still isn't an adult's to check.
+    res = owner.post(f"/items/{routine['id']}/complete?date={TODAY}&for={kid}")
+    assert res.status_code == 400
+    assert "approve" in res.json()["detail"]
+    # The kid taps; the very same call is now the parent's approval.
+    assert child.post(f"/items/{routine['id']}/complete?date={TODAY}").status_code == 200
     assert owner.post(f"/items/{routine['id']}/complete?date={TODAY}&for={kid}").status_code == 200
 
     feed = owner.get(f"/items/feed?date={TODAY}").json()
@@ -642,14 +662,18 @@ def test_a_span_is_on_the_board_every_day_it_runs(owner):
     assert any(i["id"] == trip["id"] for i in later["today"])
 
 
-def test_a_span_goes_overdue_only_after_its_last_day(owner):
+def test_a_finished_span_leaves_the_board(owner):
+    # A trip that ended yesterday is over, not overdue: only tasks carry
+    # forward, and a span is always an activity or appointment.
     over = make_item(
         owner, kind="activity", title="Was camping",
         date_for=(dt.date.today() - dt.timedelta(days=3)).isoformat(), end_date=YESTERDAY,
         time_of_day="09:00", end_time="16:00",
     )
     feed = owner.get(f"/items/feed?date={TODAY}").json()
-    assert any(i["id"] == over["id"] for i in feed["overdue"])
+    assert not any(
+        i["id"] == over["id"] for i in feed["overdue"] + feed["today"] + feed["next7"]
+    )
 
 
 def test_a_spans_later_days_sort_like_all_day(owner):
@@ -704,16 +728,16 @@ def test_a_span_can_be_extended_and_cleared(owner):
     ).status_code == 400
 
 
-def test_completing_a_span_completes_the_whole_run(owner):
+def test_a_span_is_never_checked_off(owner):
     trip = make_item(
         owner, kind="activity", title="Camping", date_for=YESTERDAY, end_date=TOMORROW,
         time_of_day="09:00", end_time="16:00",
     )
-    assert owner.post(f"/items/{trip['id']}/complete?date={TODAY}").status_code == 200
+    assert owner.post(f"/items/{trip['id']}/complete?date={TODAY}").status_code == 400
     cal = owner.get(f"/items/calendar?start={YESTERDAY}&end={TOMORROW}").json()
     for day in cal["days"]:
         card = next(i for i in day["items"] if i["id"] == trip["id"])
-        assert card["completed"] is True
+        assert card["completed"] is False
 
 
 def test_routine_takes_a_start_and_end_time(owner):
@@ -846,27 +870,30 @@ def test_a_repeat_cannot_end_before_its_anchor(owner):
 # ---- per-person vs shared completion -----------------------------------------
 
 
-def test_routine_completion_is_per_person(owner, parent):
-    dad_id, kid_id = user_id(owner), user_id(parent)
+def test_routine_completion_is_per_person(owner, child, grown_child):
+    kid_id, sibling_id = user_id(child), user_id(grown_child)
     today_wd = dt.date.today().weekday()
     routine = make_item(
         owner,
         kind="routine",
         title="Make bed",
-        assignee_ids=[dad_id, kid_id],
+        assignee_ids=[kid_id, sibling_id],
         repeat={"type": "weekly", "days": [today_wd]},
     )
 
-    # The second parent checks their own occurrence.
-    assert parent.post(f"/items/{routine['id']}/complete?date={TODAY}").status_code == 200
+    # One kid does theirs and a parent makes it official; the sibling's slot
+    # is untouched.
+    assert child.post(f"/items/{routine['id']}/complete?date={TODAY}").status_code == 200
+    assert owner.post(
+        f"/items/{routine['id']}/complete?date={TODAY}&for={kid_id}"
+    ).status_code == 200
 
-    # On the owner's board the other parent is done but the owner is not.
     feed = owner.get(f"/items/feed?date={TODAY}").json()
     card = next(i for i in feed["today"] if i["id"] == routine["id"])
     states = {c["user_id"]: c["completed"] for c in card["assignee_completions"]}
     assert states[kid_id] is True
-    assert states[dad_id] is False
-    assert card["completed"] is False  # the owner's own headline state
+    assert states[sibling_id] is False
+    assert card["completed"] is False  # not everyone is done
 
 
 def test_shared_task_completion_is_single(owner, child):
@@ -1013,17 +1040,16 @@ def test_repeating_appointment_lands_on_its_days(owner):
     assert not any(i["id"] == meeting["id"] for i in feed["overdue"])
 
 
-def test_repeating_appointment_completes_per_occurrence(owner):
+def test_repeating_appointment_is_never_checked_off(owner):
     meeting = make_item(
         owner, kind="appointment", title="Daily sync",
         time_of_day="09:00", end_time="09:30", repeat=all_days(),
     )
-    assert owner.post(f"/items/{meeting['id']}/complete?date={TODAY}").json()["completed"] is True
-    # Yesterday's occurrence is untouched by today's check.
-    yesterday = (dt.date.today() - dt.timedelta(days=1)).isoformat()
-    cal = owner.get(f"/items/calendar?start={yesterday}&end={yesterday}").json()
-    row = next(i for i in cal["days"][0]["items"] if i["id"] == meeting["id"])
-    assert row["completed"] is False
+    res = owner.post(f"/items/{meeting['id']}/complete?date={TODAY}")
+    assert res.status_code == 400
+    assert res.json()["detail"] == "Appointments aren't checked off; they pass on their own"
+    # Cancelling one occurrence is still how a meeting is called off.
+    assert owner.post(f"/items/{meeting['id']}/cancel?date={TODAY}").json()["cancelled"] is True
 
 
 def test_repeating_appointment_validation(owner):
@@ -1060,27 +1086,13 @@ def test_cancel_an_appointment(owner):
     assert res.json()["cancelled"] is False
 
 
-def test_cancel_replaces_a_done_mark_and_is_parent_only(owner, child):
+def test_cancel_is_parent_only(owner, child):
     appt = make_item(owner, kind="appointment", title="Recital", date_for=TODAY,
                      time_of_day="14:00", end_time="15:00", visibility="family")
-    owner.post(f"/items/{appt['id']}/complete?date={TODAY}")
     res = owner.post(f"/items/{appt['id']}/cancel?date={TODAY}")
     assert res.json()["cancelled"] is True
     assert res.json()["completed"] is False
     assert child.post(f"/items/{appt['id']}/cancel?date={TODAY}").status_code == 403
-
-
-def test_a_cancelled_occurrence_refuses_a_done_mark(owner):
-    appt = make_item(owner, kind="appointment", title="Dentist", date_for=TODAY,
-                     time_of_day="14:00", end_time="15:00")
-    owner.post(f"/items/{appt['id']}/cancel?date={TODAY}")
-    res = owner.post(f"/items/{appt['id']}/complete?date={TODAY}")
-    assert res.status_code == 400
-    # Put it back on, and it completes like normal again.
-    owner.delete(f"/items/{appt['id']}/cancel?date={TODAY}")
-    res = owner.post(f"/items/{appt['id']}/complete?date={TODAY}")
-    assert res.status_code == 200
-    assert res.json()["completed"] is True
 
 
 def test_only_events_cancel(owner):
@@ -1096,3 +1108,145 @@ def test_cancelling_one_occurrence_leaves_the_rest(owner):
     cal = owner.get(f"/items/calendar?start={yesterday}&end={yesterday}").json()
     row = next(i for i in cal["days"][0]["items"] if i["id"] == meeting["id"])
     assert row["cancelled"] is False and row["completed"] is False
+
+
+def test_cancel_accepts_a_future_day(owner):
+    # Next week's dentist gets called off today. Completing stays refused
+    # ahead of time; cancelling is the one mark that may land in the future.
+    ahead = (dt.date.today() + dt.timedelta(days=6)).isoformat()
+    meeting = make_item(owner, kind="appointment", title="Standup",
+                        time_of_day="09:00", end_time="09:30", repeat=all_days())
+    assert owner.post(f"/items/{meeting['id']}/cancel?date={ahead}").json()["cancelled"] is True
+    # Today's occurrence is untouched; the cancelled day reads cancelled.
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    assert not next(i for i in feed["today"] if i["id"] == meeting["id"])["cancelled"]
+    assert next(i for i in feed["next7"] if i["date_for"] == ahead)["cancelled"]
+    # And it can be put back on, still ahead of time.
+    assert owner.delete(f"/items/{meeting['id']}/cancel?date={ahead}").status_code == 200
+
+
+def test_cancel_refuses_a_day_past_the_horizon(owner):
+    appt = make_item(owner, kind="appointment", title="Far off",
+                     date_for=TODAY, time_of_day="09:00", end_time="10:00")
+    way_out = (dt.date.today() + dt.timedelta(days=500)).isoformat()
+    assert owner.post(f"/items/{appt['id']}/cancel?date={way_out}").status_code == 400
+
+
+# ---- repeating appointments in the next 7 days -------------------------------------
+
+
+def test_a_weekly_appointment_shows_on_its_own_day_in_next7(owner):
+    # A repeating appointment is a calendar entry, so each occurrence inside
+    # the window lists on the day it lands and carries that day as its date.
+    landing = dt.date.today() + dt.timedelta(days=3)
+    meeting = make_item(
+        owner, kind="appointment", title="Team standup",
+        time_of_day="09:00", end_time="09:30",
+        repeat={"type": "weekly", "days": [landing.weekday()]},
+    )
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    rows = [i for i in feed["next7"] if i["id"] == meeting["id"]]
+    assert len(rows) == 1
+    assert rows[0]["date_for"] == landing.isoformat()
+    assert not any(i["id"] == meeting["id"] for i in feed["today"])
+
+
+def test_a_daily_appointment_lists_one_row_per_occurrence_day(owner):
+    meeting = make_item(
+        owner, kind="appointment", title="Daily sync",
+        time_of_day="09:00", end_time="09:30", repeat=all_days(),
+    )
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    days = [i["date_for"] for i in feed["next7"] if i["id"] == meeting["id"]]
+    assert days == [
+        (dt.date.today() + dt.timedelta(days=n)).isoformat() for n in range(1, 8)
+    ]
+    # Today's occurrence sits in today, and is not repeated in next7.
+    assert any(i["id"] == meeting["id"] for i in feed["today"])
+
+
+def test_a_repeating_appointment_stops_at_its_repeat_end(owner):
+    stop = dt.date.today() + dt.timedelta(days=2)
+    meeting = make_item(
+        owner, kind="appointment", title="Standup", time_of_day="09:00",
+        end_time="09:30", repeat={**all_days(), "until": stop.isoformat()},
+    )
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    days = [i["date_for"] for i in feed["next7"] if i["id"] == meeting["id"]]
+    assert days == [(dt.date.today() + dt.timedelta(days=n)).isoformat() for n in (1, 2)]
+
+
+def test_routines_stay_out_of_the_next_seven_days(owner, child):
+    # His call: the daily rhythm would fill the section seven times over.
+    routine = make_item(
+        owner, kind="routine", title="Brush teeth",
+        assignee_ids=[user_id(child)], repeat=all_days(),
+    )
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    assert not any(i["id"] == routine["id"] for i in feed["next7"])
+    assert any(i["id"] == routine["id"] for i in feed["today"])
+
+
+def test_a_cancelled_future_occurrence_still_shows(owner):
+    # The board shows it with a Cancelled chip rather than dropping it.
+    tomorrow = dt.date.today() + dt.timedelta(days=1)
+    meeting = make_item(
+        owner, kind="appointment", title="Standup", time_of_day="09:00",
+        end_time="09:30", repeat=all_days(),
+    )
+    assert owner.post(
+        f"/items/{meeting['id']}/cancel?date={tomorrow.isoformat()}"
+    ).status_code == 200
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    row = next(
+        i for i in feed["next7"]
+        if i["id"] == meeting["id"] and i["date_for"] == tomorrow.isoformat()
+    )
+    assert row["cancelled"] is True
+
+
+# ---- the completion model: only tasks are a to-do list -----------------------------
+
+
+def test_appointments_and_activities_are_never_checked_off(owner):
+    appt = make_item(owner, kind="appointment", title="Dentist", date_for=TODAY,
+                     time_of_day="14:00", end_time="15:00")
+    act = make_item(owner, kind="activity", title="Soccer", date_for=TODAY,
+                    time_of_day="17:00", end_time="18:00")
+    for item, kinds in ((appt, "Appointments"), (act, "Activities")):
+        res = owner.post(f"/items/{item['id']}/complete?date={TODAY}")
+        assert res.status_code == 400
+        assert res.json()["detail"] == f"{kinds} aren't checked off; they pass on their own"
+        assert owner.delete(f"/items/{item['id']}/complete?date={TODAY}").status_code == 400
+
+
+def test_an_assigned_kid_cannot_check_an_appointment_either(owner, child):
+    # Not a permission question: nobody checks a calendar entry off.
+    appt = make_item(owner, kind="appointment", title="Checkup", visibility="family",
+                     assignee_ids=[user_id(child)], date_for=TODAY,
+                     time_of_day="14:00", end_time="15:00")
+    assert child.post(f"/items/{appt['id']}/complete?date={TODAY}").status_code == 400
+
+
+def test_an_adults_own_routine_is_not_checkable(owner, parent):
+    today_wd = dt.date.today().weekday()
+    routine = make_item(
+        owner, kind="routine", title="Stretch", assignee_ids=[user_id(parent)],
+        visibility="family", repeat={"type": "weekly", "days": [today_wd]},
+    )
+    res = parent.post(f"/items/{routine['id']}/complete?date={TODAY}")
+    assert res.status_code == 400
+    assert "approve" in res.json()["detail"]
+
+
+def test_an_assigned_minor_still_checks_their_routine(owner, child):
+    today_wd = dt.date.today().weekday()
+    routine = make_item(
+        owner, kind="routine", title="Feed the dog", assignee_ids=[user_id(child)],
+        visibility="family", repeat={"type": "weekly", "days": [today_wd]},
+    )
+    res = child.post(f"/items/{routine['id']}/complete?date={TODAY}")
+    assert res.status_code == 200 and res.json()["pending"] is True
+    # And they can still withdraw their own waiting mark.
+    assert child.delete(f"/items/{routine['id']}/complete?date={TODAY}").status_code == 200
+    assert owner.get("/items/pending").json() == []

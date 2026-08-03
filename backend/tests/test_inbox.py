@@ -153,8 +153,8 @@ def test_rephasing_an_every_other_week_routine_is_a_reschedule(owner, parent):
 
 
 def test_routines_write_board_history(owner, parent):
-    # Routines are the board's daily heartbeat: they never PUSH, but they DO
-    # write Inbox history now (create, then an adult completion).
+    # A routine's board ACTIONS are news like any other kind's, in the Inbox
+    # and on the phone; only the daily rhythm itself stays quiet.
     res = owner.post(
         "/items",
         json={
@@ -165,9 +165,9 @@ def test_routines_write_board_history(owner, parent):
         },
     )
     assert res.status_code == 201, res.text
-    complete(owner, res.json()["id"])
+    owner.patch(f"/items/{res.json()['id']}", json={"time_of_day": "07:00:00"})
     rows = [r for r in entries(parent) if r["kind"] == "board"]
-    assert len(rows) == 2  # "added a routine", then "completed a routine"
+    assert len(rows) == 2  # "added a routine", then "rescheduled a routine"
     assert all("routine" in r["title"] for r in rows)
 
 
@@ -266,8 +266,8 @@ def test_approval_writes_the_kids_payoff_line(owner, child):
     assert len(entries(child)) == len(rows)
 
 
-def test_parent_completing_for_a_kid_writes_the_kids_line(owner, child):
-    # ?for= is a routine-only power; on other kinds the tap is the tapper's.
+def test_approving_a_kids_routine_writes_the_kids_line(owner, child):
+    # The payoff line lands when the parent makes the kid's tap official.
     routine = make_item(
         owner,
         kind="routine",
@@ -275,10 +275,11 @@ def test_parent_completing_for_a_kid_writes_the_kids_line(owner, child):
         repeat={"type": "weekly", "days": [0, 1, 2, 3, 4, 5, 6]},
         assignee_ids=[user_id(child)],
     )
+    complete(child, routine["id"])
     complete(owner, routine["id"], for_user=user_id(child))
     rows = [r for r in entries(child) if r["kind"] == "approved"]
     assert len(rows) == 1
-    assert "checked off: Rake the yard" in rows[0]["title"]
+    assert "approved: Rake the yard" in rows[0]["title"]
     assert rows[0]["body"] == "+1 crumb"
 
 
@@ -425,17 +426,19 @@ def test_reschedule_plus_title_in_one_patch_writes_only_one_line(owner, parent):
 
 
 def test_uncomplete_and_uncancel_record(owner, parent):
+    task = make_item(owner, date_for=TODAY.isoformat())
+    complete(owner, task["id"])
+    parent.delete("/me/inbox")
+    owner.delete(f"/items/{task['id']}/complete?date={TODAY.isoformat()}")
+    rows = [r for r in entries(parent) if r["kind"] == "board"]
+    assert len(rows) == 1
+    assert "unchecked a task: Rake the yard" in rows[0]["title"]
+
     item = make_item(
         owner, kind="activity", title="Park day", date_for=TODAY.isoformat(),
         time_of_day="10:00:00", end_time="12:00:00",
     )
-    complete(owner, item["id"])
     parent.delete("/me/inbox")
-    owner.delete(f"/items/{item['id']}/complete?date={TODAY.isoformat()}")
-    rows = [r for r in entries(parent) if r["kind"] == "board"]
-    assert len(rows) == 1
-    assert "unchecked an activity: Park day" in rows[0]["title"]
-
     owner.post(f"/items/{item['id']}/cancel?date={TODAY.isoformat()}")
     parent.delete("/me/inbox")
     owner.delete(f"/items/{item['id']}/cancel?date={TODAY.isoformat()}")

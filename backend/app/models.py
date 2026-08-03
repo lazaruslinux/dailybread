@@ -497,9 +497,9 @@ class Item(Base):
         index=True,
     )
 
-    # Routines only: a member's synced workout (any kind) checks off their own
-    # slot on this routine for that day. Explicit per-routine opt-in — the
-    # server never guesses which routines mean "exercise" from their titles.
+    # Routines only, and INERT since the completion rework: the flag is still
+    # stored and echoed back, but a synced workout no longer checks anything
+    # off. Kept as a column (with its validator) so nothing needs a migration.
     workout_auto_complete: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )

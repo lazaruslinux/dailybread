@@ -9,7 +9,7 @@ import { KIND_STYLE, SectionDivider } from '../components/ItemCard'
 import { ItemSheet } from '../components/ItemSheet'
 import { FormError } from '../components/ui'
 import { announceChange } from '../lib/changes'
-import { canCheckItem, continuesOn, dateSpanLabel, spansDays } from '../lib/items'
+import { canOfferCheck, continuesOn, dateSpanLabel, spansDays } from '../lib/items'
 import { formatTime } from '../lib/moods'
 
 const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
@@ -88,16 +88,13 @@ function dayHeading(iso: string, todayISO: string): string {
   })
 }
 
-// One scheduled card in the day's agenda. When the viewer can act on it, a
-// left circle checks it off on that day — past and present days for anything,
-// any day for a task (reminders can be finished early; the check lands on
-// today). Otherwise it's read-only, with a quiet check when already done.
+// One scheduled card in the day's agenda. The whole row is one tap target and
+// it only opens the card's detail sheet, where anything that can be marked is
+// marked. A quiet check on the right says a card is already done.
 function AgendaRow({
   item,
   family,
   day,
-  checkable,
-  onToggle,
   onOpen,
 }: {
   item: api.FeedItem
@@ -105,8 +102,6 @@ function AgendaRow({
   // The day this row sits under: a multi-day card shows its times only on the
   // day it starts, and reads as all-day on the rest of its run.
   day: string
-  checkable: boolean
-  onToggle?: () => void
   onOpen?: () => void
 }) {
   const { Icon, tint, label } = KIND_STYLE[item.kind]
@@ -117,27 +112,7 @@ function AgendaRow({
     .map((a) => family.find((m) => m.id === a.id))
     .filter((m): m is api.FamilyMember => Boolean(m))
   return (
-    <div onClick={onOpen} className="db-row cursor-pointer">
-      {checkable && onToggle ? (
-        <button
-          type="button"
-          aria-label={item.completed ? `Mark ${item.title} not done` : `Mark ${item.title} done`}
-          onClick={(e) => {
-            e.stopPropagation()
-            onToggle()
-          }}
-          className="-m-3 shrink-0 p-3"
-          data-check
-        >
-          <span
-            className={`flex h-[22px] w-[22px] items-center justify-center rounded-full border-2 transition-colors ${
-              item.completed ? 'border-emerald-300/70 bg-emerald-400/25' : 'border-fg/30 bg-fg/5'
-            }`}
-          >
-            {item.completed && <Check className="h-3.5 w-3.5 text-emerald-300" strokeWidth={3} />}
-          </span>
-        </button>
-      ) : null}
+    <button type="button" onClick={onOpen} className="db-row cursor-pointer">
       <div className="min-w-0 flex-1">
         <p className={`truncate text-[14.5px] font-semibold ${item.completed ? 'text-fg/50 line-through decoration-fg/30' : 'text-fg/90'}`}>
           {item.title}
@@ -165,8 +140,8 @@ function AgendaRow({
           ))}
         </div>
       )}
-      {!checkable && item.completed && <Check className="h-4 w-4 shrink-0 text-emerald-400" strokeWidth={3} />}
-    </div>
+      {item.completed && <Check className="h-4 w-4 shrink-0 text-emerald-400" strokeWidth={3} />}
+    </button>
   )
 }
 
@@ -357,8 +332,11 @@ export function Calendar() {
   // board already lets you finish one ahead of its due day, so the calendar
   // offers the same (the check is recorded on today, its actual day).
   const markable = (dayISO: string) => dayISO <= todayISO
+  // canOfferCheck, not canCheckItem: it carries the kid-mode lock too, so a
+  // minor opening their already-approved routine here gets no "Mark not done"
+  // that the server would refuse.
   const canMarkOn = (item: api.FeedItem, dayISO: string) =>
-    (markable(dayISO) || item.kind === 'task') && canCheckItem(item, user)
+    (markable(dayISO) || item.kind === 'task') && canOfferCheck(item, user)
   // What day a completion is recorded on: the tapped day, except that a task
   // checked ahead of time is done *today* (the server refuses future dates).
   const markDay = (dayISO: string) => (dayISO > todayISO ? todayISO : dayISO)
@@ -426,26 +404,36 @@ export function Calendar() {
     }
   }
 
+  // Calling a day off can be refused (a date past the server's cancel horizon,
+  // a session that has gone). The sheet closes either way: the page's error
+  // line sits behind the modal, so a message left under it is never read.
+  async function cancelFromDetail(item: api.FeedItem, dayISO: string) {
+    const call = item.cancelled ? api.uncancelItem : api.cancelItem
+    try {
+      await call(item.id, dayISO)
+      setDetail(null)
+      refreshAndAnnounce()
+    } catch (err) {
+      setDetail(null)
+      setError(err instanceof api.ApiError ? err.message : 'Could not update the card.')
+    }
+  }
+
   // A day's cards split into what's still to do (top) and what's done (a
   // "Completed" section at the bottom), so a checked-off card settles out of
   // the way instead of sitting up top.
   const openItems = selectedItems.filter((i) => !i.completed)
   const doneItems = selectedItems.filter((i) => i.completed)
 
-  const renderRow = (item: api.FeedItem, dayISO: string) => {
-    const canMark = canMarkOn(item, dayISO)
-    return (
-      <AgendaRow
-        key={`${item.id}-${dayISO}`}
-        item={item}
-        family={family}
-        day={dayISO}
-        checkable={canMark}
-        onToggle={canMark ? () => toggle(item, dayISO) : undefined}
-        onOpen={() => setDetail({ item, day: dayISO })}
-      />
-    )
-  }
+  const renderRow = (item: api.FeedItem, dayISO: string) => (
+    <AgendaRow
+      key={`${item.id}-${dayISO}`}
+      item={item}
+      family={family}
+      day={dayISO}
+      onOpen={() => setDetail({ item, day: dayISO })}
+    />
+  )
 
   const label =
     mode === 'fortnight'
@@ -658,15 +646,12 @@ export function Calendar() {
                 }
                 onDelete={isParent ? () => deleteFromDetail(detail.item) : undefined}
                 onCancel={
+                  // Not gated on dayMarkable: cancelling AHEAD of time is the
+                  // whole point (next week's dentist), and the server now
+                  // accepts future days for cancel alone.
                   isParent &&
-                  dayMarkable &&
                   (detail.item.kind === 'appointment' || detail.item.kind === 'activity')
-                    ? async () => {
-                        const call = detail.item.cancelled ? api.uncancelItem : api.cancelItem
-                        await call(detail.item.id, detail.day)
-                        setDetail(null)
-                        refreshAndAnnounce()
-                      }
+                    ? () => cancelFromDetail(detail.item, detail.day)
                     : undefined
                 }
                 onClose={() => setDetail(null)}

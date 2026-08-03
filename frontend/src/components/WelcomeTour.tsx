@@ -57,7 +57,7 @@ const TOUR: {
     Icon: House,
     body: "Your family's local hub. Routines, tasks, activities and appointments live on a shared family board. Filter family members, change from list to timeline or calendar view, and discover new Bible verses if you choose to enable them.",
     kidBody:
-      "Your family's board, with your own routines and tasks on it. Check a card off when it's done; a parent gives it the thumbs-up and your breadcrumb lands.",
+      "Your family's board, with your own routines and tasks on it. Open a card and tap I'm done! A parent gives it the thumbs-up and your breadcrumb lands.",
   },
   {
     title: 'Kitchen',

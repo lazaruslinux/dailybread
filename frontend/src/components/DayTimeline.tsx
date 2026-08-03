@@ -1,4 +1,3 @@
-import { Check, Hourglass, X } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import * as api from '../lib/api'
 import { formatTimeRange } from '../lib/moods'
@@ -78,21 +77,7 @@ function layout(items: api.FeedItem[]): Placed[] {
   return placed
 }
 
-function TimelineCard({
-  placed,
-  canCheck,
-  viewerId,
-  onToggle,
-  onOpen,
-}: {
-  placed: Placed
-  canCheck: boolean
-  viewerId?: number
-  onToggle?: () => void
-  onOpen: () => void
-}) {
-  // Kid mode: the viewer's own tap awaiting a parent (tap again withdraws).
-  const myPending = placed.item.pending && placed.item.pending_by === viewerId
+function TimelineCard({ placed, onOpen }: { placed: Placed; onOpen: () => void }) {
   const { item, top, height, col, cols } = placed
   const { Icon, tint } = KIND_STYLE[item.kind]
   const roomy = height >= 56
@@ -107,9 +92,12 @@ function TimelineCard({
   // there instead of squeezing the text. Shorter cards keep them inline.
   const facesBelow = faces.length > 0 && height >= 88
   return (
-    <div
+    // The whole block opens the detail sheet and does nothing else, so it is
+    // a real button rather than a clickable div.
+    <button
+      type="button"
       onClick={onOpen}
-      className={`glass absolute flex cursor-pointer touch-pan-y select-none items-start gap-2 overflow-hidden rounded-xl px-2.5 ${
+      className={`glass absolute flex cursor-pointer touch-pan-y select-none items-start gap-2 overflow-hidden rounded-xl px-2.5 text-left ${
         roomy ? 'py-2' : 'py-1'
       } ${item.completed || item.cancelled ? 'opacity-55' : ''}`}
       style={{
@@ -121,46 +109,6 @@ function TimelineCard({
         width: `calc(${width}% - ${col > 0 ? 4 : 0}px)`,
       }}
     >
-      {canCheck && onToggle && (
-        <button
-          type="button"
-          aria-label={
-            item.cancelled
-              ? `${item.title} is cancelled`
-              : myPending
-                ? `Withdraw ${item.title}`
-                : item.completed
-                  ? `Mark ${item.title} not done`
-                  : `Mark ${item.title} done`
-          }
-          onClick={(e) => {
-            // A cancelled card can't be checked; let the tap bubble to the
-            // card and open the detail, where "Put it back on" lives.
-            if (item.cancelled) return
-            e.stopPropagation()
-            onToggle()
-          }}
-          className="mt-px shrink-0"
-        >
-          <span
-            className={`flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors ${
-              item.completed
-                ? 'border-emerald-300/70 bg-emerald-400/25'
-                : myPending
-                  ? 'border-amber-300/70 bg-amber-400/25'
-                  : 'border-fg/30 bg-fg/5'
-            }`}
-          >
-            {item.completed && <Check className="h-3 w-3 text-emerald-300" strokeWidth={3} />}
-            {!item.completed && item.cancelled && (
-              <X className="h-3 w-3 text-gold" strokeWidth={3} />
-            )}
-            {!item.completed && !item.cancelled && myPending && (
-              <Hourglass className="h-2.5 w-2.5 text-amber-300" strokeWidth={2.5} />
-            )}
-          </span>
-        </button>
-      )}
       <div className="min-w-0 flex-1">
         <p
           className={`truncate text-sm font-semibold leading-5 ${
@@ -205,27 +153,21 @@ function TimelineCard({
           {formatTimeRange(item.time_of_day, item.end_time)}
         </span>
       )}
-    </div>
+    </button>
   )
 }
 
 export function DayTimeline({
   items,
   nowMinutes,
-  canCheck,
-  viewerId,
   isToday = true,
-  onToggle,
   onOpen,
 }: {
   items: api.FeedItem[] // the day's timed cards, open and done alike
   nowMinutes: number
-  canCheck: (item: api.FeedItem) => boolean
-  viewerId?: number
   // False when peeking another day: no now line (it belongs to today alone),
   // and the panel opens on the day's first card instead of the clock.
   isToday?: boolean
-  onToggle: (item: api.FeedItem) => void
   onOpen: (item: api.FeedItem) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -289,14 +231,7 @@ export function DayTimeline({
           )}
 
           {placed.map((p) => (
-            <TimelineCard
-              key={p.item.id}
-              placed={p}
-              canCheck={canCheck(p.item)}
-              viewerId={viewerId}
-              onToggle={canCheck(p.item) ? () => onToggle(p.item) : undefined}
-              onOpen={() => onOpen(p.item)}
-            />
+            <TimelineCard key={p.item.id} placed={p} onOpen={() => onOpen(p.item)} />
           ))}
         </div>
       </div>

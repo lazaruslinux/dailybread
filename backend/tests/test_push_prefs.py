@@ -162,20 +162,20 @@ def test_done_and_ancient_cards_never_alert(owner, configured, push_outbox, engi
     assert push_engine.digest_tick(at(10)) == 0
 
 
-def test_a_span_is_only_past_due_after_its_last_day(owner, configured, push_outbox, engine_db):
-    """A trip that runs into today isn't late; the nudge waits for the day
-    after the span's LAST day."""
+def test_only_tasks_go_past_due(owner, configured, push_outbox, engine_db):
+    """A task is the one kind still waiting on someone. An appointment or an
+    activity that has been and gone is simply over, and a routine comes round
+    again, so neither ever nags."""
     owner.put("/push/subscription", json=SUB)
     make(
         owner,
-        kind="activity",
-        title="Camping",
-        date_for=(TODAY - dt.timedelta(days=2)).isoformat(),
-        end_date=TODAY.isoformat(),
+        kind="appointment",
+        title="Missed dentist",
+        date_for=YESTERDAY.isoformat(),
         time_of_day="09:00:00",
-        end_time="16:00:00",
+        end_time="09:30:00",
     )
-    finished = make(
+    make(
         owner,
         kind="activity",
         title="Was camping",
@@ -184,17 +184,18 @@ def test_a_span_is_only_past_due_after_its_last_day(owner, configured, push_outb
         time_of_day="09:00:00",
         end_time="16:00:00",
     )
+    slipped = make(
+        owner, title="Call the plumber", date_for=YESTERDAY.isoformat(),
+        time_of_day="09:00:00",
+    )
     push_outbox.clear()
-    # 25 hours past both trips' 9 AM start, and neither nags: a span comes due
-    # at its LAST day's END time, so the finished one isn't late until 4 PM.
+    # 25 hours past all three, and only the task nags.
     push_engine.digest_tick(at(10))
-    assert [p for _ep, p in push_outbox if p["title"].startswith("Past due")] == []
-    # 25 hours past that 4 PM finish, exactly one card nags: the finished one.
-    push_engine.digest_tick(at(17))
     past_due = [p for _ep, p in push_outbox if p["title"].startswith("Past due")]
-    assert [p["title"] for p in past_due] == [f"Past due: {finished['title']}"]
-    # And the body names the moment it actually finished, not when it set off.
-    assert past_due[0]["body"] == "Was due yesterday at 4:00 PM and it's still open."
+    assert [p["title"] for p in past_due] == [f"Past due: {slipped['title']}"]
+    # Nor does the finished trip nag once its 4 PM last-day end has passed.
+    push_engine.digest_tick(at(17))
+    assert len([p for _ep, p in push_outbox if p["title"].startswith("Past due")]) == 1
 
 
 def test_the_digest_counts_a_trip_on_every_day_it_runs(owner, configured, push_outbox, engine_db):

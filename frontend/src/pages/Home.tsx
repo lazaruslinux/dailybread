@@ -7,7 +7,7 @@ import { avatarUrl } from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { useWideLayout } from '../hooks/useWideLayout'
 import { announceChange } from '../lib/changes'
-import { canCheckItem, continuesOn } from '../lib/items'
+import { canOfferCheck, continuesOn } from '../lib/items'
 import { Avatar } from '../components/Avatar'
 import { DayTimeline } from '../components/DayTimeline'
 import { Coin } from '../components/BreadIcon'
@@ -142,10 +142,12 @@ function WaitingOnYou({
   )
 }
 
-// Which slice of "today" a card belongs to, decided by the live clock. Past due
-// is only for one-offs (routines are habits, never overdue); a passed timed
-// routine just stays in Now until it's done.
-type Slot = 'pastdue' | 'now' | 'coming' | 'anytime'
+// Which slice of "today" a card belongs to, decided by the live clock. Only a
+// task is a to-do list, so only a task ever runs late; every other kind is a
+// calendar entry that simply goes by, and once its moment has gone it settles
+// into "Earlier today" instead of nagging. An all-day card never goes by
+// during its own day.
+type Slot = 'pastdue' | 'now' | 'coming' | 'anytime' | 'passed'
 function todaySlot(item: api.FeedItem, nowHm: string, today: string): Slot {
   // A multi-day card past its first day is under way all day: its start time
   // belonged to the day it began, so the clock has nothing to say about it.
@@ -153,7 +155,7 @@ function todaySlot(item: api.FeedItem, nowHm: string, today: string): Slot {
   if (!item.time_of_day && !item.all_day) return 'anytime'
   if (item.all_day) return 'now'
   const end = item.end_time || item.time_of_day! // has a start time here
-  if (item.kind !== 'routine' && end < nowHm) return 'pastdue'
+  if (end < nowHm) return item.kind === 'task' ? 'pastdue' : 'passed'
   if (item.time_of_day! <= nowHm) return 'now'
   return 'coming'
 }
@@ -212,8 +214,9 @@ export function Home({
   onOpenKitchen: () => void
   onOpenCalendar: () => void
   // Set when the desktop aside's Next-7-days list asked for a card: the board
-  // owns the detail sheet, so the tap arrives here as an id to open.
-  focusItem?: number | null
+  // owns the detail sheet, so the tap arrives here as the occurrence to open
+  // (the id, plus the day it was tapped on).
+  focusItem?: { id: number; date: string | null } | null
   onFocusHandled?: () => void
 }) {
   const { user } = useAuth()
@@ -235,11 +238,12 @@ export function Home({
   const [error, setError] = useState<string | null>(null)
   // When the desktop aside last handed a card over, so a feed that arrives long
   // afterwards doesn't open a sheet nobody is waiting for any more.
-  const focusStamp = useRef<{ id: number; at: number } | null>(null)
+  const focusStamp = useRef<{ id: number; date: string | null; at: number } | null>(null)
   // Read-ordering guard for refresh(); see there.
   const boardSeq = useRef(0)
   const [sheet, setSheet] = useState<{ open: boolean; item: api.FeedItem | null }>({ open: false, item: null })
-  // checkable rides along so the detail sheet knows whether to offer "Mark done".
+  // checkable rides along so the detail sheet knows whether completion is even
+  // on offer; the sheet layers the kind/role gating on top of it.
   const [detail, setDetail] = useState<{ item: api.FeedItem; checkable: boolean } | null>(null)
   const [toast, setToast] = useState<api.FeedItem | null>(null)
   const toastTimer = useRef<number | undefined>(undefined)
@@ -548,51 +552,60 @@ export function Home({
     }
   }
 
-  const canCheck = (item: api.FeedItem) => canCheckItem(item, user)
+  // Same shape as the calendar's: a refused cancel used to reject into nothing.
+  // The sheet closes either way, because the error line lives behind it. The
+  // day is the card's own: a next-7 row (or a repeating occurrence, which
+  // stamps its day) calls off THAT day, not today. Undated cards fall back.
+  async function cancelFromDetail(item: api.FeedItem) {
+    const call = item.cancelled ? api.uncancelItem : api.cancelItem
+    try {
+      await call(item.id, item.date_for ?? api.localDate())
+      setDetail(null)
+      refreshAndAnnounce()
+    } catch (err) {
+      setDetail(null)
+      setError(err instanceof api.ApiError ? err.message : 'Could not update the card.')
+    }
+  }
 
   const openEditor = (item: api.FeedItem | null) => {
     setDetail(null)
     setSheet({ open: true, item })
   }
 
-  const cardProps = (item: api.FeedItem) => {
-    // Kid mode: once a parent has approved (completed, no waiting mark of
-    // their own), the card is settled — a minor gets no checkbox to undo it.
-    const lockedForMinor =
-      isMinor && item.completed && !(item.pending && item.pending_by === user?.id)
-    const checkable = canCheck(item) && !lockedForMinor
-    return {
-      item,
-      canCheck: checkable,
-      family,
-      viewerId: user?.id,
-      viewerIsParent: isParent,
-      // The date lives inside the card for anything not dated today, so the
-      // past-due and next-7-days lists read without repeated date separators.
-      showDate: item.date_for != null && item.date_for !== feed?.date,
-      day: feed?.date,
-      onToggle: checkable ? () => toggle(item) : undefined,
-      onOpen: () => setDetail({ item, checkable }),
-      onEdit: isParent ? () => openEditor(item) : undefined,
-    }
-  }
+  // Whether the detail sheet may offer this card's completion at all; the
+  // sheet applies the kind/role gating on top of it.
+  const checkableOf = (item: api.FeedItem) => canOfferCheck(item, user ?? null)
+
+  const cardProps = (item: api.FeedItem) => ({
+    item,
+    family,
+    viewerId: user?.id,
+    viewerIsParent: isParent,
+    // The date lives inside the card for anything not dated today, so the
+    // past-due and next-7-days lists read without repeated date separators.
+    showDate: item.date_for != null && item.date_for !== feed?.date,
+    day: feed?.date,
+    onOpen: () => setDetail({ item, checkable: checkableOf(item) }),
+    onEdit: isParent ? () => openEditor(item) : undefined,
+  })
 
   // A tap on the desktop aside's Next-7-days list. The board is the only place
   // that card can be checked, edited or deleted, so the tap lands here and
-  // opens the same sheet a row on the board would. cardProps decides checkable
-  // so the two routes can't drift apart. Waits for the feed: the aside can hand
-  // the id over before this page's own fetch has landed.
+  // opens the same sheet a row on the board would. checkableOf decides it, so
+  // the two routes can't drift apart. Waits for the feed: the aside can hand
+  // the card over before this page's own fetch has landed.
   useEffect(() => {
     if (focusItem == null) {
       focusStamp.current = null
       return
     }
-    if (focusStamp.current?.id !== focusItem) {
-      focusStamp.current = { id: focusItem, at: Date.now() }
+    if (focusStamp.current?.id !== focusItem.id || focusStamp.current?.date !== focusItem.date) {
+      focusStamp.current = { id: focusItem.id, date: focusItem.date, at: Date.now() }
     }
     if (!feed) {
-      // The load failed, so there is nothing to open. Let the id go: holding it
-      // would pop a sheet unprompted whenever a much later refresh succeeds.
+      // The load failed, so there is nothing to open. Let the card go: holding
+      // it would pop a sheet unprompted whenever a much later refresh succeeds.
       if (error) onFocusHandled?.()
       return
     }
@@ -603,8 +616,16 @@ export function Home({
       onFocusHandled?.()
       return
     }
-    const item = feed.next7.find((i) => i.id === focusItem)
-    if (item) setDetail({ item, checkable: cardProps(item).canCheck })
+    // Match the OCCURRENCE, not just the card: a repeating appointment is
+    // several rows sharing one id, and the sheet's Cancel calls off the day it
+    // was opened on. An undated card (or an aside that sent no day) falls back
+    // to the id, which is unambiguous for those.
+    const occurrence =
+      focusItem.date == null
+        ? undefined
+        : feed.next7.find((i) => i.id === focusItem.id && i.date_for === focusItem.date)
+    const item = occurrence ?? feed.next7.find((i) => i.id === focusItem.id)
+    if (item) setDetail({ item, checkable: checkableOf(item) })
     onFocusHandled?.()
   }, [focusItem, feed, error])
 
@@ -676,6 +697,10 @@ export function Home({
   const nowCards = openToday.filter((i) => todaySlot(i, nowHm, boardDay) === 'now')
   const comingCards = openToday.filter((i) => todaySlot(i, nowHm, boardDay) === 'coming')
   const anytimeCards = openToday.filter((i) => todaySlot(i, nowHm, boardDay) === 'anytime')
+  // Calendar entries the clock has gone past. They sink below everything still
+  // ahead and sit alongside Done, faded like it, but they are not done and the
+  // row never strikes them out to say otherwise.
+  const passedCards = openToday.filter((i) => todaySlot(i, nowHm, boardDay) === 'passed')
   const next7Open = next7.filter((i) => !i.completed)
 
   const todayEmpty =
@@ -683,6 +708,7 @@ export function Home({
     nowCards.length === 0 &&
     comingCards.length === 0 &&
     anytimeCards.length === 0 &&
+    passedCards.length === 0 &&
     done.length === 0
   // "Nothing on this board", which is not the same as "nothing this week": at
   // >=1200px the next-7 list is rendered by the aside, not here, so counting it
@@ -693,10 +719,19 @@ export function Home({
   const allEmpty = todayEmpty && (wide || next7Open.length === 0)
 
   // Rows, not cards: the board is one card and these are lines inside it.
-  const renderCards = (items: api.FeedItem[]) => (
+  // passed is per LIST, not per item: the same card sits in next-7-days on a
+  // later day, where today's clock has nothing to say about it. The key is per
+  // OCCURRENCE for the same reason — a repeating appointment reaches that list
+  // once per day it falls on, all of them sharing one item id.
+  const renderCards = (items: api.FeedItem[], passed = false) => (
     <AnimatePresence>
       {items.map((item, i) => (
-        <ItemCard key={item.id} index={i} {...cardProps(item)} />
+        <ItemCard
+          key={`${item.id}-${item.date_for ?? ''}`}
+          index={i}
+          passed={passed}
+          {...cardProps(item)}
+        />
       ))}
     </AnimatePresence>
   )
@@ -848,6 +883,13 @@ export function Home({
             </>
           )}
 
+          {passedCards.length > 0 && (
+            <>
+              <SectionDivider label="Earlier today" />
+              {renderCards(passedCards, true)}
+            </>
+          )}
+
           {done.length > 0 && (
             <>
               <SectionDivider label="Done" />
@@ -919,8 +961,8 @@ export function Home({
               <p className="db-emptyline">Loading…</p>
             ) : (
               <>
-                {/* Peeked days are for looking: no checkboxes (a toggle would
-                    record the wrong date), cards still open their detail. */}
+                {/* Peeked days are for looking: the sheet a row opens carries
+                    no completion (a mark would record the wrong date). */}
                 {(() => {
                   const peekAllDay = peekItems.filter(
                     (i) => i.all_day || continuesOn(i, timelineDate),
@@ -937,7 +979,6 @@ export function Home({
                               key={item.id}
                               index={i}
                               item={item}
-                              canCheck={false}
                               family={family}
                               day={timelineDate}
                               viewerId={user?.id}
@@ -954,9 +995,6 @@ export function Home({
                             items={peekTimed}
                             nowMinutes={clock.getHours() * 60 + clock.getMinutes()}
                             isToday={false}
-                            canCheck={() => false}
-                            viewerId={user?.id}
-                            onToggle={() => {}}
                             onOpen={(item) => setDetail({ item, checkable: false })}
                           />
                         </div>
@@ -975,10 +1013,7 @@ export function Home({
               <DayTimeline
                 items={timed}
                 nowMinutes={clock.getHours() * 60 + clock.getMinutes()}
-                canCheck={canCheck}
-                viewerId={user?.id}
-                onToggle={toggle}
-                onOpen={(item) => setDetail({ item, checkable: canCheck(item) })}
+                onOpen={(item) => setDetail({ item, checkable: checkableOf(item) })}
               />
             </div>
           ) : (
@@ -1100,12 +1135,7 @@ export function Home({
                 isParent &&
                 !managed &&
                 (detail.item.kind === 'appointment' || detail.item.kind === 'activity')
-                  ? async () => {
-                      const call = detail.item.cancelled ? api.uncancelItem : api.cancelItem
-                      await call(detail.item.id, api.localDate())
-                      setDetail(null)
-                      refreshAndAnnounce()
-                    }
+                  ? () => cancelFromDetail(detail.item)
                   : undefined
               }
               villageEvent={matchedEvent}

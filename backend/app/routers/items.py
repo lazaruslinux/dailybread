@@ -103,6 +103,19 @@ def _routine_participants(db: Session, item: Item) -> list[User]:
     return [owner] if owner is not None else []
 
 
+# Only a to-do gets checked off. Appointments and activities are calendar
+# entries: they happen (or don't) and pass, and the calendar keeps the record.
+_PASSES_ON_ITS_OWN = {
+    ItemKind.appointment: "Appointments aren't checked off; they pass on their own",
+    ItemKind.activity: "Activities aren't checked off; they pass on their own",
+}
+
+
+def _require_checkable(item: Item) -> None:
+    if item.kind in _PASSES_ON_ITS_OWN:
+        _bad(_PASSES_ON_ITS_OWN[item.kind])
+
+
 def _resolve_completion_target(
     db: Session, item: Item, user: User, for_user: int | None
 ) -> User:
@@ -606,6 +619,22 @@ def _check_complete_date(date_for: dt.date) -> None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "That day is too far back to mark")
 
 
+# How far ahead a cancellation may land: a year-plus, the calendar's own
+# planning horizon, not the board's one-day drift.
+_MAX_CANCEL_AHEAD = dt.timedelta(days=400)
+
+
+def _check_cancel_date(date_for: dt.date) -> None:
+    """Calling a card off AHEAD of time is normal — next week's dentist gets
+    cancelled today — so unlike completing, cancelling accepts future days.
+    The back bound is completion's own 90-day window."""
+    today = dt.date.today()
+    if date_for - today > _MAX_CANCEL_AHEAD:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "That day is too far ahead")
+    if today - date_for > _MAX_OVERDUE_LOOKBACK:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "That day is too far back to mark")
+
+
 @router.get("/feed", response_model=FeedOut)
 def feed(
     date_for: dt.date = Query(alias="date"),
@@ -667,6 +696,21 @@ def feed(
             # carried forward, the next occurrence simply comes around.
             if _occurs(item, date_for):
                 today.append(_build_feed_item(db, item, user, date_for, comps[item.id], item.id in shared))
+            # A repeating APPOINTMENT is a calendar entry, so the next 7 days
+            # list every occurrence in the window. Routines stay out on purpose
+            # (his call): the daily rhythm would fill the section seven times
+            # over. Each occurrence carries its own day — next7 sorts by it.
+            # Nothing is filtered out: an occurrence's state is scoped to its
+            # own day, so a done or called-off one belongs on the board marked
+            # as it is, not dropped.
+            if item.kind == ItemKind.appointment:
+                for offset in range(1, _NEXT_DAYS.days + 1):
+                    day = date_for + dt.timedelta(days=offset)
+                    if not _occurs(item, day):
+                        continue
+                    fi = _build_feed_item(db, item, user, day, comps[item.id], item.id in shared)
+                    fi.date_for = day
+                    next7.append(fi)
             continue
 
         if _covers_day(item, date_for):
@@ -692,10 +736,14 @@ def feed(
                 continue
             today.append(fi)
         elif _span_end(item) < date_for:
-            # A one-off whose day has passed carries forward until checked off.
+            # A TASK whose day has passed carries forward until checked off.
             # Once completed it leaves the board immediately: it wasn't done
             # today, so it doesn't belong in today's Done list — its record
-            # lives on its own day in the calendar.
+            # lives on its own day in the calendar. An appointment or activity
+            # that has been and gone is simply over: nothing to carry, the
+            # calendar keeps the record.
+            if item.kind != ItemKind.task:
+                continue
             fi = _build_feed_item(db, item, user, date_for, comps[item.id], item.id in shared)
             if fi.completed:
                 continue
@@ -1080,7 +1128,7 @@ def cancel_item(
     """Call an appointment or activity off: resolved (no reminders, no
     digest), but shown as cancelled rather than done. Parents only — calling
     off the dentist is a parent's move. Repeating cards cancel one occurrence."""
-    _check_complete_date(date_for)
+    _check_cancel_date(date_for)
     item = _get_item(db, item_id, parent.family_id)
     _require_visible(item, parent)
     _require_unmanaged(item)
@@ -1119,7 +1167,7 @@ def uncancel_item(
     parent: User = Depends(require_parent),
 ):
     """It's back on: remove the cancellation mark."""
-    _check_complete_date(date_for)
+    _check_cancel_date(date_for)
     item = _get_item(db, item_id, parent.family_id)
     _require_visible(item, parent)
     _require_unmanaged(item)
@@ -1243,12 +1291,24 @@ def _event_notify_bodies(
 
 
 def _board_change_recipients(db: Session, item: Item, actor: User) -> list[User]:
-    """Adults who can see the card, minus whoever made the change. Push
-    config and prefs deliberately don't filter here — the same audience gets
-    the Inbox line whether or not anything rings their phone."""
+    """Adults who hear about a change to this card, minus whoever made it.
+
+    A card on the FAMILY board reaches every parent in the household, whether
+    or not they are named on it: naming one person used to mean the other
+    parent heard nothing about their own family's board. A PRIVATE card keeps
+    its narrow audience — the owner and assignees — so nothing leaks through a
+    notification. Push config and prefs deliberately don't filter here: the
+    same audience gets the Inbox line whether or not anything rings a phone.
+    """
     from app.push import _recipients
 
-    return [p for p in _recipients(db, item) if not p.is_minor and p.id != actor.id]
+    people = {p.id: p for p in _recipients(db, item)}
+    if item.visibility == Visibility.family:
+        for p in db.scalars(
+            select(User).where(User.family_id == item.family_id, User.role == Role.parent)
+        ):
+            people.setdefault(p.id, p)
+    return [p for p in people.values() if not p.is_minor and p.id != actor.id]
 
 
 # How each kind reads in a sentence: "Alex added a task: Take out the trash".
@@ -1272,9 +1332,9 @@ def _push_board_change(
     """One family push per board action, phrased like a person: the verb, the
     kind, and the card's name right in the title. Each recipient gets an Inbox
     line first, recorded and committed before the push leg so a push failure
-    never loses the history — routines included. Routines never PUSH here,
-    though: they're the board's daily heartbeat, not news (kid routines still
-    reach parents through Kid Tasks)."""
+    never loses the history. Every kind rings, routines included: an ACTION on
+    a routine is rare news (nothing here fires on the daily rhythm itself), and
+    the per-member "family" pref is the way out."""
     if not recipients:
         return
     payload = {
@@ -1290,7 +1350,7 @@ def _push_board_change(
     except Exception:
         db.rollback()
         log.exception("board-change inbox write failed (the change itself is saved)")
-    if kind == ItemKind.routine or not push.enabled():
+    if not push.enabled():
         return
     try:
         for r in recipients:
@@ -1416,7 +1476,11 @@ def _mirror_done_to_copies(db: Session, src: Item, done: bool) -> None:
     """After the organizer marks a shared source done (or undoes it), echo the
     mark onto every going family's copy. Runs after the completion's own commit;
     a failure here never fails the member's own action. A no-op for unshared
-    cards and for copies (which 403 before they get here)."""
+    cards and for copies (which 403 before they get here).
+
+    DORMANT: only activities are shareable and activities are no longer checked
+    off, so nothing live reaches the mirror. Call-off mirroring is the path that
+    still runs (_mirror_called_off)."""
     try:
         village_events.mirror_done(db, src, done)
         db.commit()
@@ -1488,6 +1552,23 @@ def complete_item(
                 Completion.item_id == item.id, Completion.date_for == date_for
             )
         )
+
+    # A mark that already exists and is waiting is being ANSWERED, not made:
+    # a kid could tap an appointment before the completion rework, and those
+    # rows still sit in the approval queue. Both answers have to keep working
+    # or they jam it forever. Only a NEW mark meets the kind gate.
+    answering_pending = exists is not None and exists.pending
+    if not answering_pending:
+        _require_checkable(item)
+
+    if item.kind == ItemKind.routine and not user.is_minor and not answering_pending:
+        # Routines are the kids' chores: a kid taps, a parent approves. An
+        # approval is this same call landing on their pending row, which is
+        # the one way an adult reaches here — except when the other parent
+        # answered the same row a moment earlier, a benign race that falls
+        # through to hand back the state they both wanted.
+        if exists is None or exists.cancelled:
+            _bad("Routines are the kids' to check off; you approve theirs")
 
     if exists is not None and exists.cancelled:
         # A called-off occurrence can't be done. Putting it back on
@@ -1610,6 +1691,12 @@ def uncomplete_item(
         # A minor may only withdraw their own still-pending mark. Approved
         # rows are a parent's word now — un-ticking them is not theirs to do.
         completions = [c for c in completions if c.pending and c.user_id == user.id]
+    if not any(c.pending for c in completions):
+        # Putting back a waiting mark is the rejection half of the approval
+        # queue and works on any kind, so a pre-rework tap on an appointment
+        # can still be answered. Undoing a settled one is a check-off, and
+        # only the checkable kinds have those.
+        _require_checkable(item)
     for completion in completions:
         db.delete(completion)
     if completions:

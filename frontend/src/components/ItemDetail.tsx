@@ -105,6 +105,14 @@ export function ItemDetail({
         : formatTime(item.time_of_day)
       : null
   const locationHref = item.location ? mapsUrl(item.location) : null
+  // Only a task is a to-do list. Appointments, activities and an adult's
+  // routines are calendar entries: they pass on their own and nothing here
+  // offers to tick them. A routine stays completable, but only by the kid it
+  // was set for, and their word is "I'm done!" rather than an adult's
+  // bookkeeping.
+  const isKid = me?.is_minor ?? false
+  const completable = canCheck && !item.cancelled && (item.kind === 'task' || (isRoutine && isKid))
+  const doneLabel = isKid ? "I'm done!" : 'Mark done'
   const [armed, setArmed] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -268,26 +276,14 @@ export function ItemDetail({
             <div className="flex flex-col gap-2">
               {item.assignee_completions.map((ac) => {
                 const member = family?.find((m) => m.id === ac.user_id)
-                const isMe = me?.id === ac.user_id
                 const parentOnPending = ac.pending && me?.role === 'parent'
-                // You can toggle your own; a parent can toggle anyone's. When no
-                // handler is wired (a future day on the calendar), it's read-only.
-                // Kid mode: a minor can't un-tick their own approved row, and a
-                // parent answers a waiting mark with the explicit buttons below.
-                const canToggle =
-                  Boolean(onToggleFor) &&
-                  Boolean(me) &&
-                  (isMe || me!.role === 'parent') &&
-                  !parentOnPending &&
-                  !(isMe && me!.is_minor && ac.completed)
+                // Read-only. Marking a routine is the assigned kid's own act
+                // and it happens on the button below; a parent answers a
+                // waiting mark with Approve / Put back on the right.
                 return (
-                  <button
+                  <div
                     key={ac.user_id}
-                    type="button"
-                    disabled={!canToggle}
-                    // A tap on your own waiting mark withdraws it.
-                    onClick={() => onToggleFor?.(ac.user_id, ac.pending ? false : !ac.completed)}
-                    className="flex items-center gap-3 rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left transition-colors enabled:hover:bg-fg/10 disabled:opacity-70"
+                    className="flex items-center gap-3 rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5 text-left"
                   >
                     <span
                       className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${
@@ -315,27 +311,23 @@ export function ItemDetail({
                       )}
                     </span>
                     {parentOnPending && onToggleFor ? (
+                      // Real buttons now that the row around them is a plain
+                      // div: they used to sit inside a disabled button.
                       <span className="flex shrink-0 items-center gap-1.5">
-                        <span
-                          role="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            onToggleFor(ac.user_id, false)
-                          }}
-                          className="rounded-full border border-fg/10 bg-fg/5 px-2 py-1 text-xs font-semibold text-fg/60 hover:bg-fg/10"
+                        <button
+                          type="button"
+                          onClick={() => onToggleFor(ac.user_id, false)}
+                          className="db-tap44 rounded-full border border-fg/10 bg-fg/5 px-2 py-1 text-xs font-semibold text-fg/60 hover:bg-fg/10"
                         >
                           Put back
-                        </span>
-                        <span
-                          role="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            onToggleFor(ac.user_id, true)
-                          }}
-                          className="rounded-full border border-emerald-300/40 bg-emerald-400/15 px-2 py-1 text-xs font-bold text-emerald-300 hover:bg-emerald-400/25"
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onToggleFor(ac.user_id, true)}
+                          className="db-tap44 rounded-full border border-emerald-300/40 bg-emerald-400/15 px-2 py-1 text-xs font-bold text-emerald-300 hover:bg-emerald-400/25"
                         >
                           Approve
-                        </span>
+                        </button>
                       </span>
                     ) : (
                       ac.streak >= 3 && (
@@ -344,7 +336,7 @@ export function ItemDetail({
                         </span>
                       )
                     )}
-                  </button>
+                  </div>
                 )
               })}
             </div>
@@ -352,10 +344,10 @@ export function ItemDetail({
         )}
 
         <div className="mt-6 flex flex-col gap-2.5">
-          {/* Kid mode, one-shots: the kid's waiting mark gets a withdraw
-              button; a parent gets the same Approve / Put back pair as the
-              "Waiting on you" list. Routines handle this per person above. */}
-          {!isRoutine && item.pending && item.pending_by === me?.id && onToggle && (
+          {/* Kid mode: the kid's own waiting mark gets a withdraw button; a
+              parent gets the same Approve / Put back pair as the "Waiting on
+              you" list (for a routine that pair sits per person above). */}
+          {completable && item.pending && item.pending_by === me?.id && onToggle && (
             <Button
               type="button"
               variant="ghost"
@@ -384,7 +376,7 @@ export function ItemDetail({
               </Button>
             </div>
           )}
-          {!isRoutine && !item.pending && !item.cancelled && canCheck && onToggle && (
+          {completable && !item.pending && onToggle && (
             <Button
               type="button"
               variant={item.completed ? 'ghost' : 'primary'}
@@ -397,7 +389,7 @@ export function ItemDetail({
                 </>
               ) : (
                 <>
-                  <Check className="h-4 w-4" /> Mark done
+                  <Check className="h-4 w-4" /> {doneLabel}
                 </>
               )}
             </Button>
@@ -428,7 +420,7 @@ export function ItemDetail({
               {cancelBusy
                 ? 'Working'
                 : item.cancelled
-                  ? 'Put it back on'
+                  ? 'Un-Cancel'
                   : item.kind === 'appointment'
                     ? 'Cancel this appointment'
                     : 'Cancel this activity'}

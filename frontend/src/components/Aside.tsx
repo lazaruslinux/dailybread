@@ -29,7 +29,13 @@ const GROCERY_ROWS = 6
 // faces — or a shared event and a card assigned to someone else would be
 // indistinguishable from your own private one, with no second surface to
 // correct the impression.
-export function Aside({ onOpenItem }: { onOpenItem: (id: number) => void }) {
+export function Aside({
+  // The day comes along because one repeating card lands here once per
+  // occurrence: the board has to open the row that was actually tapped.
+  onOpenItem,
+}: {
+  onOpenItem: (id: number, date: string | null) => void
+}) {
   const { user } = useAuth()
   const canEditGrocery = user?.role === 'parent'
 
@@ -170,7 +176,9 @@ export function Aside({ onOpenItem }: { onOpenItem: (id: number) => void }) {
                   false))
             return (
               <div
-                key={item.id}
+                // One repeating card lands here once per occurrence day, so
+                // the day is part of the key.
+                key={`${item.id}-${item.date_for ?? ''}`}
                 className={`db-row ${shared ? 'db-row-shared' : ''}`}
                 // Cancelled cards reach this list (only completed ones are
                 // filtered out) and the board dims them to 0.55. Without this
@@ -180,7 +188,7 @@ export function Aside({ onOpenItem }: { onOpenItem: (id: number) => void }) {
               >
                 <button
                   type="button"
-                  onClick={() => onOpenItem(item.id)}
+                  onClick={() => onOpenItem(item.id, item.date_for ?? null)}
                   className="-my-2 flex min-h-11 min-w-0 flex-1 items-start gap-2 py-2 text-left"
                 >
                   <span className="min-w-0 flex-1">

@@ -307,13 +307,14 @@ function RecurrenceSheet({
             <span className="db-micro mb-1.5 block">
               How long it runs
             </span>
+            {/* No onClear on a date field: the X lands on the browser's own
+                calendar-picker icon and eats its clicks. */}
             <Field
               id="repeat-anchor"
               label="Starts"
               type="date"
               value={d.anchor}
               onChange={(e) => set('anchor', e.target.value)}
-              onClear={() => set('anchor', '')}
             />
             <p className="mt-1.5 mb-3 text-xs text-fg/45">
               The day the pattern counts from, so an every-2-weeks card lands on the right weeks.
@@ -342,13 +343,14 @@ function RecurrenceSheet({
                 </label>
                 {d.endMode === 'until' && (
                   <div className="pb-1">
+                    {/* No onClear: the X sits on the native picker icon. The
+                        "No end date" radio above is how you clear this. */}
                     <Field
                       id="repeat-until"
                       label="Last day"
                       type="date"
                       value={d.until}
                       onChange={(e) => set('until', e.target.value)}
-                      onClear={() => set('until', '')}
                     />
                     {d.until && d.anchor && d.until < d.anchor && (
                       <p className="text-danger mt-1 text-xs">
@@ -462,7 +464,6 @@ export function ItemSheet({
     count: 10,
   }))
   const [patternOpen, setPatternOpen] = useState(false)
-  const [workoutAuto, setWorkoutAuto] = useState(item?.workout_auto_complete ?? false)
 
   const [time, setTime] = useState(item?.time_of_day?.slice(0, 5) ?? '')
   const [endTime, setEndTime] = useState(item?.end_time?.slice(0, 5) ?? '')
@@ -559,7 +560,6 @@ export function ItemSheet({
       date_for: recurs ? null : date || null,
       end_date: spanEnd || null,
       repeat: recurs ? repeatPayload(repeat) : null,
-      workout_auto_complete: isRoutine ? workoutAuto : false,
       location: isEvent ? location.trim() || null : null,
     }
     try {
@@ -603,13 +603,21 @@ export function ItemSheet({
   // wouldn't show until the next poll.
   const dismiss = () => (savedWithoutShare ? onSaved() : onClose())
 
-  const assignHint = allAssigned
-    ? 'Everyone checks off their own'
-    : assignees.length === 0
-      ? 'Just you'
-      : assignees.length === 1
-        ? 'The person you picked checks it off'
-        : 'Each person checks off their own'
+  // Nobody checks an appointment or an activity off any more, so their hint
+  // says whose board it lands on instead.
+  const assignHint = isEvent
+    ? allAssigned
+      ? "It's on everyone's board"
+      : assignees.length === 0
+        ? 'Just you'
+        : "It's on their board"
+    : allAssigned
+      ? 'Everyone checks off their own'
+      : assignees.length === 0
+        ? 'Just you'
+        : assignees.length === 1
+          ? 'The person you picked checks it off'
+          : 'Each person checks off their own'
 
   return (
     <motion.div
@@ -682,15 +690,27 @@ export function ItemSheet({
           )}
 
           {kind === 'task' && (
-            <div className="grid grid-cols-2 gap-3">
-              <Field
-                label="Due date (optional)"
-                type="date"
-                value={date}
-                onChange={(e) => changeDate(e.target.value)}
-                onClear={() => changeDate('')}
-              />
-              <TimeCombo label="Due time (optional)" value={time} onChange={setTime} />
+            <div className="flex flex-col gap-1">
+              <div className="grid grid-cols-2 gap-3">
+                {/* No onClear: the X lands on the native calendar-picker icon.
+                    The text button below clears it instead. */}
+                <Field
+                  label="Due date (optional)"
+                  type="date"
+                  value={date}
+                  onChange={(e) => changeDate(e.target.value)}
+                />
+                <TimeCombo label="Due time (optional)" value={time} onChange={setTime} />
+              </div>
+              {date && (
+                <button
+                  type="button"
+                  onClick={() => changeDate('')}
+                  className="min-h-11 self-start px-1 text-left text-xs font-semibold text-fg/55 underline underline-offset-2"
+                >
+                  No due date
+                </button>
+              )}
             </div>
           )}
 
@@ -855,17 +875,6 @@ export function ItemSheet({
             </div>
             <p className="mt-1.5 text-xs text-fg/40">{assignHint}</p>
           </div>
-
-          {isRoutine && (
-            <div>
-              <CheckRow
-                checked={workoutAuto}
-                onChange={setWorkoutAuto}
-                label="A workout checks it off"
-                hint="A synced workout marks that member done for the day"
-              />
-            </div>
-          )}
 
           <CheckRow
             checked={isPrivate}

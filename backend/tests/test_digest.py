@@ -72,14 +72,31 @@ def test_digest_summarizes_the_morning(owner, configured, push_outbox, engine_db
 def test_completed_items_do_not_count(owner, configured, push_outbox, engine_db):
     owner.put("/push/subscription", json=SUB)
     seed_day(owner)
-    # The run got done at 5:30, before the digest.
+    # The plumber got called before the digest.
     feed = owner.get(f"/items/feed?date={TODAY.isoformat()}").json()
-    run = next(i for i in feed["today"] if i["title"] == "Morning run")
-    owner.post(f"/items/{run['id']}/complete?date={TODAY.isoformat()}")
+    task = next(i for i in feed["today"] if i["title"] == "Call the plumber")
+    owner.post(f"/items/{task['id']}/complete?date={TODAY.isoformat()}")
 
     push_engine.digest_tick(at(7))
     assert "2 items on today's board" in push_outbox[0][1]["body"]
-    assert "Morning run" not in push_outbox[0][1]["body"]
+
+
+def test_a_finished_appointment_stops_counting(owner, configured, push_outbox, engine_db):
+    # Nothing can be done about an appointment that has already ended, so it
+    # leaves the count; a task waits for someone and stays.
+    owner.put("/push/subscription", json=SUB)
+    make(
+        owner,
+        kind="appointment",
+        title="Early call",
+        date_for=TODAY.isoformat(),
+        time_of_day="07:30:00",
+        end_time="08:00:00",
+    )
+    make(owner, title="Call the plumber")
+
+    assert push_engine.digest_tick(at(9)) == 1
+    assert push_outbox[0][1]["body"].startswith("1 item on today's board")
 
 
 def test_one_digest_per_day(owner, configured, push_outbox, engine_db):

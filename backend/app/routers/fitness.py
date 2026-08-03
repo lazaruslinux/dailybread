@@ -21,7 +21,7 @@ from collections import defaultdict
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
 from app import crumbs, hc_webhook, throttle
 from app.clock import family_now
@@ -29,18 +29,14 @@ from app.db import get_db
 from app.deps import require_adult
 from app.invitecodes import hash_code
 from app.models import (
-    Completion,
     Family,
     FitnessDaily,
     FitnessIntraday,
     IngestToken,
-    Item,
-    ItemKind,
     User,
     WeightEntry,
     Workout,
 )
-from app.recurrence import occurs_on
 from app.schemas import (
     FitnessDayOut,
     FitnessGoalsIn,
@@ -506,7 +502,7 @@ def _upsert_workout(
 
 def _import_workouts(db: Session, user: User, workouts) -> tuple[int, set[dt.date]]:
     """Returns (workouts touched, the days they started on) — the days feed
-    the routine auto-complete pass."""
+    the +3 workout crumb."""
     touched = 0
     days: set[dt.date] = set()
     for entry in (workouts if isinstance(workouts, list) else [])[:MAX_WORKOUTS]:
@@ -535,62 +531,6 @@ def _import_workouts(db: Session, user: User, workouts) -> tuple[int, set[dt.dat
         touched += 1
         days.add(started.date())
     return touched, days
-
-
-def _auto_complete_routines(db: Session, user: User, days: set[dt.date]) -> int:
-    """Check off this member's opted-in routines on days a workout landed.
-
-    Any workout counts — the opt-in on the routine is the whole contract, the
-    server never matches workout names to titles. Only the syncing member's
-    own slot is filled, only on days the routine actually occurs, and an
-    existing row (done, pending, or cancelled) is never touched, so re-sent
-    windows and deliberate taps both stay authoritative."""
-    if not days:
-        return 0
-    routines = db.scalars(
-        select(Item)
-        .where(
-            Item.family_id == user.family_id,
-            Item.kind == ItemKind.routine,
-            Item.workout_auto_complete.is_(True),
-        )
-        .options(selectinload(Item.assignees))
-    ).all()
-    mine = [
-        r
-        for r in routines
-        if (user.id in {a.id for a in r.assignees}) or (not r.assignees and r.owner_id == user.id)
-    ]
-    if not mine:
-        return 0
-    existing = {
-        (item_id, day)
-        for item_id, day in db.execute(
-            select(Completion.item_id, Completion.date_for).where(
-                Completion.item_id.in_([r.id for r in mine]),
-                Completion.user_id == user.id,
-                Completion.date_for.in_(days),
-            )
-        )
-    }
-    done = 0
-    for routine in mine:
-        for day in days:
-            if (routine.id, day) in existing:
-                continue
-            if not occurs_on(
-                routine.repeat_type,
-                routine.repeat_days,
-                routine.repeat_interval,
-                routine.repeat_anchor,
-                routine.repeat_month_day,
-                routine.repeat_until,
-                day,
-            ):
-                continue
-            db.add(Completion(item_id=routine.id, user_id=user.id, date_for=day))
-            done += 1
-    return done
 
 
 @router.post("/ingest/health", response_model=IngestResultOut)
@@ -628,11 +568,10 @@ def _ingest_import(db: Session, user: User, payload: dict) -> IngestResultOut:
         data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
         days = _import_metrics(db, user, data.get("metrics"))
         workouts, workout_days = _import_workouts(db, user, data.get("workouts"))
-    routines = _auto_complete_routines(db, user, workout_days)
     db.commit()
     _award_workout_crumbs(db, user, workout_days)
     _push_new_workouts(db, user, local_today, seen_before)
-    return IngestResultOut(days=days, workouts=workouts, routines_completed=routines)
+    return IngestResultOut(days=days, workouts=workouts)
 
 
 def _todays_workout_ids(db: Session, user: User, day: dt.date) -> set[int]:

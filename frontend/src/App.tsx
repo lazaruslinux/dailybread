@@ -102,9 +102,11 @@ function AppShell() {
   // two cards that move into it.
   const wide = useWideLayout()
   // At that width the aside owns the only Next-7-days list, so tapping one of
-  // its rows has to land on the board with that card's sheet open. Home clears
-  // the id once it has acted on it.
-  const [focusItem, setFocusItem] = useState<number | null>(null)
+  // its rows has to land on the board with that card's sheet open. The DAY
+  // travels with the id: a repeating appointment is several rows sharing one
+  // id, and the sheet's Cancel calls off the day it was opened on. Home clears
+  // this once it has acted on it.
+  const [focusItem, setFocusItem] = useState<{ id: number; date: string | null } | null>(null)
   // Kid mode: minors get Home / Kitchen / You — no nutrition or fitness area.
   // The server 403s those APIs regardless; this keeps the door out of sight too.
   const isMinor = user?.is_minor ?? false
@@ -294,10 +296,10 @@ function AppShell() {
         {wide && (
           <Suspense fallback={null}>
             <Aside
-              onOpenItem={(id) => {
+              onOpenItem={(id, date) => {
                 setOverlay(null)
                 setTab('home')
-                setFocusItem(id)
+                setFocusItem({ id, date })
               }}
             />
           </Suspense>

@@ -327,10 +327,26 @@ def _due_users(
     return due
 
 
+def _has_passed(item: Item, now: dt.datetime) -> bool:
+    """A timed appointment or activity whose end time has gone by. There is
+    nothing left to do about it, so it stops counting as open — unlike a task
+    or a routine, which wait for someone. A span is judged on its LAST day; an
+    all-day or untimed entry has no moment to be past."""
+    if item.kind not in (ItemKind.appointment, ItemKind.activity):
+        return False
+    if item.all_day or item.end_time is None:
+        return False
+    last_day = item.end_date or item.date_for
+    if last_day is not None and last_day > now.date():
+        return False
+    return item.end_time <= now.time()
+
+
 def _open_today(db: Session, user: User, now: dt.datetime) -> list[Item]:
     """One member's OPEN items today: routines landing today, cards dated
     today (a multi-day card on every day it covers), and undated anytime
-    tasks — completed ones excluded, exactly like the board."""
+    tasks — completed ones excluded, exactly like the board, and finished
+    appointments and activities with them."""
     from app.routers.items import _completions_by_item, _occurs
 
     today = now.date()
@@ -379,7 +395,7 @@ def _open_today(db: Session, user: User, now: dt.datetime) -> list[Item]:
         else:
             # Undated tasks: any check (today = done, earlier = archived).
             acted = any(not pend for _uid, _day, pend, _canc in rows)
-        if not acted:
+        if not acted and not _has_passed(item, now):
             open_items.append(item)
     return open_items
 
@@ -404,8 +420,9 @@ def _todays_board(db: Session, user: User, now: dt.datetime) -> tuple[int, Item 
 
 def _past_due_pass(db: Session, clocks: dict[int, dt.datetime], now: dt.datetime) -> int:
     """One nudge, 24 hours after a dated card's moment passed with nobody
-    marking it: "Past due: Call the plumber". One-shots only (routines reset
-    daily and never go "past due" on the board). A multi-day card is judged on
+    marking it: "Past due: Call the plumber". TASKS only — a task is the one
+    kind still waiting on someone, while an appointment or activity has simply
+    been and gone and a routine comes round again. A multi-day card is judged on
     its LAST day — a trip isn't late while it's still running. Claimed on
     (item, the day AFTER that last day) via ReminderLog, which can't collide:
     a dated card only ever claims its own start day for the before-hand
@@ -421,7 +438,7 @@ def _past_due_pass(db: Session, clocks: dict[int, dt.datetime], now: dt.datetime
             select(Item)
             .options(selectinload(Item.assignees))
             .where(
-                Item.kind != ItemKind.routine,
+                Item.kind == ItemKind.task,
                 Item.repeat_type.is_(None),
                 func.coalesce(Item.end_date, Item.date_for).in_(candidate_days),
                 # A shared-event copy can't be acted on by its family (only the

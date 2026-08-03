@@ -127,6 +127,7 @@ def test_kid_tap_pushes_to_every_parent_device(owner, parent, child, configured,
     owner.put("/push/subscription", json=SUB)
     parent.put("/push/subscription", json=SUB2)
     routine = daily_routine(owner, assignee_ids=[user_id(child)])
+    outbox.clear()  # the routine's own board-change push isn't under test
 
     complete(child, routine["id"])
     # One push per parent device: both parents' phones, nothing to the kid.
@@ -415,3 +416,76 @@ def test_unconfigured_push_never_blocks_the_checkoff(owner, child):
     routine = daily_routine(owner, assignee_ids=[user_id(child)])
     assert complete(child, routine["id"]).status_code == 200
     assert len(owner.get("/items/pending").json()) == 1
+
+
+# ---- rows left over from before the completion rework -------------------------------
+
+
+def seed_pending(app, item_id, member_id, date=TODAY):
+    """A kid's waiting mark written straight to the DB. Appointments and
+    activities refuse new marks now, but rows tapped before the rework are
+    still in the queue and both answers have to reach them."""
+    from sqlalchemy.orm import sessionmaker
+
+    from app.models import Completion
+
+    Session = sessionmaker(bind=app.state.test_engine)
+    with Session() as db:
+        db.add(
+            Completion(item_id=item_id, user_id=member_id, date_for=date, pending=True)
+        )
+        db.commit()
+
+
+def dated_appointment(client, **overrides):
+    return make_item(
+        client, kind="appointment", title="Dentist", visibility="family",
+        date_for=TODAY.isoformat(), time_of_day="14:00", end_time="15:00",
+        **overrides,
+    )
+
+
+def test_a_waiting_mark_on_an_appointment_can_still_be_approved(app, owner, child):
+    kid_id = user_id(child)
+    appt = dated_appointment(owner, assignee_ids=[kid_id])
+    seed_pending(app, appt["id"], kid_id)
+    assert owner.get("/items/pending").json() != []
+
+    res = complete(owner, appt["id"])
+    assert res.status_code == 200, res.text
+    assert res.json()["completed"] is True
+    assert owner.get("/items/pending").json() == []
+
+
+def test_a_waiting_mark_on_an_appointment_can_still_be_put_back(app, owner, child):
+    kid_id = user_id(child)
+    appt = dated_appointment(owner, assignee_ids=[kid_id])
+    seed_pending(app, appt["id"], kid_id)
+
+    res = uncomplete(owner, appt["id"])
+    assert res.status_code == 200, res.text
+    assert completion_dates(app, appt["id"]) == []
+    assert owner.get("/items/pending").json() == []
+
+
+def test_a_fresh_mark_on_an_appointment_is_still_refused(owner, child):
+    # Answering history is allowed; making new history is not.
+    appt = dated_appointment(owner, assignee_ids=[user_id(child)])
+    assert complete(child, appt["id"]).status_code == 400
+    assert complete(owner, appt["id"]).status_code == 400
+    assert uncomplete(owner, appt["id"]).status_code == 400
+
+
+def test_the_second_parent_to_approve_gets_a_quiet_no_op(app, owner, parent, child):
+    # Both parents answer the same row moments apart: the loser must not meet
+    # a 400 telling them routines aren't theirs to check.
+    kid_id = user_id(child)
+    routine = daily_routine(owner, assignee_ids=[kid_id])
+    complete(child, routine["id"])
+    assert complete(owner, routine["id"], for_user=kid_id).status_code == 200
+
+    res = complete(parent, routine["id"], for_user=kid_id)
+    assert res.status_code == 200, res.text
+    theirs = next(c for c in res.json()["assignee_completions"] if c["user_id"] == kid_id)
+    assert theirs["completed"] is True and theirs["pending"] is False
+    assert completion_dates(app, routine["id"]) == [TODAY]  # no second row

@@ -51,37 +51,39 @@ function ParticipantAvatar({
 }
 
 // One row on the board. The board is a single card and this is a line in it:
-// tick, title over a muted meta line, then the time chip, who it's for, and
-// the edit shortcut. The circle on the left is the only thing that completes
-// a row; tapping anywhere else opens the detail sheet, so a stray tap can
-// never silently change state. Completed rows stay in place but visibly
-// settle: dimmed, circle filled with a check, title struck through.
+// state mark, title over a muted meta line, then the time chip, who it's for,
+// and the edit shortcut. The row completes nothing: the whole line is one tap
+// target that opens the detail sheet, and every state change is an explicit
+// button in there. Rows that are settled — done, called off, or a calendar
+// entry whose moment has gone by — stay in place but visibly retire by
+// dimming. The strike through the title is reserved for done: it is this
+// app's word for finished, and a passed row has not claimed that.
 export function ItemCard({
   item,
   index,
-  canCheck,
   family,
   flag,
   showDate,
   day,
+  passed = false,
   viewerId,
   viewerIsParent,
-  onToggle,
   onOpen,
   onEdit,
 }: {
   item: FeedItem
   index: number
-  canCheck: boolean
   family?: FamilyMember[]
   flag?: 'overdue' | 'due' | null
   showDate?: boolean
   // The day this card is being drawn on. Only multi-day cards care: past their
   // first day they have no start time left to show.
   day?: string
+  // The clock has gone past this occurrence: it fades, but it is not done and
+  // is never struck through.
+  passed?: boolean
   viewerId?: number
   viewerIsParent?: boolean
-  onToggle?: () => void
   onOpen?: () => void
   onEdit?: () => void
 }) {
@@ -97,11 +99,12 @@ export function ItemCard({
     item.date_for && (showDate || spansDays(item))
       ? dateSpanLabel(item.date_for, item.end_date)
       : null
-  const showCheckbox = canCheck && onToggle
+  // Done, called off, or simply gone by: all three read the same way.
+  const settled = item.completed || item.cancelled || passed
 
   // The +n breadcrumb float: Home dispatches db:crumbs when a completion
   // response paid out; the card whose item it was drifts the number up from
-  // its check circle. Event-driven so the award needs no prop plumbing
+  // its state mark. Event-driven so the award needs no prop plumbing
   // through both board views.
   const [float, setFloat] = useState<{ amount: number; key: number } | null>(null)
   useEffect(() => {
@@ -115,18 +118,17 @@ export function ItemCard({
     return () => window.removeEventListener('db:crumbs', onCrumbs)
   }, [item.id])
 
-  // Kid mode. The viewer's own tap awaiting a parent draws as an amber
-  // hourglass (tapping it again withdraws); for a parent, anyone's waiting
-  // mark flags the card as needing approval.
+  // Kid mode. The viewer's own mark awaiting a parent draws as an amber
+  // hourglass; for a parent, anyone's waiting mark flags the card as needing
+  // approval. Both are read-outs: the sheet is where they are answered.
   const myPending = item.pending && item.pending_by === viewerId
   const needsApproval =
     Boolean(viewerIsParent) &&
     ((item.pending && item.pending_by !== viewerId) ||
       (item.assignee_completions?.some((c) => c.pending && c.user_id !== viewerId) ?? false))
 
-  // Routines are per-person: show each participant's own check. Suppressed
-  // when it's the viewer's own solo routine (their left circle already says
-  // it), but shown for a solo routine the viewer only watches (awareness).
+  // Routines are per-person: show each participant's own check, always, since
+  // the row itself no longer says anything about the viewer's own bit.
   const perPerson =
     item.kind === 'routine' && item.assignee_completions && item.assignee_completions.length >= 1
       ? item.assignee_completions.map((c) => ({
@@ -135,7 +137,6 @@ export function ItemCard({
           pending: c.pending,
         }))
       : null
-  const showPerPerson = perPerson !== null && (perPerson.length > 1 || !showCheckbox)
   const doneCount = perPerson?.filter((p) => p.completed).length ?? 0
 
   // A card involved in a village event (the organizer's shared source or a
@@ -148,193 +149,164 @@ export function ItemCard({
     <motion.div
       layout
       initial={{ opacity: 0, y: 16, scale: 0.98 }}
-      animate={{ opacity: item.completed || item.cancelled ? 0.55 : 1, y: 0, scale: 1 }}
+      animate={{ opacity: settled ? 0.55 : 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, scale: 0.96 }}
       transition={{ delay: index * 0.05, type: 'spring', stiffness: 300, damping: 26 }}
       whileTap={{ scale: 0.99 }}
-      onClick={onOpen}
-      className={`db-row cursor-pointer touch-pan-y select-none ${shared ? 'db-row-shared' : ''}`}
+      className={`db-row touch-pan-y select-none ${shared ? 'db-row-shared' : ''}`}
     >
-      {showCheckbox ? (
-        // Generous tap target around a modest circle; stops propagation so
-        // checking off never also opens the detail sheet underneath.
-        <button
-          type="button"
-          aria-label={
-            item.cancelled
-              ? `${item.title} is cancelled`
-              : myPending
-                ? `Withdraw ${item.title}`
-                : item.completed
-                  ? `Mark ${item.title} not done`
-                  : `Mark ${item.title} done`
-          }
-          onClick={(e) => {
-            // A cancelled card can't be checked; let the tap bubble to the
-            // card and open the detail, where "Put it back on" lives.
-            if (item.cancelled) return
-            e.stopPropagation()
-            onToggle()
-          }}
-          className="relative -m-3 shrink-0 p-3"
-          data-check
-        >
-          {float && <CrumbFloat key={float.key} amount={float.amount} />}
-          <span
-            className={`flex h-[22px] w-[22px] items-center justify-center rounded-full border-2 transition-colors ${
-              item.completed
-                ? 'border-emerald-300/70 bg-emerald-400/25'
-                : myPending
-                  ? 'border-amber-300/70 bg-amber-400/25'
-                  : 'border-fg/30 bg-fg/5'
-            }`}
-          >
-            {item.completed && <Check className="h-3.5 w-3.5 text-emerald-300" strokeWidth={3} />}
-            {!item.completed && item.cancelled && (
-              <X className="h-3.5 w-3.5 text-gold" strokeWidth={3} />
-            )}
-            {!item.completed && myPending && (
-              <Hourglass className="h-3 w-3 text-amber-300" strokeWidth={2.5} />
-            )}
-          </span>
-        </button>
-      ) : (
-        // Not this member's to check: the same 22px slot keeps the rows aligned
-        // and carries what the tick would have said, done or which kind.
+      {/* The whole line is one target and it only ever opens the sheet. The
+          edit pencil sits outside it so it stays its own button rather than
+          nesting one inside another. */}
+      <button
+        type="button"
+        onClick={onOpen}
+        className="-my-2 flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-[0.6875rem] py-2 text-left"
+      >
+        {/* A 22px slot that says where the card stands without offering to
+            change it: done, called off, waiting on a parent, or its kind. */}
         <span
-          className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full ${
-            item.completed ? 'bg-emerald-400/25' : ''
+          className={`relative flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full ${
+            item.completed ? 'bg-emerald-400/25' : myPending ? 'bg-amber-400/25' : ''
           }`}
         >
+          {float && <CrumbFloat key={float.key} amount={float.amount} />}
           {item.completed ? (
             <Check className="h-3.5 w-3.5 text-emerald-300" strokeWidth={3} />
+          ) : item.cancelled ? (
+            <X className="h-3.5 w-3.5 text-gold" strokeWidth={3} />
+          ) : myPending ? (
+            <Hourglass className="h-3 w-3 text-amber-300" strokeWidth={2.5} />
           ) : (
             <Icon className={`h-4 w-4 ${tint}`} strokeWidth={2} />
           )}
         </span>
-      )}
 
-      <div className="min-w-0 flex-1">
-        <p
-          className={`truncate text-[14.5px] font-semibold leading-tight ${
-            item.completed ? 'text-fg/60 line-through decoration-fg/30' : 'text-fg'
-          }`}
-        >
-          {item.title}
-        </p>
-        {/* One muted meta line under the title carries everything that used to
-            need its own row: kind, flags, the card's own dates, streak, notes.
-            State (shared, overdue, approval, streak) is shrink-0 so it can never
-            be squeezed out; the plain text pieces shrink and ellipsize instead.
-            The line wraps rather than clipping, because on a 390px phone the
-            state chips alone can outrun the column, and a hidden cutoff would
-            lose state silently. Only a genuinely busy row grows past 48px. */}
-        <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[12.5px] leading-tight text-fg/55">
-          {shared && (
-            <span className="db-chip db-chip-gold shrink-0 py-0 text-[11px]">
-              Shared {item.kind === 'appointment' ? 'appointment' : 'activity'}
-            </span>
-          )}
-          <span className={`flex min-w-0 items-center gap-1 ${showCheckbox ? tint : ''}`}>
-            {showCheckbox && <Icon className="h-3 w-3 shrink-0" strokeWidth={2.5} />}
-            <span className="truncate">{label}</span>
-          </span>
-          {flag === 'overdue' && (
-            <span className="shrink-0 rounded-full bg-rose-500/20 px-1.5 text-[11px] font-bold text-rose-300">
-              Overdue
-            </span>
-          )}
-          {flag === 'due' && (
-            <span className="shrink-0 rounded-full bg-gold/20 px-1.5 text-[11px] font-bold text-gold">
-              Due
-            </span>
-          )}
-          {needsApproval && (
-            <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-amber-400/20 px-1.5 text-[11px] font-bold text-amber-300">
-              <Hourglass className="h-2.5 w-2.5" strokeWidth={3} /> Needs approval
-            </span>
-          )}
-          {perPerson && perPerson.length > 1 && (
-            <span className="shrink-0 font-bold text-fg/40">
-              {doneCount}/{perPerson.length}
-            </span>
-          )}
-          {dateLine && <span className="min-w-0 truncate font-semibold text-fg/65">{dateLine}</span>}
-          {(item.streak ?? 0) >= 3 && (
-            <span className="flex shrink-0 items-center gap-0.5 font-bold text-orange-300">
-              <Flame className="h-3 w-3" /> {item.streak}
-            </span>
-          )}
-          {myPending ? (
-            <span className="shrink-0 font-medium text-amber-300/90">Waiting for a parent</span>
-          ) : (
-            item.notes && <span className="min-w-0 truncate">{item.notes}</span>
-          )}
-        </span>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-2">
-        {timeLabel && (
-          <span
-            className={`db-chip whitespace-nowrap tabular-nums ${
-              flag === 'overdue' ? 'bg-rose-500/15 text-rose-300' : ''
+        <div className="min-w-0 flex-1">
+          {/* A passed row is dimmed but NEVER struck: in this app a line
+              through a title means done, and a routine nobody has done yet
+              would be claiming otherwise a minute after its time. */}
+          <p
+            className={`truncate text-[14.5px] font-semibold leading-tight ${
+              item.completed
+                ? 'text-fg/60 line-through decoration-fg/30'
+                : passed
+                  ? 'text-fg/60'
+                  : 'text-fg'
             }`}
           >
-            {timeLabel}
-          </span>
-        )}
-        {showPerPerson && perPerson ? (
-          // Per-person routine: each face carries its own check state.
-          <div className="flex -space-x-2">
-            {perPerson.slice(0, 3).map((p, i) => (
-              <ParticipantAvatar
-                key={i}
-                name={p.user?.display_name ?? '?'}
-                src={p.user ? avatarUrl(p.user) : null}
-                done={p.completed}
-                pending={p.pending}
-              />
-            ))}
-            {perPerson.length > 3 && (
-              <span className="z-10 flex h-7 w-7 items-center justify-center rounded-full bg-fg/15 text-[10px] font-bold ring-2 ring-black/40">
-                +{perPerson.length - 3}
+            {item.title}
+          </p>
+          {/* One muted meta line under the title carries everything that used to
+              need its own row: kind, flags, the card's own dates, streak, notes.
+              State (shared, overdue, approval, streak) is shrink-0 so it can never
+              be squeezed out; the plain text pieces shrink and ellipsize instead.
+              The line wraps rather than clipping, because on a 390px phone the
+              state chips alone can outrun the column, and a hidden cutoff would
+              lose state silently. Only a genuinely busy row grows past 48px. */}
+          <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[12.5px] leading-tight text-fg/55">
+            {shared && (
+              <span className="db-chip db-chip-gold shrink-0 py-0 text-[11px]">
+                Shared {item.kind === 'appointment' ? 'appointment' : 'activity'}
               </span>
             )}
-          </div>
-        ) : (
-          item.assignees.length > 0 && (
-            // Overlapping cluster; the ring separates faces. Cap at three, then
-            // a +N so a card for several people never overflows the row.
+            {/* The kind's own icon already sits in the slot on the left, so the
+                meta line just names it. */}
+            <span className="min-w-0 truncate">{label}</span>
+            {flag === 'overdue' && (
+              <span className="shrink-0 rounded-full bg-rose-500/20 px-1.5 text-[11px] font-bold text-rose-300">
+                Overdue
+              </span>
+            )}
+            {flag === 'due' && (
+              <span className="shrink-0 rounded-full bg-gold/20 px-1.5 text-[11px] font-bold text-gold">
+                Due
+              </span>
+            )}
+            {needsApproval && (
+              <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-amber-400/20 px-1.5 text-[11px] font-bold text-amber-300">
+                <Hourglass className="h-2.5 w-2.5" strokeWidth={3} /> Needs approval
+              </span>
+            )}
+            {perPerson && perPerson.length > 1 && (
+              <span className="shrink-0 font-bold text-fg/40">
+                {doneCount}/{perPerson.length}
+              </span>
+            )}
+            {dateLine && <span className="min-w-0 truncate font-semibold text-fg/65">{dateLine}</span>}
+            {(item.streak ?? 0) >= 3 && (
+              <span className="flex shrink-0 items-center gap-0.5 font-bold text-orange-300">
+                <Flame className="h-3 w-3" /> {item.streak}
+              </span>
+            )}
+            {myPending ? (
+              <span className="shrink-0 font-medium text-amber-300/90">Waiting for a parent</span>
+            ) : (
+              item.notes && <span className="min-w-0 truncate">{item.notes}</span>
+            )}
+          </span>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          {timeLabel && (
+            <span
+              className={`db-chip whitespace-nowrap tabular-nums ${
+                flag === 'overdue' ? 'bg-rose-500/15 text-rose-300' : ''
+              }`}
+            >
+              {timeLabel}
+            </span>
+          )}
+          {perPerson ? (
+            // Per-person routine: each face carries its own check state.
             <div className="flex -space-x-2">
-              {item.assignees.slice(0, 3).map((a) => (
-                <Avatar
-                  key={a.id}
-                  name={a.display_name}
-                  src={avatarUrl(a)}
-                  size="sm"
-                  className="ring-2 ring-black/40"
+              {perPerson.slice(0, 3).map((p, i) => (
+                <ParticipantAvatar
+                  key={i}
+                  name={p.user?.display_name ?? '?'}
+                  src={p.user ? avatarUrl(p.user) : null}
+                  done={p.completed}
+                  pending={p.pending}
                 />
               ))}
-              {item.assignees.length > 3 && (
+              {perPerson.length > 3 && (
                 <span className="z-10 flex h-7 w-7 items-center justify-center rounded-full bg-fg/15 text-[10px] font-bold ring-2 ring-black/40">
-                  +{item.assignees.length - 3}
+                  +{perPerson.length - 3}
                 </span>
               )}
             </div>
-          )
-        )}
-      </div>
+          ) : (
+            item.assignees.length > 0 && (
+              // Overlapping cluster; the ring separates faces. Cap at three, then
+              // a +N so a card for several people never overflows the row.
+              <div className="flex -space-x-2">
+                {item.assignees.slice(0, 3).map((a) => (
+                  <Avatar
+                    key={a.id}
+                    name={a.display_name}
+                    src={avatarUrl(a)}
+                    size="sm"
+                    className="ring-2 ring-black/40"
+                  />
+                ))}
+                {item.assignees.length > 3 && (
+                  <span className="z-10 flex h-7 w-7 items-center justify-center rounded-full bg-fg/15 text-[10px] font-bold ring-2 ring-black/40">
+                    +{item.assignees.length - 3}
+                  </span>
+                )}
+              </div>
+            )
+          )}
+        </div>
+      </button>
 
       {onEdit && (
         // Shortcut straight into the editor for parents; the detail sheet
-        // has Edit too. Propagation stops so it never opens the sheet.
+        // has Edit too.
         <button
           type="button"
           aria-label={`Edit ${item.title}`}
-          onClick={(e) => {
-            e.stopPropagation()
-            onEdit()
-          }}
+          onClick={onEdit}
           className="-my-3 -mr-2 shrink-0 rounded-xl p-3.5 text-fg/35 transition-colors hover:bg-fg/10 hover:text-fg/70 active:bg-fg/15"
         >
           <Pencil className="h-4 w-4" strokeWidth={2} />

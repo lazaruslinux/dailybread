@@ -14,6 +14,17 @@ export function canCheckItem(item: FeedItem, user: User | null): boolean {
   return user.role === 'parent' && item.visibility === 'family'
 }
 
+// canCheckItem plus kid mode. Every surface that opens the detail sheet asks
+// this one, so the board and the calendar can't offer different answers and
+// nobody is shown a button the server would refuse.
+export function canOfferCheck(item: FeedItem, user: User | null): boolean {
+  if (!canCheckItem(item, user)) return false
+  if (!user?.is_minor) return true
+  // Once a parent has approved (completed, with no waiting mark of their own
+  // left), the card is settled and the minor gets nothing to undo it.
+  return !item.completed || (item.pending && item.pending_by === user.id)
+}
+
 // ---- multi-day cards --------------------------------------------------------
 // An activity or appointment can run across days (a trip, an overnight stay).
 // date_for is the first day and end_date the last, so the same card shows up on

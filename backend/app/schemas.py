@@ -222,7 +222,7 @@ class ItemIn(BaseModel):
     # single day; a repeating card can't carry one.
     end_date: dt.date | None = None
     repeat: RepeatIn | None = None  # required for routines, forbidden otherwise
-    # Routines only: a synced workout checks this routine off for that member.
+    # Routines only, and inert: kept so old clients still round-trip it.
     workout_auto_complete: bool = False
     # Where it happens, free text. Offered on activities and appointments.
     location: str | None = Field(default=None, max_length=120)
@@ -292,7 +292,7 @@ class FeedItemOut(BaseModel):
     # organizer's own shared source): drives the gold SHARED flag on the board.
     village_shared: bool = False
     repeat: RepeatOut | None  # anything recurring (routines, repeating appointments)
-    # Routines only: this routine checks itself off from a synced workout.
+    # Routines only, and inert: kept so old clients still round-trip it.
     workout_auto_complete: bool = False
     # The requesting member's own view: for a routine, their own check/streak
     # (or, for a non-participant, whether every participant is done). For other
@@ -1648,5 +1648,6 @@ class WatchKcalIn(BaseModel):
 class IngestResultOut(BaseModel):
     days: int
     workouts: int
-    # Routines checked off by this sync (the per-routine workout opt-in).
+    # Always 0: a synced workout no longer checks routines off. Kept so the
+    # ingest response shape doesn't move under the phone automations.
     routines_completed: int = 0

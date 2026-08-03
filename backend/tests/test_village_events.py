@@ -356,8 +356,8 @@ def test_copies_are_managed_by_the_organizer(village, owner, other):
     assert other.delete(f"/items/{copy_id}").status_code == 403
     assert other.post(f"/items/{copy_id}/cancel?date={TOMORROW.isoformat()}").status_code == 403
     assert other.request("DELETE", f"/items/{copy_id}/cancel?date={TOMORROW.isoformat()}").status_code == 403
-    # completion is the host's too: a copy can't be checked or unchecked, the
-    # done mark mirrors down from the organizer.
+    # completion is the host's too: a copy 403s before anything else is
+    # judged (an activity isn't checked off by anyone now anyway).
     assert other.post(f"/items/{copy_id}/complete?date={TODAY.isoformat()}").status_code == 403
     assert other.request(
         "DELETE", f"/items/{copy_id}/complete?date={TODAY.isoformat()}"
@@ -391,35 +391,34 @@ def test_a_kid_cannot_check_a_managed_copy(village, owner, other, app):
     assert bkid.post(f"/items/{copy_id}/complete?date={TODAY.isoformat()}").status_code == 403
 
 
-def test_organizer_done_mirrors_onto_copies_without_leaking(village, owner, other, app):
+def test_the_organizer_cannot_mark_a_shared_event_done(village, owner, other, app):
+    # A shared event is an activity, and activities pass on their own now, so
+    # the done-mirror never runs. Call-off mirroring is the live path.
     item = make_event(owner)
     out = share(owner, village, item["id"])
     ev = rsvp(other, out["event_id"], "going", [user_id(other)])
     copy_id = ev["my_item_id"]
 
-    # the organizer marks their source done -> the copy shows done on its own
-    # day (the mirror lands on the event's date, TOMORROW, not on today)
-    assert owner.post(f"/items/{item['id']}/complete?date={TODAY.isoformat()}").status_code == 200
-    assert feed_ids(other, TOMORROW)[copy_id]["completed"] is True
-    # but NOT in the attendee family's feed today (the mirror day is the event day)
-    assert copy_id not in feed_ids(other, TODAY)
-    # and the copy's completion carries NO cross-family user id
-    rows = _completions(app, copy_id)
-    assert len(rows) == 1 and rows[0].user_id is None and rows[0].cancelled is False
-
-    # undoing on the source clears the copy again
-    assert owner.request(
-        "DELETE", f"/items/{item['id']}/complete?date={TODAY.isoformat()}"
-    ).status_code == 200
+    res = owner.post(f"/items/{item['id']}/complete?date={TODAY.isoformat()}")
+    assert res.status_code == 400
     assert feed_ids(other, TOMORROW)[copy_id]["completed"] is False
     assert _completions(app, copy_id) == []
 
 
-def test_rsvp_after_source_done_is_born_done(village, owner, other, app):
+def test_rsvp_after_a_legacy_done_mark_is_born_done(village, owner, other, app):
+    # Nothing can mark a shared source done through the API any more, but rows
+    # written before the rework still carry onto a fresh copy.
+    from sqlalchemy.orm import sessionmaker
+
+    from app.models import Completion
+
     item = make_event(owner)
     out = share(owner, village, item["id"])
-    # the organizer completes BEFORE anyone RSVPs
-    assert owner.post(f"/items/{item['id']}/complete?date={TODAY.isoformat()}").status_code == 200
+    Session = sessionmaker(bind=app.state.test_engine)
+    with Session() as db:
+        db.add(Completion(item_id=item["id"], user_id=user_id(owner), date_for=TODAY))
+        db.commit()
+
     ev = rsvp(other, out["event_id"], "going", [user_id(other)])
     copy_id = ev["my_item_id"]
     # born done, shown on the event's own day (TOMORROW)
@@ -875,11 +874,12 @@ def test_village_pref_gates_the_push_not_the_inbox(village, owner, other, config
     assert other.get("/push/prefs").json()["prefs"]["village"] is False
 
 
-def test_past_due_nags_the_source_but_never_the_copy(
+def test_a_shared_event_nags_neither_family(
     village, owner, other, configured, push_outbox, engine_db
 ):
-    """A shared-event copy can't be acted on by its family, so it must never
-    nag them as past due. The organizer's own source still nags its host."""
+    """Only tasks go past due, and a shared event is always an activity: it
+    has been and gone, so neither the organizer nor an attendee hears about
+    it. (The copy could never be acted on by its family anyway.)"""
     import app.push as push_engine
 
     yesterday = TODAY - dt.timedelta(days=1)
@@ -898,12 +898,9 @@ def test_past_due_nags_the_source_but_never_the_copy(
     rsvp(other, out["event_id"], "going", [user_id(other)])  # the copy lands on B's board
     push_outbox.clear()
 
-    # 25 hours after 9am yesterday: exactly one nudge, to the source's family.
-    sent = push_engine.digest_tick(dt.datetime.combine(TODAY, dt.time(10, 5)))
-    assert sent == 1
-    endpoints = [ep for ep, _p in push_outbox]
-    assert endpoints == ["https://push.example/host-device"]
-    assert push_outbox[0][1]["title"] == "Past due: Soccer practice"
+    # 25 hours after 9am yesterday: nothing, on either board.
+    assert push_engine.digest_tick(dt.datetime.combine(TODAY, dt.time(10, 5))) == 0
+    assert push_outbox == []
 
 
 def test_location_validation_and_feed_exposure(owner):

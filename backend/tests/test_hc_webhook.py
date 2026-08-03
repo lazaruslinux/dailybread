@@ -154,7 +154,7 @@ def test_hc_times_land_on_the_familys_clock(owner):
     assert by_day[TODAY.isoformat()] is None
 
 
-def test_hc_workouts_check_off_opted_in_routines(owner):
+def test_hc_workouts_leave_opted_in_routines_alone(owner):
     res = owner.post(
         "/items",
         json={
@@ -167,7 +167,7 @@ def test_hc_workouts_check_off_opted_in_routines(owner):
     assert res.status_code == 201
     token = _mint(owner)
     out = _send(owner, token, _payload()).json()
-    assert out["routines_completed"] == 1
+    assert out["routines_completed"] == 0
 
 
 def test_malformed_hc_payloads_are_survived(owner):

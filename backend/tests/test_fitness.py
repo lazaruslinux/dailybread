@@ -503,7 +503,7 @@ def test_watch_kcal_toggle_is_adults_only(child):
     assert child.put("/me/fitness/watch-kcal", json={"enabled": True}).status_code == 403
 
 
-# ---- workout -> routine auto-complete --------------------------------------------
+# ---- the workout opt-in is inert -------------------------------------------------
 
 
 def _daily_routine(client, title: str, auto: bool = True, days: list[int] | None = None) -> dict:
@@ -525,44 +525,16 @@ def _feed_item(client, item_id: int) -> dict:
     return next(i for i in feed["today"] if i["id"] == item_id)
 
 
-def test_a_workout_checks_off_an_opted_in_routine(owner):
+def test_a_synced_workout_no_longer_checks_off_a_routine(owner):
+    # The opt-in is still stored and echoed back; nothing acts on it, and the
+    # workout's own +3 crumb is a separate ledger entry (see test_crumbs).
     routine = _daily_routine(owner, "Morning run", auto=True)
-    plain = _daily_routine(owner, "Read a book", auto=False)
     token = _mint(owner)
     res = _send(owner, token, _payload())
-    assert res.json()["routines_completed"] == 1
-    assert _feed_item(owner, routine["id"])["completed"] is True
-    assert _feed_item(owner, plain["id"])["completed"] is False
-
-
-def test_resent_workouts_do_not_double_complete(owner):
-    routine = _daily_routine(owner, "Morning run")
-    token = _mint(owner)
-    assert _send(owner, token, _payload()).json()["routines_completed"] == 1
-    assert _send(owner, token, _payload()).json()["routines_completed"] == 0
-    assert _feed_item(owner, routine["id"])["completed"] is True
-
-
-def test_a_deliberate_check_is_left_alone(owner):
-    routine = _daily_routine(owner, "Morning run")
-    assert owner.post(f"/items/{routine['id']}/complete?date={TODAY.isoformat()}").status_code == 200
-    token = _mint(owner)
-    assert _send(owner, token, _payload()).json()["routines_completed"] == 0
-
-
-def test_the_routine_must_land_on_the_workout_day(owner):
-    # Scheduled only on a weekday that is NOT today.
-    off_day = [(TODAY.weekday() + 3) % 7]
-    _daily_routine(owner, "Leg day", days=off_day)
-    token = _mint(owner)
-    assert _send(owner, token, _payload()).json()["routines_completed"] == 0
-
-
-def test_only_the_syncing_members_routines_complete(owner, parent):
-    # The second parent's own flagged routine; the owner's workout is not theirs.
-    _daily_routine(parent, "Their run")
-    token = _mint(owner)
-    assert _send(owner, token, _payload()).json()["routines_completed"] == 0
+    assert res.json()["routines_completed"] == 0
+    card = _feed_item(owner, routine["id"])
+    assert card["workout_auto_complete"] is True
+    assert card["completed"] is False
 
 
 def test_the_flag_is_routines_only(owner):
