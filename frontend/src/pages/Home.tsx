@@ -52,6 +52,11 @@ const pad = (n: number) => String(n).padStart(2, '0')
 // How long a card handed over by the desktop aside stays worth opening.
 const FOCUS_MAX_WAIT_MS = 15_000
 
+// How many next-7-days rows show before the rest go behind "Show all". A
+// meeting-dense week expands every repeating appointment into occurrences,
+// and uncapped the section swallowed the whole board (his 2026-08-03 report).
+const NEXT7_ROWS = 5
+
 // "Today" / "Yesterday" / "Tomorrow" / "Mon, Jul 6" for approval rows and the
 // timeline's day header.
 function relativeDay(dateStr: string): string {
@@ -226,6 +231,8 @@ export function Home({
   const wide = useWideLayout()
 
   const [feed, setFeed] = useState<api.Feed | null>(null)
+  // Collapsed by default every visit: the cap is the point (see NEXT7_ROWS).
+  const [showAllNext7, setShowAllNext7] = useState(false)
   const [family, setFamily] = useState<api.FamilyMember[]>([])
   const [familyName, setFamilyName] = useState<string | null>(null)
   // Kid mode: the family's check-offs waiting on a parent. Parents only.
@@ -1046,7 +1053,25 @@ export function Home({
         <div className="glass db-pad overflow-hidden">
           <SectionDivider label="Next 7 days" />
           {next7Open.length > 0 ? (
-            renderCards(next7Open)
+            <>
+              {/* Expanded, the list scrolls in its own box instead of
+                  stretching the page: the point of the cap is that the board
+                  below stays reachable. */}
+              {showAllNext7 ? (
+                <div className="max-h-[55vh] overflow-y-auto">{renderCards(next7Open)}</div>
+              ) : (
+                renderCards(next7Open.slice(0, NEXT7_ROWS))
+              )}
+              {next7Open.length > NEXT7_ROWS && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllNext7((v) => !v)}
+                  className="min-h-11 w-full px-1 text-left text-[12.5px] font-semibold text-fg/55 underline underline-offset-2"
+                >
+                  {showAllNext7 ? 'Show fewer' : `Show all ${next7Open.length}`}
+                </button>
+              )}
+            </>
           ) : (
             <p className="db-emptyline">Nothing in the next 7 days.</p>
           )}

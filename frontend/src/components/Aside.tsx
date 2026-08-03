@@ -13,6 +13,11 @@ import { VerseCard } from './VerseCard'
 // How many grocery rows the glance shows before it stops and counts the rest.
 const GROCERY_ROWS = 6
 
+// Same idea for Next 7 days: a meeting-dense week expands every repeating
+// appointment into occurrences, and uncapped the column ran the grocery list
+// and the verse right off the screen (his 2026-08-03 report).
+const NEXT7_ROWS = 6
+
 // The desktop right rail. It stays put across tabs, so it owns its own data
 // rather than reading Home's — Home is not mounted when you are on Kitchen.
 // Only rendered above 1200px (see useWideLayout), so these two requests never
@@ -49,6 +54,8 @@ export function Aside({
   const [groceryError, setGroceryError] = useState<string | null>(null)
   const [writeError, setWriteError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // Collapsed by default: the cap keeps the grocery list and verse on screen.
+  const [showAllNext7, setShowAllNext7] = useState(false)
 
   // Retiring the shared-read generation stops a NEW read from joining a stale
   // request; it cannot stop a stale request from landing late and repainting
@@ -161,7 +168,10 @@ export function Aside({
         ) : next7.length === 0 ? (
           <p className="db-emptyline">Nothing in the next 7 days.</p>
         ) : (
-          next7.map((item) => {
+          // Expanded, the rows scroll inside their own box so the grocery
+          // list and the verse stay put below.
+          <div className={showAllNext7 ? 'max-h-[55vh] overflow-y-auto' : undefined}>
+            {(showAllNext7 ? next7 : next7.slice(0, NEXT7_ROWS)).map((item) => {
             const when = item.all_day
               ? 'All day'
               : formatTimeRange(item.time_of_day, item.end_time)
@@ -251,7 +261,17 @@ export function Aside({
                 </button>
               </div>
             )
-          })
+            })}
+          </div>
+        )}
+        {next7 !== null && next7.length > NEXT7_ROWS && (
+          <button
+            type="button"
+            onClick={() => setShowAllNext7((v) => !v)}
+            className="min-h-11 w-full px-1 text-left text-[12.5px] font-semibold text-fg/55 underline underline-offset-2"
+          >
+            {showAllNext7 ? 'Show fewer' : `Show all ${next7.length}`}
+          </button>
         )}
       </div>
 
