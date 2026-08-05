@@ -482,9 +482,10 @@ def _build_feed_item(
     """Assemble one card's completion state for the requesting member, from
     the item's prefetched completion rows (see _completions_by_item).
 
-    Routines are per-person: each participant gets their own completed/streak,
-    and the requesting member's own state (or, if they're not a participant,
-    whether every participant is done) becomes the card's headline state.
+    Routines are per-person, and only for minors: each tracked participant gets
+    their own completed/streak, and the requesting member's own state (or, if
+    they're not tracked, whether every tracked one is done) becomes the card's
+    headline state. A routine no minor is on carries no completion state at all.
     Other kinds carry a single shared check.
 
     village_shared marks the card for the gold SHARED flag: copies carry it
@@ -535,7 +536,19 @@ def _build_feed_item(
             village_shared=village_shared,
         )
 
-    participants = _routine_participants(db, item)
+    # Only the kids' routines are tracked. An adult can't check a routine off
+    # at all (the complete endpoint refuses it), so giving it per-person rows
+    # would draw a count and a "Who's done" list nothing can ever answer.
+    participants = [p for p in _routine_participants(db, item) if p.is_minor]
+    if not participants:
+        return _feed_item(
+            item,
+            completed=False,
+            streak=None,
+            assignee_completions=None,
+            pending=False,
+            village_shared=village_shared,
+        )
     dates_by_user: dict[int, set[dt.date]] = {}
     pending_by_user: dict[int, set[dt.date]] = {}
     for uid, day, pend, _canc in completions:  # routines are never cancelled
@@ -868,7 +881,8 @@ def _claim_past_start(db: Session, item: Item) -> None:
     """The member just set this time themselves; catch-up is for reminders
     lost to downtime, not edits into the past. A dated one-shot created (or
     rescheduled) onto a start already behind its family's clock pre-claims its
-    ReminderLog slot, so the tick's catch-up window finds nothing to fire.
+    ReminderLog slots, so the tick's catch-up window finds nothing to fire.
+    Both kinds are claimed: an appointment's start push is the same surprise.
     Repeating cards are out of scope: their claims are per-occurrence day.
     Runs after the endpoint's own commit; a racing tick that claimed first is
     the same outcome, so the collision is swallowed like _already_reminded."""
@@ -878,11 +892,12 @@ def _claim_past_start(db: Session, item: Item) -> None:
     local = family_now(_server_now(), tz)
     if item.date_for != local.date() or item.time_of_day > local.time():
         return
-    db.add(ReminderLog(item_id=item.id, date_for=item.date_for))
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
+    for kind in ("lead", "start"):
+        db.add(ReminderLog(item_id=item.id, date_for=item.date_for, kind=kind))
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
 
 
 @router.post("", response_model=FeedItemOut, status_code=status.HTTP_201_CREATED)

@@ -2,4 +2,3 @@
 // imports; declare them so tsc accepts the font imports in main.tsx.
 declare module '@fontsource-variable/hanken-grotesk'
 declare module '@fontsource-variable/newsreader'
-declare module '@fontsource-variable/caveat'

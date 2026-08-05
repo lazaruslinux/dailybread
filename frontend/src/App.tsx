@@ -133,12 +133,24 @@ function AppShell() {
     if (user && !user.is_minor) void resyncPushSubscription()
   }, [user?.id])
 
+  // Every navigation lands at the top of the new page. It also keeps the sticky
+  // tab bar honest on iOS Safari, which can strand it mid-scroll when the
+  // document height changes under a scrolled page. You.tsx does its own scroll
+  // restoring inside a tab, which this never touches.
+  const toTop = () => window.scrollTo(0, 0)
+
+  const openOverlay = (next: Overlay) => {
+    setOverlay(next)
+    toTop()
+  }
+
   const switchTab = (next: Tab) => {
     // Already on You with no overlay in the way: a tap means "back to the
     // root", handled inside You via the bumped counter.
     if (next === 'you' && tab === 'you' && !overlay) setYouReselect((n) => n + 1)
     setOverlay(null)
     setTab(next)
+    toTop()
   }
 
   // The scan icon rides beside the health badge in both header layouts, so a
@@ -206,7 +218,7 @@ function AppShell() {
                 <div className="mb-1 flex items-center justify-between gap-3">
                   {overlay ? (
                     <button
-                      onClick={() => setOverlay(null)}
+                      onClick={() => openOverlay(null)}
                       className="-ml-1 flex items-center gap-1 rounded-lg py-1 pr-2 text-sm font-semibold text-fg/60 transition-colors hover:text-fg"
                     >
                       <ChevronLeft className="h-4 w-4" /> Back
@@ -235,14 +247,14 @@ function AppShell() {
                 <Suspense fallback={null}>
                   {overlay?.name === 'profile' && <Profile userId={overlay.id} />}
                   {overlay?.name === 'admin' && (
-                    <Admin onOpenProfile={(id) => setOverlay({ name: 'profile', id })} />
+                    <Admin onOpenProfile={(id) => openOverlay({ name: 'profile', id })} />
                   )}
                   {overlay?.name === 'calendar' && <Calendar />}
                   {!overlay && tab === 'home' && (
                     <Home
-                      onOpenProfile={(id) => setOverlay({ name: 'profile', id })}
+                      onOpenProfile={(id) => openOverlay({ name: 'profile', id })}
                       onOpenKitchen={() => setTab('kitchen')}
-                      onOpenCalendar={() => setOverlay({ name: 'calendar' })}
+                      onOpenCalendar={() => openOverlay({ name: 'calendar' })}
                       focusItem={focusItem}
                       onFocusHandled={() => setFocusItem(null)}
                     />
@@ -252,7 +264,7 @@ function AppShell() {
                   {!overlay && tab === 'kitchen' && <Kitchen />}
                   {!overlay && tab === 'you' && (
                     <You
-                      onOpenAdmin={() => setOverlay({ name: 'admin' })}
+                      onOpenAdmin={() => openOverlay({ name: 'admin' })}
                       inboxUnread={inboxUnread}
                       onInboxRead={zeroInbox}
                       onGoTo={switchTab}
@@ -263,7 +275,7 @@ function AppShell() {
               </motion.div>
             </AnimatePresence>
 
-            <footer className="mt-8 text-center text-xs text-fg/30">
+            <footer className="mt-8 mb-4 text-center text-xs text-fg/30">
               {/* The source link doubles as the AGPL section-13 offer for anyone
                   hosting this for others; the padding keeps the tap target at the
                   44px floor without changing the footer's quiet look. */}
@@ -300,6 +312,7 @@ function AppShell() {
                 setOverlay(null)
                 setTab('home')
                 setFocusItem({ id, date })
+                toTop()
               }}
             />
           </Suspense>

@@ -8,6 +8,7 @@ import {
   Hourglass,
   Mailbox,
   ShoppingCart,
+  Sparkles,
   Trees,
   UserPlus,
   Users,
@@ -37,6 +38,7 @@ const KIND_ICON: Record<string, { Icon: LucideIcon; tint: string }> = {
   recipe: { Icon: CookingPot, tint: 'text-fg/60' },
   member: { Icon: UserPlus, tint: 'text-accent-bright' },
   household: { Icon: Home, tint: 'text-accent-bright' },
+  update: { Icon: Sparkles, tint: 'text-accent-bright' },
 }
 
 // "Just now" through short dates: enough to place a row without a timestamp

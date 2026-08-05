@@ -50,9 +50,10 @@ class Settings(BaseSettings):
     vapid_private_key: str = ""
     vapid_subject: str = "mailto:admin@example.com"
     # How many minutes before a timed card its reminder goes out. Appointments
-    # get a longer runway: an hour to get shoes on and drive somewhere.
+    # get a longer runway: half an hour to get shoes on and drive somewhere,
+    # then a second ping when they actually start.
     reminder_lead_minutes: int = 15
-    appointment_lead_minutes: int = 60
+    appointment_lead_minutes: int = 30
     # Local hours (0-23) for the day's scheduled pushes. Each has a window it
     # may send in (morning until noon, evening until 22), so a server that
     # was down at the slot still catches up while the message makes sense,

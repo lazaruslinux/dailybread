@@ -3,7 +3,11 @@
 A reminder goes to the people a card is FOR (its assignees; the owner when
 nobody is assigned; the whole household for an unassigned family-visible
 card), a little before the card's start time. reminder_log keeps a row per
-card per day so a restart or a racing tick never double-sends.
+card per day per kind of reminder so a restart or a racing tick never
+double-sends. An appointment also gets a second push when it actually starts.
+
+announce_update() is the one push that isn't about a card: a boot on a new
+version tells every parent, once.
 
 Card times are wall-clock local times. The loop compares them against each
 FAMILY's clock: families.timezone when set, otherwise the server's own local
@@ -20,10 +24,12 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from app import inbox
 from app.clock import family_now
 from app.config import settings
 from app.db import SessionLocal
 from app.models import (
+    AppMeta,
     DigestLog,
     Family,
     IngestToken,
@@ -31,9 +37,11 @@ from app.models import (
     ItemKind,
     PushSubscription,
     ReminderLog,
+    Role,
     User,
     Visibility,
 )
+from app.version import APP_VERSION
 
 log = logging.getLogger("dailybread.push")
 
@@ -145,9 +153,11 @@ def _family_clocks(db: Session, now: dt.datetime) -> dict[int, dt.datetime]:
     }
 
 
-def _already_reminded(db: Session, item: Item, day: dt.date) -> bool:
-    """Claim the (item, day) pair; True means someone else already has."""
-    db.add(ReminderLog(item_id=item.id, date_for=day))
+def _already_reminded(db: Session, item: Item, day: dt.date, kind: str = "lead") -> bool:
+    """Claim the (item, day, kind) triple; True means someone else already has.
+    The kinds are "lead" (the heads-up, and the past-due nudge's own claim on
+    the day after) and "start" (an appointment's "Starting now")."""
+    db.add(ReminderLog(item_id=item.id, date_for=day, kind=kind))
     try:
         db.commit()
         return False
@@ -157,7 +167,8 @@ def _already_reminded(db: Session, item: Item, day: dt.date) -> bool:
 
 
 def reminder_tick(now: dt.datetime) -> int:
-    """One pass: remind about timed cards starting within the lead window.
+    """One pass: remind about timed cards starting within the lead window, and
+    tell people about an appointment that is starting right now.
     Returns how many pushes the push services accepted (for the logs)."""
     # Local import for the same reason as in send_to_subscription: the items
     # router pulls in the whole schema graph, which tests may stub around.
@@ -183,9 +194,12 @@ def reminder_tick(now: dt.datetime) -> int:
         )
         # Each card is judged on ITS family's clock: inside the lead window,
         # and (for anything recurring) on a day its schedule lands on. The
-        # lead depends on the kind: appointments get an hour of runway (shoes
-        # on, drive somewhere), everything else the short heads-up.
-        due: list[tuple[Item, dt.date, bool]] = []
+        # lead depends on the kind: appointments get half an hour of runway
+        # (shoes on, drive somewhere), everything else the short heads-up.
+        # A card lands in one of three passes: "lead" before it starts, "start"
+        # for an appointment at its start time, "late" for a start another kind
+        # slipped past while the server was down.
+        due: list[tuple[Item, dt.date, str, dt.datetime]] = []
         for item in items:
             local = clocks.get(item.family_id, now)
             today = local.date()
@@ -199,11 +213,13 @@ def reminder_tick(now: dt.datetime) -> int:
             if window_end < window_start:
                 window_end = dt.time(23, 59, 59)  # clamp at midnight; the next day picks up the rest
             if window_start < item.time_of_day <= window_end:
-                late = False
+                pass_kind = "lead"
             else:
-                # Catch-up: start slipped past while the server was down. Fire up to
-                # CATCHUP_MINUTES late, never after the event has ended, never across
-                # midnight (yesterday's miss is the past-due pass's problem).
+                # Past the start: an appointment says so on the spot, anything
+                # else only when its start slipped by while the server was
+                # down. Both look back CATCHUP_MINUTES, never fire after the
+                # event has ended, and never cross midnight (yesterday's miss
+                # is the past-due pass's problem).
                 catch_start = (local - dt.timedelta(minutes=CATCHUP_MINUTES)).time()
                 if catch_start > window_start:  # subtraction crossed midnight
                     catch_start = dt.time(0, 0)
@@ -211,18 +227,18 @@ def reminder_tick(now: dt.datetime) -> int:
                     continue
                 if item.end_time is not None and item.end_time <= window_start:
                     continue  # already over; a late ping is noise
-                late = True
+                pass_kind = "start" if item.kind == ItemKind.appointment else "late"
             if item.repeat_type is None:
                 if item.date_for != today:
                     continue
             elif not _occurs(item, today):
                 continue
-            due.append((item, today, late))
+            due.append((item, today, pass_kind, local))
         if not due:
             return 0
-        comps = _completions_by_item(db, [item for item, _, _ in due])
+        comps = _completions_by_item(db, [item for item, _, _, _ in due])
 
-        for item, today, late in due:
+        for item, today, pass_kind, local in due:
             rows = comps[item.id]
             # A pending row (kid mode: awaiting parent approval) counts as
             # "already acted" here — the kid did the thing; don't nag them.
@@ -246,13 +262,26 @@ def reminder_tick(now: dt.datetime) -> int:
             people = [p for p in people if not p.is_minor and wants(p, "timed")]
             if not people:
                 continue
-            if _already_reminded(db, item, today):
+            # The lead and start pushes claim the same day separately, so an
+            # appointment can send both.
+            if _already_reminded(db, item, today, "start" if pass_kind == "start" else "lead"):
                 continue
 
             when = _fmt(item.time_of_day)
             if item.end_time:
                 when += f" – {_fmt(item.end_time)}"
-            if late:
+            if pass_kind == "start":
+                # A tick that lands on the start says so; one recovering a
+                # start missed over a restart says when it was.
+                started = dt.datetime.combine(today, local.time()) - dt.datetime.combine(
+                    today, item.time_of_day
+                )
+                body = (
+                    "Starting now"
+                    if started <= dt.timedelta(minutes=2)
+                    else f"Started at {_fmt(item.time_of_day)}"
+                )
+            elif pass_kind == "late":
                 body = f"Started at {_fmt(item.time_of_day)}"
             else:
                 body = f"Coming up at {when}" if not item.end_time else f"Coming up: {when}"
@@ -342,11 +371,25 @@ def _has_passed(item: Item, now: dt.datetime) -> bool:
     return item.end_time <= now.time()
 
 
+def _routine_passed(db: Session, item: Item, now: dt.datetime) -> bool:
+    """A routine no minor is on is waiting for nobody — only kids check routines
+    off — so once its end time has gone by it stops counting as open, the same
+    way an appointment does."""
+    from app.routers.items import _routine_participants
+
+    if item.kind != ItemKind.routine or item.all_day or item.end_time is None:
+        return False
+    if any(p.is_minor for p in _routine_participants(db, item)):
+        return False
+    return item.end_time <= now.time()
+
+
 def _open_today(db: Session, user: User, now: dt.datetime) -> list[Item]:
     """One member's OPEN items today: routines landing today, cards dated
     today (a multi-day card on every day it covers), and undated anytime
-    tasks — completed ones excluded, exactly like the board, and finished
-    appointments and activities with them."""
+    tasks — completed ones excluded, exactly like the board, and entries the
+    clock has gone past (appointments, activities, untracked routines) with
+    them."""
     from app.routers.items import _completions_by_item, _occurs
 
     today = now.date()
@@ -395,7 +438,7 @@ def _open_today(db: Session, user: User, now: dt.datetime) -> list[Item]:
         else:
             # Undated tasks: any check (today = done, earlier = archived).
             acted = any(not pend for _uid, _day, pend, _canc in rows)
-        if not acted and not _has_passed(item, now):
+        if not acted and not _has_passed(item, now) and not _routine_passed(db, item, now):
             open_items.append(item)
     return open_items
 
@@ -656,11 +699,80 @@ def _verse_pass(db: Session, clocks: dict[int, dt.datetime], now: dt.datetime) -
     return sent
 
 
+# ---- the update announcement -----------------------------------------------------
+
+
+RELEASE_NOTES_URL = "https://github.com/lazaruslinux/dailybread/releases/tag/v{version}"
+
+
+def announce_update() -> None:
+    """Tell the grown-ups when the server comes up on a new version: one inbox
+    line and one push each, linking that release's notes.
+
+    A fresh install records the version silently (nobody wants a "we updated"
+    line before their first login), and a restart on the same version does
+    nothing. Deliberately ungated by push prefs: this is operator news about
+    the server itself, not board chatter, and it happens a few times a year.
+    Minors are excluded like every other push. Any failure is logged and
+    swallowed: an announcement must never keep the app from booting."""
+    try:
+        with SessionLocal() as db:
+            stored = db.get(AppMeta, "app_version")
+            if stored is None:
+                db.add(AppMeta(key="app_version", value=APP_VERSION))
+                db.commit()
+                return
+            if stored.value == APP_VERSION:
+                return
+
+            # A member with no family yet (an invited household mid-setup) has
+            # no inbox to write to.
+            parents = [
+                u
+                for u in db.scalars(
+                    select(User).where(
+                        User.role == Role.parent, User.family_id.is_not(None)
+                    )
+                ).all()
+                if not u.is_minor
+            ]
+            title = f"dailybread was updated to v{APP_VERSION}"
+            url = RELEASE_NOTES_URL.format(version=APP_VERSION)
+            # The inbox rows and the stored version move in ONE commit, so a
+            # crash between them can't make the next boot announce twice. Both
+            # land before the pushes go out: a push service having a bad day
+            # must not re-announce either. The inbox row carries the link as
+            # text: tapping a row moves between tabs, it can't leave the app
+            # the way a push can.
+            for person in parents:
+                inbox.record(db, person.id, person.family_id, "update", title, f"What's new: {url}")
+            stored.value = APP_VERSION
+            db.commit()
+
+            sent = 0
+            for person in parents:
+                sent += send_to_user(
+                    db,
+                    person.id,
+                    {
+                        "title": title,
+                        "body": "Tap for the release notes.",
+                        "tag": f"update-{APP_VERSION}",
+                        "url": url,
+                    },
+                )
+            log.info("announced v%s to %s parents (%s pushes)", APP_VERSION, len(parents), sent)
+    except Exception:  # never let this stop the server coming up
+        log.exception("update announcement failed")
+
+
 async def reminder_loop() -> None:
     log.info(
-        "push reminders on: checking every %ss, %s-minute lead, digest at %s:00",
+        "push reminders on: checking every %ss, %s-minute lead (%s for appointments,"
+        " plus a push at the start), digest at %s:00",
         TICK_SECONDS,
         settings.reminder_lead_minutes,
+        settings.appointment_lead_minutes,
         settings.digest_hour,
     )
     while True:

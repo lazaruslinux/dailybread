@@ -1173,17 +1173,32 @@ class PushSubscription(Base):
 
 
 class ReminderLog(Base):
-    """One row per card per day a reminder went out, so a restarted server
-    (or two ticks racing) never notifies the same card twice."""
+    """One row per card per day per kind of reminder, so a restarted server
+    (or two ticks racing) never notifies the same card twice. An appointment
+    gets two: the "lead" heads-up before it, then "start" when it begins."""
 
     __tablename__ = "reminder_log"
-    __table_args__ = (UniqueConstraint("item_id", "date_for", name="uq_reminder_item_day"),)
+    __table_args__ = (
+        UniqueConstraint("item_id", "date_for", "kind", name="uq_reminder_item_day_kind"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     item_id: Mapped[int] = mapped_column(
         ForeignKey("items.id", ondelete="CASCADE"), index=True
     )
     date_for: Mapped[dt.date] = mapped_column(Date)
+    kind: Mapped[str] = mapped_column(String(16), default="lead", server_default="lead")
+
+
+class AppMeta(Base):
+    """Server-wide key/value scratch, one row per fact. Holds "app_version":
+    the version that last booted, so a deploy can tell it moved and announce
+    itself once."""
+
+    __tablename__ = "app_meta"
+
+    key: Mapped[str] = mapped_column(String(32), primary_key=True)
+    value: Mapped[str] = mapped_column(String(64))
 
 
 class DigestLog(Base):

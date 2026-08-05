@@ -896,6 +896,50 @@ def test_routine_completion_is_per_person(owner, child, grown_child):
     assert card["completed"] is False  # not everyone is done
 
 
+def test_an_adults_routine_carries_no_completion_state(owner, parent):
+    today_wd = dt.date.today().weekday()
+    routine = make_item(
+        owner,
+        kind="routine",
+        title="Morning pages",
+        assignee_ids=[user_id(owner), user_id(parent)],
+        repeat={"type": "weekly", "days": [today_wd]},
+    )
+
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    card = next(i for i in feed["today"] if i["id"] == routine["id"])
+    # Grown-ups can't check a routine off, so there is nothing to track: no
+    # per-person rows, no count, no waiting state.
+    assert card["assignee_completions"] is None
+    assert card["completed"] is False
+    assert card["pending"] is False
+    assert card["streak"] is None
+
+
+def test_a_mixed_routine_tracks_only_the_kids(owner, child, parent):
+    kid_id = user_id(child)
+    today_wd = dt.date.today().weekday()
+    routine = make_item(
+        owner,
+        kind="routine",
+        title="Feed the dog",
+        assignee_ids=[kid_id, user_id(parent)],
+        repeat={"type": "weekly", "days": [today_wd]},
+    )
+
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    card = next(i for i in feed["today"] if i["id"] == routine["id"])
+    assert [c["user_id"] for c in card["assignee_completions"]] == [kid_id]
+    assert card["completed"] is False
+
+    child.post(f"/items/{routine['id']}/complete?date={TODAY}")
+    owner.post(f"/items/{routine['id']}/complete?date={TODAY}&for={kid_id}")
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    card = next(i for i in feed["today"] if i["id"] == routine["id"])
+    # The one tracked row is done, so the card is: the adult on it never counted.
+    assert card["completed"] is True
+
+
 def test_shared_task_completion_is_single(owner, child):
     dad_id, kid_id = user_id(owner), user_id(child)
     task = make_item(owner, assignee_ids=[dad_id, kid_id])

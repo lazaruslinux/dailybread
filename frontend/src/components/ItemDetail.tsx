@@ -268,7 +268,9 @@ export function ItemDetail({
           </button>
         )}
 
-        {isRoutine && item.assignee_completions && (
+        {/* Only the kids on a routine are tracked, so a grown-ups-only one has
+            no list to draw. */}
+        {isRoutine && item.assignee_completions && item.assignee_completions.length >= 1 && (
           <div className="mt-6">
             <span className="db-micro mb-1.5 block">
               Who's done

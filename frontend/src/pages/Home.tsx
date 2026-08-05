@@ -758,7 +758,7 @@ export function Home({
       {familyName && (
         <div className="flex items-center gap-3">
           <span className="h-px flex-1 bg-gradient-to-r from-transparent to-gold/40" />
-          <span className="font-team text-[25px] font-bold leading-none text-gold">
+          <span className="text-[13px] font-bold uppercase tracking-[0.18em] leading-none text-gold">
             {familyName}
           </span>
           <span className="h-px flex-1 bg-gradient-to-l from-transparent to-gold/40" />

@@ -329,6 +329,111 @@ def test_an_on_time_fire_never_refires_as_late(owner, configured, outbox, engine
     assert push_engine.reminder_tick(_now_at(14, 20)) == 0
 
 
+# ---- the start push: appointments say when they begin --------------------------
+
+
+def _appointment(client, title="Dentist", time_of_day="14:00:00", end_time="15:00:00", **extra):
+    res = client.post(
+        "/items",
+        json={
+            "kind": "appointment",
+            "title": title,
+            "date_for": dt.date.today().isoformat(),
+            "time_of_day": time_of_day,
+            "end_time": end_time,
+            **extra,
+        },
+    )
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+def test_an_appointment_says_when_it_starts(owner, configured, push_outbox, engine_db):
+    owner.put("/push/subscription", json=SUB)
+    _appointment(owner)
+    push_outbox.clear()
+    # 13:40 is inside the half-hour lead.
+    assert push_engine.reminder_tick(_now_at(13, 40)) == 1
+    assert push_outbox[-1][1]["body"] == "Coming up: 2:00 PM – 3:00 PM"
+    # 14:00 is the start itself: a second push, claimed separately.
+    assert push_engine.reminder_tick(_now_at(14, 0)) == 1
+    assert push_outbox[-1][1]["body"] == "Starting now"
+    # And only once.
+    assert push_engine.reminder_tick(_now_at(14, 1)) == 0
+
+
+def test_a_start_recovered_after_a_restart_says_when_it_began(
+    owner, configured, push_outbox, engine_db
+):
+    owner.put("/push/subscription", json=SUB)
+    _appointment(owner)
+    push_outbox.clear()
+    # The server was down through the lead and the start; 20 minutes late it
+    # still says so, but it doesn't pretend the appointment is starting now.
+    assert push_engine.reminder_tick(_now_at(14, 20)) == 1
+    assert push_outbox[-1][1]["body"] == "Started at 2:00 PM"
+
+
+def test_an_appointment_already_over_never_gets_a_start_push(
+    owner, configured, outbox, engine_db
+):
+    owner.put("/push/subscription", json=SUB)
+    _appointment(owner, time_of_day="14:00:00", end_time="14:10:00")
+    outbox.clear()
+    assert push_engine.reminder_tick(_now_at(14, 20)) == 0
+
+
+def test_only_appointments_get_a_start_push(owner, configured, push_outbox, engine_db):
+    owner.put("/push/subscription", json=SUB)
+    owner.post(
+        "/items",
+        json={
+            "kind": "activity",
+            "title": "Soccer",
+            "date_for": dt.date.today().isoformat(),
+            "time_of_day": "14:00:00",
+            "end_time": "15:00:00",
+        },
+    )
+    push_outbox.clear()
+    # An activity's lead fires at 13:45 (the short heads-up), and nothing more
+    # at its start: only appointments get the second push.
+    assert push_engine.reminder_tick(_now_at(13, 50)) == 1
+    assert push_engine.reminder_tick(_now_at(14, 0)) == 0
+    assert push_engine.reminder_tick(_now_at(14, 1)) == 0
+
+
+def test_a_routine_gets_no_start_push(owner, configured, outbox, engine_db):
+    # Assigned to nobody, so the owner is its participant: a minor would get no
+    # push at all and the second leg would be untestable.
+    owner.put("/push/subscription", json=SUB)
+    today_wd = dt.date.today().weekday()
+    res = owner.post(
+        "/items",
+        json={
+            "kind": "routine",
+            "title": "Brush teeth",
+            "time_of_day": "14:00:00",
+            "end_time": "14:30:00",
+            "repeat": {"type": "weekly", "days": [today_wd]},
+        },
+    )
+    assert res.status_code == 201, res.text
+    outbox.clear()
+    assert push_engine.reminder_tick(_now_at(13, 50)) == 1  # the heads-up
+    assert push_engine.reminder_tick(_now_at(14, 0)) == 0  # no second push
+
+
+def test_a_cancelled_appointment_never_announces_its_start(
+    owner, configured, outbox, engine_db
+):
+    owner.put("/push/subscription", json=SUB)
+    item = _appointment(owner)
+    owner.post(f"/items/{item['id']}/cancel?date={dt.date.today().isoformat()}")
+    outbox.clear()
+    assert push_engine.reminder_tick(_now_at(14, 0)) == 0
+
+
 def test_creating_a_card_timed_in_the_past_fires_nothing(
     owner, configured, outbox, engine_db, monkeypatch
 ):
@@ -478,7 +583,7 @@ def test_private_card_changes_stay_private(owner, parent, configured, outbox, en
     assert outbox == []  # the other parent can't see it, so they don't hear about it
 
 
-def test_appointments_get_an_hour_of_runway(owner, configured, outbox, engine_db):
+def test_appointments_get_a_half_hour_of_runway(owner, configured, outbox, engine_db):
     owner.put("/push/subscription", json=SUB)
     owner.post(
         "/items",
@@ -500,8 +605,10 @@ def test_appointments_get_an_hour_of_runway(owner, configured, outbox, engine_db
         },
     )
     outbox.clear()
-    # 14:10: the appointment is inside its hour lead, the task (15 min) is not.
-    assert push_engine.reminder_tick(_now_at(14, 10)) == 1
+    # 14:20: too early for either lead window.
+    assert push_engine.reminder_tick(_now_at(14, 20)) == 0
+    # 14:40: the appointment is inside its half-hour lead, the task (15 min) is not.
+    assert push_engine.reminder_tick(_now_at(14, 40)) == 1
     # 14:50: now the task's window opens too.
     assert push_engine.reminder_tick(_now_at(14, 50)) == 1
 

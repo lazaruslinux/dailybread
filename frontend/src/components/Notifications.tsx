@@ -47,7 +47,7 @@ const PREF_GROUPS: {
       {
         kind: 'timed',
         label: 'Before Events',
-        hint: 'A ping before anything timed on your board. 15 minutes, or 1 hour for appointments',
+        hint: 'A ping before anything timed on your board. 15 minutes, or 30 for appointments, which ping again as they start',
       },
       {
         kind: 'overdue',

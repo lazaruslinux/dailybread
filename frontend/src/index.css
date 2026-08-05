@@ -36,7 +36,6 @@
   --font-body: 'Hanken Grotesk Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-display: 'SN Pro', 'Hanken Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
   --font-reading: 'Newsreader Variable', Georgia, serif;
-  --font-team: 'Caveat Variable', 'Comic Sans MS', cursive;
 
   --fg: #26201a; /* warm near-black ink; the dark theme flips this to white */
 
@@ -151,10 +150,6 @@
 .font-reading {
   font-family: var(--font-reading);
   font-optical-sizing: auto;
-}
-/* Handwriting for the family's own name (the Home masthead team line). */
-.font-team {
-  font-family: var(--font-team);
 }
 
 body {
@@ -408,6 +403,12 @@ body {
   }
   .db-content > * {
     min-width: 0;
+  }
+
+  /* Promotes the sticky bar to its own layer so iOS Safari can't freeze it
+     mid-scroll after the document height changes under it. */
+  .db-tabbar {
+    transform: translateZ(0);
   }
 
   /* Horizontal anchoring for the two elements that float over the page. Both

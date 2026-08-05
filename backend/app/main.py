@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from app import push as push_engine
 from app.config import check_deploy_config, settings
 from app.db import db_ok
+from app.version import APP_VERSION
 from app.routers import (
     auth,
     diary,
@@ -36,6 +37,9 @@ check_deploy_config()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Tell the households when a deploy lands. Not gated on push being
+    # configured: the inbox line is written either way.
+    await asyncio.to_thread(push_engine.announce_update)
     # The reminder loop runs only when push is configured (VAPID keys set);
     # without it the app behaves exactly as before.
     task = asyncio.create_task(push_engine.reminder_loop()) if push_engine.enabled() else None
@@ -43,9 +47,6 @@ async def lifespan(app: FastAPI):
     if task is not None:
         task.cancel()
 
-
-# Kept in step with frontend/package.json by the release round.
-APP_VERSION = "1.3.0"
 
 app = FastAPI(title="dailybread", version=APP_VERSION, lifespan=lifespan)
 

@@ -81,6 +81,40 @@ def test_completed_items_do_not_count(owner, configured, push_outbox, engine_db)
     assert "2 items on today's board" in push_outbox[0][1]["body"]
 
 
+def test_a_grown_ups_routine_stops_counting_once_its_time_is_up(
+    owner, configured, push_outbox, engine_db
+):
+    # Only kids check routines off, so a routine no minor is on waits for
+    # nobody: once its end time has gone by it leaves the count, like an
+    # appointment that has been and gone.
+    owner.put("/push/subscription", json=SUB)
+    every_day = {"type": "weekly", "days": [0, 1, 2, 3, 4, 5, 6]}
+    make(owner, kind="routine", title="Morning pages",
+         time_of_day="06:00:00", end_time="06:30:00", repeat=every_day)
+    make(owner, title="Call the plumber")
+
+    assert push_engine.digest_tick(at(9)) == 1
+    assert push_outbox[0][1]["body"].startswith("1 item on today's board")
+
+
+def test_a_kids_routine_keeps_counting_all_day(
+    owner, child, configured, push_outbox, engine_db
+):
+    owner.put("/push/subscription", json=SUB)
+    make(
+        owner,
+        kind="routine",
+        title="Make bed",
+        time_of_day="06:00:00",
+        end_time="06:30:00",
+        assignee_ids=[user_id(owner), user_id(child)],
+        repeat={"type": "weekly", "days": [0, 1, 2, 3, 4, 5, 6]},
+    )
+
+    assert push_engine.digest_tick(at(9)) == 1
+    assert push_outbox[0][1]["body"].startswith("1 item on today's board")
+
+
 def test_a_finished_appointment_stops_counting(owner, configured, push_outbox, engine_db):
     # Nothing can be done about an appointment that has already ended, so it
     # leaves the count; a task waits for someone and stays.

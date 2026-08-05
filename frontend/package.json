@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "2.0.1",
+  "version": "2.1.0",
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
@@ -11,7 +11,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@fontsource-variable/caveat": "^5.3.0",
     "@fontsource-variable/hanken-grotesk": "^5.3.0",
     "@fontsource-variable/newsreader": "^5.3.0",
     "@fontsource/sn-pro": "^5.3.0",
