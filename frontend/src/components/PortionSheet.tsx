@@ -4,11 +4,16 @@ import * as api from '../lib/api'
 import {
   FoodIdentity,
   Sheet,
+  EDIT_MACROS,
+  UNIT_GROUPS,
   UNIT_LABEL,
-  UNIT_TO_BASE,
+  decimalOnly,
+  implausibleMacros,
+  portionHint,
   servingIndex,
-  unitsForBase,
+  toBase,
 } from './recipes'
+import type { MacroValues } from './recipes'
 import { Button, Field, FormError } from './ui'
 
 // The portion sheet: how much of a picked food or recipe to log, with an
@@ -36,7 +41,10 @@ export type Picked = { kind: 'food'; food: api.Food } | { kind: 'recipe'; recipe
 
 // Live nutrition for the chosen portion; null when the source doesn't know.
 export function portionMacros(pick: Picked, amount: number, unit: string): api.RecipeMacros {
-  const keys: (keyof api.RecipeMacros)[] = ['calories', 'protein_g', 'carbs_g', 'fat_g', 'sugar_g']
+  // sugar_g rides along unshown: the plausibility check is built on it.
+  const keys: (keyof api.RecipeMacros)[] = [
+    'calories', 'protein_g', 'carbs_g', 'fat_g', 'sugar_g',
+  ]
   const out = {} as api.RecipeMacros
   if (pick.kind === 'recipe') {
     for (const k of keys) {
@@ -53,12 +61,14 @@ export function portionMacros(pick: Picked, amount: number, unit: string): api.R
   return out
 }
 
-// Grams (or mL) the chosen amount + unit resolves to for a food.
+// Grams (or mL) the chosen amount + unit resolves to for a food. A named
+// serving is already in base units; anything else goes through toBase, which
+// crosses measure families by the food's density the way the server does.
 function foodBase(food: api.Food, amount: number, unit: string): number {
   const si = servingIndex(unit)
   return si != null && food.servings[si]
     ? amount * food.servings[si].grams
-    : amount * (UNIT_TO_BASE[unit as api.AmountUnit] ?? 1)
+    : toBase(food, amount, unit)
 }
 
 // All ten nutrients scaled to the portion, the base for a per-entry override.
@@ -77,16 +87,6 @@ export function foodTotals(food: api.Food, amount: number, unit: string): api.Di
   return out
 }
 
-// The four macros the add sheet lets you edit (calories + the big three).
-const EDIT_MACROS = [
-  { key: 'calories', label: 'Calories', unit: '' },
-  { key: 'protein_g', label: 'Protein', unit: 'g' },
-  { key: 'carbs_g', label: 'Carbs', unit: 'g' },
-  { key: 'fat_g', label: 'Fat', unit: 'g' },
-] as const
-
-type MacroValues = Record<(typeof EDIT_MACROS)[number]['key'], string>
-
 // Seed the editable fields from computed macros: a rounded number, or empty
 // when the source didn't have it (so a missing value reads as a blank to fill).
 function seedMacros(m: api.RecipeMacros): MacroValues {
@@ -97,6 +97,11 @@ function seedMacros(m: api.RecipeMacros): MacroValues {
 function missingPrimary(m: api.RecipeMacros): boolean {
   return EDIT_MACROS.some((f) => m[f.key] == null)
 }
+
+// The editor opens by itself for numbers that are missing OR that contradict
+// each other (see implausibleMacros). Both mean the same thing to the member:
+// look at the package before this lands in the diary.
+const needsAttention = (m: api.RecipeMacros) => missingPrimary(m) || implausibleMacros(m)
 
 const parseMacro = (s: string): number | null => {
   const t = s.trim()
@@ -155,7 +160,7 @@ export function PortionSheet({
   )
   const [macrosTouched, setMacrosTouched] = useState(false)
   const [editingMacros, setEditingMacros] = useState(
-    () => editable && missingPrimary(portionMacros(pick, amt, unit)),
+    () => editable && needsAttention(portionMacros(pick, amt, unit)),
   )
 
   // The portion is the base: changing amount/unit re-seeds the fields to the
@@ -166,25 +171,19 @@ export function PortionSheet({
   }, [pick, amt, unit])
 
   const editMacro = (key: keyof MacroValues, raw: string) => {
-    // Digits and a single decimal point (a second dot would make Number() NaN,
-    // which would silently drop the macro to "unknown" with the field looking
-    // filled).
-    let s = raw.replace(/[^0-9.]/g, '')
-    const dot = s.indexOf('.')
-    if (dot !== -1) s = s.slice(0, dot + 1) + s.slice(dot + 1).replace(/\./g, '')
-    setMacroValues((prev) => ({ ...prev, [key]: s }))
+    setMacroValues((prev) => ({ ...prev, [key]: decimalOnly(raw) }))
     setMacrosTouched(true)
   }
   const missingMacros = editable && EDIT_MACROS.some((f) => macroValues[f.key] === '')
+  // Shown only when the numbers are all there but disagree with each other.
+  const dontAddUp = editable && !missingMacros && implausibleMacros(macros)
 
-  // What the chosen portion resolves to, so a serving pick shows its weight.
-  const resolved = useMemo(() => {
-    if (!food) return null
-    const si = servingIndex(unit)
-    if (si == null || !food.servings[si]) return null
-    const base = amt * food.servings[si].grams
-    return `${trim(base)} ${food.base_unit === 'ml' ? 'mL' : 'g'}`
-  }, [food, amt, unit])
+  // What the chosen portion resolves to, so a serving pick shows its weight and
+  // a cross-family pick says how it was converted.
+  const hint = useMemo(
+    () => (food ? portionHint(food, amt, unit, food.servings) : null),
+    [food, amt, unit],
+  )
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -233,6 +232,8 @@ export function PortionSheet({
           source_id: f!.source_id,
           name: f!.name,
           brand: f!.brand,
+          base_unit: f!.base_unit,
+          density_g_per_ml: f!.density_g_per_ml,
           calories: f!.calories,
           protein_g: f!.protein_g,
           carbs_g: f!.carbs_g,
@@ -301,18 +302,22 @@ export function PortionSheet({
                     ))}
                   </optgroup>
                 )}
-                <optgroup label={food!.base_unit === 'ml' ? 'Volume' : 'Weight'}>
-                  {unitsForBase(food!.base_unit).map((u) => (
-                    <option key={u} value={u}>
-                      {UNIT_LABEL[u] ?? u}
-                    </option>
-                  ))}
-                </optgroup>
+                {/* Both families, whatever the food is measured in: milk gets
+                    poured in millilitres and logged in grams. */}
+                {UNIT_GROUPS.map((g) => (
+                  <optgroup key={g.label} label={g.label}>
+                    {g.units.map((u) => (
+                      <option key={u} value={u}>
+                        {UNIT_LABEL[u] ?? u}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
               </select>
             )}
           </label>
         </div>
-        {resolved && <p className="-mt-2 text-xs text-fg/45">= {resolved}</p>}
+        {hint && <p className="-mt-2 text-xs text-fg/45">{hint}</p>}
 
         <div>
           <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
@@ -378,6 +383,11 @@ export function PortionSheet({
                   </label>
                 ))}
               </div>
+              {dontAddUp && (
+                <p className="text-[11px] leading-snug text-amber-500">
+                  These numbers don't add up; check them against the label.
+                </p>
+              )}
               {missingMacros && (
                 <p className="text-[11px] leading-snug text-amber-500">
                   The highlighted macros weren't in the scan. Add them from the package label if you have it.
@@ -388,7 +398,7 @@ export function PortionSheet({
             <button
               type="button"
               onClick={() => editable && setEditingMacros(true)}
-              className={`flex min-h-[24px] w-full items-center justify-between gap-2 text-left ${
+              className={`-my-2.5 flex min-h-11 w-full items-center justify-between gap-2 py-2.5 text-left ${
                 editable ? '' : 'cursor-default'
               }`}
             >

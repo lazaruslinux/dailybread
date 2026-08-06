@@ -19,7 +19,7 @@ from app.models import (
     TargetMode,
     User,
     Workout,
-    base_unit_of,
+    to_base,
 )
 from app.routers.recipes import _resolve_food, per_serving_macros
 from app.routers.health import _exercise_out
@@ -107,13 +107,10 @@ def _own_entry(db: Session, entry_id: int, user: User) -> DiaryEntry:
 
 
 def _food_totals(food, amount: float, unit: str) -> dict[str, float | None]:
-    """Scale a food's per-100 nutrition to the served amount."""
-    if base_unit_of(unit) != food.base_unit:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            f"'{food.name}' is measured by {'volume' if food.base_unit == 'ml' else 'weight'}",
-        )
-    factor = amount * UNIT_TO_BASE[unit] / 100.0
+    """Scale a food's per-100 nutrition to the served amount. Any unit is
+    allowed: a volume against a solid (or the reverse) converts through the
+    food's density, so milk poured in millilitres can be logged in grams."""
+    factor = to_base(food, amount, unit) / 100.0
     return {
         n: (_r(getattr(food, n) * factor) if getattr(food, n) is not None else None)
         for n in _NUTRIENTS
@@ -390,17 +387,20 @@ def update_entry(
             # snapshot is exact — and, unlike recomputing from the food, it keeps
             # a manual macro override (the whole point of the add-sheet editor)
             # and honours the diary's snapshot rule (a later food edit never
-            # rewrites logged history). Still reject a cross-measure unit switch
-            # while the source food is around to name the family.
+            # rewrites logged history).
             food = db.get(Food, entry.food_id) if entry.food_id else None
-            if food is not None and base_unit_of(new_unit) != food.base_unit:
-                raise HTTPException(
-                    status.HTTP_400_BAD_REQUEST,
-                    f"'{food.name}' is measured by "
-                    f"{'volume' if food.base_unit == 'ml' else 'weight'}",
-                )
-            old_base = entry.amount * UNIT_TO_BASE.get(entry.unit, 1.0)
-            new_base = new_amount * UNIT_TO_BASE.get(new_unit, 1.0)
+            if food is not None:
+                # Both sides through the same conversion, so a switch that
+                # crosses measure families (millilitres to ounces) scales the
+                # snapshot by real amounts rather than raw numbers.
+                old_base = to_base(food, entry.amount, entry.unit)
+                new_base = to_base(food, new_amount, new_unit)
+            else:
+                # The food is gone, so there is no density to consult. Comparing
+                # raw base amounts is water's 1 g per mL, the same standing
+                # assumption to_base falls back on.
+                old_base = entry.amount * UNIT_TO_BASE.get(entry.unit, 1.0)
+                new_base = new_amount * UNIT_TO_BASE.get(new_unit, 1.0)
             totals = _scaled(entry, new_base / old_base)
         entry.amount = new_amount
         entry.unit = new_unit

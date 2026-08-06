@@ -417,6 +417,7 @@ export function ItemSheet({
   family,
   defaultDate,
   defaultKind,
+  occurrenceDate,
   onClose,
   onSaved,
 }: {
@@ -426,10 +427,17 @@ export function ItemSheet({
   // the new card lands on the day the parent tapped.
   defaultDate?: string
   defaultKind?: api.ItemKind
+  // Set to edit ONE day of a repeating appointment: the form is prefilled from
+  // the series but saves as a standalone card on this day. Pass it as
+  // defaultDate too — a repeating card carries no date of its own.
+  occurrenceDate?: string
   onClose: () => void
   onSaved: () => void
 }) {
   const creating = item === null
+  // Detaching: prefilled from the series, saved as its own card. A detached
+  // appointment doesn't repeat, so the recurrence section stays out of it.
+  const detaching = !creating && occurrenceDate != null
   const [kind, setKind] = useState<api.ItemKind>(item?.kind ?? defaultKind ?? 'routine')
   const [title, setTitle] = useState(item?.title ?? '')
   const [notes, setNotes] = useState(item?.notes ?? '')
@@ -441,7 +449,9 @@ export function ItemSheet({
 
   // Recurrence: routines always repeat; appointments may (a weekly work
   // meeting). A new routine starts as a plain daily one.
-  const [repeats, setRepeats] = useState(Boolean(item?.repeat) && item?.kind === 'appointment')
+  const [repeats, setRepeats] = useState(
+    Boolean(item?.repeat) && item?.kind === 'appointment' && !detaching,
+  )
   const [repeat, setRepeat] = useState<RepeatDraft>(() => ({
     // All seven days is only "Daily" at every-week spacing. A week-on,
     // week-off card also carries all seven days, and the engine honours that
@@ -563,7 +573,11 @@ export function ItemSheet({
       location: isEvent ? location.trim() || null : null,
     }
     try {
-      const saved = creating ? await api.createItem(payload) : await api.updateItem(item.id, payload)
+      const saved = creating
+        ? await api.createItem(payload)
+        : detaching
+          ? await api.createItemOccurrence(item.id, occurrenceDate, payload)
+          : await api.updateItem(item.id, payload)
       if (canShare && shareVillage && villageId !== null) {
         try {
           await api.shareEvent(villageId, saved.id)
@@ -639,7 +653,7 @@ export function ItemSheet({
       >
         <div className="mb-3.5 flex items-center justify-between">
           <h2 className="font-display text-xl font-semibold tracking-[-0.01em]">
-            {creating ? 'Add to the board' : 'Edit card'}
+            {creating ? 'Add to the board' : detaching ? 'Edit this appointment' : 'Edit card'}
           </h2>
           <button
             onClick={dismiss}
@@ -682,7 +696,7 @@ export function ItemSheet({
           {isRoutine && (
             <div className="grid grid-cols-2 gap-3">
               <TimeCombo label="Start (optional)" value={time} onChange={setTime} />
-              <TimeCombo label="End (optional)" value={endTime} onChange={setEndTime} />
+              <TimeCombo label="End (optional)" value={endTime} anchor={time} onChange={setEndTime} />
             </div>
           )}
           {isRoutine && !routineTimesOk && (
@@ -727,7 +741,7 @@ export function ItemSheet({
               {repeatingAppt ? (
                 <div className="grid grid-cols-2 gap-3">
                   <TimeCombo label="From" value={time} onChange={setTime} required />
-                  <TimeCombo label="To" value={endTime} onChange={setEndTime} required />
+                  <TimeCombo label="To" value={endTime} anchor={time} onChange={setEndTime} required />
                 </div>
               ) : (
                 <>
@@ -755,7 +769,9 @@ export function ItemSheet({
                         onChange={(e) => changeEndDate(e.target.value)}
                       />
                     </div>
-                    {!allDay && <TimeCombo label="To" value={endTime} onChange={setEndTime} required />}
+                    {!allDay && (
+                      <TimeCombo label="To" value={endTime} anchor={time} onChange={setEndTime} required />
+                    )}
                   </div>
                 </>
               )}
@@ -776,7 +792,7 @@ export function ItemSheet({
 
           {/* HOW OFTEN. Routines always repeat, so they show their pattern
               outright; an appointment opts in. */}
-          {(isRoutine || kind === 'appointment') && (
+          {(isRoutine || kind === 'appointment') && !detaching && (
             <div>
               {recurs ? (
                 <div className="rounded-xl border border-fg/10 bg-fg/5 px-3 py-2.5">
@@ -924,7 +940,9 @@ export function ItemSheet({
               <Button type="submit" disabled={busy || !title.trim() || !scheduleReady} className="mt-1">
                 {busy ? 'Saving' : creating ? 'Add card' : 'Save changes'}
               </Button>
-              {!creating && (
+              {/* Not while detaching: this button removes the whole series,
+                  which is the opposite of what "just this one" asked for. */}
+              {!creating && !detaching && (
                 <Button type="button" variant="danger" onClick={onDelete} disabled={busy} className="flex items-center justify-center gap-1.5">
                   <Trash2 className="h-4 w-4" /> Remove from board
                 </Button>

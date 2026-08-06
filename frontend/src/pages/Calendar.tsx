@@ -254,7 +254,10 @@ export function Calendar() {
   // The card whose detail sheet is open, and the day it was opened on (so a
   // routine is marked on the right occurrence). Plus the add/edit sheet.
   const [detail, setDetail] = useState<{ item: api.FeedItem; day: string } | null>(null)
-  const [sheet, setSheet] = useState<{ item: api.FeedItem | null; date: string } | null>(null)
+  // occurrence is set only when editing ONE day of a repeating appointment.
+  const [sheet, setSheet] = useState<
+    { item: api.FeedItem | null; date: string; occurrence?: string } | null
+  >(null)
   // The overview shows this many cards before "Load more" (a busy month would
   // otherwise be a wall of rows).
   const [shown, setShown] = useState(PERIOD_PAGE)
@@ -401,6 +404,19 @@ export function Calendar() {
       refreshAndAnnounce()
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Could not remove the card.')
+    }
+  }
+
+  // "Remove just this one" on a repeating appointment: that day leaves the
+  // series for good. Closes the sheet either way, like the cancel below.
+  async function deleteOccurrenceFromDetail(item: api.FeedItem, dayISO: string) {
+    try {
+      await api.deleteItemOccurrence(item.id, dayISO)
+      setDetail(null)
+      refreshAndAnnounce()
+    } catch (err) {
+      setDetail(null)
+      setError(err instanceof api.ApiError ? err.message : 'Could not remove that day.')
     }
   }
 
@@ -626,6 +642,9 @@ export function Calendar() {
           (() => {
             const dayMarkable = markable(detail.day)
             const canMark = canMarkOn(detail.item, detail.day)
+            // A repeating appointment can be edited or removed one day at a time.
+            const perOccurrence =
+              isParent && detail.item.kind === 'appointment' && Boolean(detail.item.repeat)
             return (
               <ItemDetail
                 item={detail.item}
@@ -644,7 +663,20 @@ export function Calendar() {
                       }
                     : undefined
                 }
+                onEditOccurrence={
+                  perOccurrence
+                    ? () => {
+                        setSheet({ item: detail.item, date: detail.day, occurrence: detail.day })
+                        setDetail(null)
+                      }
+                    : undefined
+                }
                 onDelete={isParent ? () => deleteFromDetail(detail.item) : undefined}
+                onDeleteOccurrence={
+                  perOccurrence
+                    ? () => deleteOccurrenceFromDetail(detail.item, detail.day)
+                    : undefined
+                }
                 onCancel={
                   // Not gated on dayMarkable: cancelling AHEAD of time is the
                   // whole point (next week's dentist), and the server now
@@ -666,6 +698,7 @@ export function Calendar() {
             item={sheet.item}
             family={family}
             defaultDate={sheet.date}
+            occurrenceDate={sheet.occurrence}
             defaultKind="appointment"
             onClose={() => setSheet(null)}
             onSaved={() => {

@@ -1,3 +1,4 @@
+import datetime as dt
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -45,6 +46,9 @@ def _result_out(r: foods_api.FoodResult) -> FoodOut:
         brand=r.brand,
         serving=r.serving,
         base_unit=r.base_unit,
+        # The client previews a cross-family portion with this, and sends it
+        # back when the food is first persisted, so both sides agree.
+        density_g_per_ml=r.density_g_per_ml,
         servings=_result_servings(r, FoodServingOut),
         # The health-check fields ride along on the result but aren't part of
         # FOOD_NUTRIENTS (they never enter diary snapshots or recipe macros).
@@ -78,6 +82,8 @@ def _apply_custom_food(food: Food, data: FoodIn) -> None:
     food.folder = (data.folder or "").strip() or None
     food.source_id = data.barcode
     food.base_unit = data.base_unit
+    # Carried through from a scan; nothing here derives one from the servings.
+    food.density_g_per_ml = data.density_g_per_ml
     factor = 100.0 / data.servings[data.basis_index].grams
     for n in FOOD_NUTRIENTS:
         entered = getattr(data, n)
@@ -287,6 +293,82 @@ def _heal_serving_names(db: Session, food: Food) -> None:
         db.commit()
 
 
+# How long a shared-cache row is trusted before the next scan refetches it. The
+# sources correct their own records (Open Food Facts fixed a syrup whose energy
+# was per 100 g beside carbs per 100 mL), and a cache row that never refetched
+# served that mistake to the family forever.
+_CACHE_TTL = dt.timedelta(days=30)
+
+
+def _utcnow() -> dt.datetime:
+    return dt.datetime.now(dt.timezone.utc)
+
+
+def _cache_is_stale(food: Food) -> bool:
+    """NULL fetched_at counts as stale: those rows predate the column, so their
+    age is unknown and the next scan is the moment to find out."""
+    if food.fetched_at is None:
+        return True
+    stamped = food.fetched_at
+    if stamped.tzinfo is None:  # SQLite hands tz-aware columns back naive
+        stamped = stamped.replace(tzinfo=dt.timezone.utc)
+    return _utcnow() - stamped > _CACHE_TTL
+
+
+def _refresh_cached(db: Session, food: Food) -> bool:
+    """Re-read a stale shared-cache row from its source and overwrite it in
+    place. True means the row was settled this scan — refreshed, or confirmed
+    gone upstream. False means the network wouldn't answer and the row is
+    untouched, so the next scan tries again.
+
+    Sources are asked in the same order and with the same error tolerance as
+    the first fetch: USDA (label-accurate for US products) then Open Food
+    Facts, and a USDA outage is a miss rather than a failure."""
+    code = food.source_id or ""
+    usda_answered = True
+    try:
+        result = foods_api.lookup_barcode_usda(code, settings.usda_api_key)
+    except foods_api.FoodApiError:
+        result, usda_answered = None, False
+    if result is None:
+        try:
+            result = foods_api.lookup_barcode_off(code)
+        except foods_api.FoodApiError:
+            return False
+    if result is None:
+        # Both sources say the product is gone. Stamp it anyway and keep serving
+        # the copy we have: re-asking on every scan for a month buys nothing.
+        if not usda_answered:
+            return False
+        food.fetched_at = _utcnow()
+        db.commit()
+        return True
+
+    # A diary entry snapshots its own nutrition at log time, so correcting a
+    # food here never rewrites what a past day says anyone ate.
+    food.source = FoodSource(result.source)
+    food.name = result.name
+    food.brand = result.brand
+    food.base_unit = result.base_unit
+    food.density_g_per_ml = result.density_g_per_ml
+    for n in FOOD_NUTRIENTS:
+        setattr(food, n, getattr(result, n))
+    # Same convention as the first cache write: "" for an absent list, never
+    # NULL, so the row reads as enriched rather than never-fetched.
+    food.ingredients_text = result.ingredients_text
+    food.added_sugar_g = result.added_sugar_g
+    food.additives = result.additives
+    food.nova_group = result.nova_group
+    food.servings = [
+        FoodServing(name=srv.name, grams=srv.grams, position=0)
+        for srv in _result_servings(result, FoodServingOut)
+    ]
+    food.fetched_at = _utcnow()
+    db.commit()
+    db.refresh(food)
+    return True
+
+
 def _resolve_barcode(db: Session, user: User, code: str) -> Food:
     """Resolve a scanned barcode to a stored Food, checking home before asking
     the internet: first the family's own custom foods (a product they entered by
@@ -331,8 +413,13 @@ def _resolve_barcode(db: Session, user: User, code: str) -> Food:
         .limit(1)
     )
     if cached is not None:
-        _heal_serving_names(db, cached)
-        _heal_liquid_unit(db, cached)
+        refreshed = _cache_is_stale(cached) and _refresh_cached(db, cached)
+        if not refreshed:
+            # The heals patch two specific old mistakes in place. A row re-read
+            # from its source this scan carries the source's current answer, so
+            # there is nothing left for them to fix.
+            _heal_serving_names(db, cached)
+            _heal_liquid_unit(db, cached)
         return cached
 
     # USDA being down must not break scanning — treat its errors as a miss
@@ -359,6 +446,7 @@ def _resolve_barcode(db: Session, user: User, code: str) -> Food:
         name=result.name,
         brand=result.brand,
         base_unit=result.base_unit,
+        density_g_per_ml=result.density_g_per_ml,
         # Health-check fields ride along; a successful fetch stores "" for an
         # absent list rather than NULL, so a later health check reads the row as
         # already enriched instead of refetching it (see _heal_health_fields).
@@ -366,6 +454,7 @@ def _resolve_barcode(db: Session, user: User, code: str) -> Food:
         added_sugar_g=result.added_sugar_g,
         additives=result.additives,
         nova_group=result.nova_group,
+        fetched_at=_utcnow(),
         **{n: getattr(result, n) for n in FOOD_NUTRIENTS},
     )
     food.servings = [

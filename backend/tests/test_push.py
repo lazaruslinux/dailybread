@@ -269,6 +269,33 @@ def test_repeating_appointment_called_off_today_stays_quiet(
     assert push_engine.reminder_tick(_now_at(14, 0)) == 0
 
 
+def test_a_carved_out_occurrence_is_never_reminded(
+    owner, parent, configured, outbox, engine_db
+):
+    # Dropping the day removes it from the series everywhere, the reminder
+    # loop included: the pattern still says today, the skip says no.
+    parent.put("/push/subscription", json=SUB)
+    today_wd = dt.date.today().weekday()
+    res = owner.post(
+        "/items",
+        json={
+            "kind": "appointment",
+            "title": "Standup",
+            "time_of_day": "14:10:00",
+            "end_time": "14:30:00",
+            "assignee_ids": [user_id(parent)],
+            "repeat": {"type": "weekly", "days": [today_wd]},
+        },
+    )
+    assert res.status_code == 201, res.text
+    today = dt.date.today().isoformat()
+    assert owner.delete(
+        f"/items/{res.json()['id']}/occurrence?date={today}"
+    ).status_code == 204
+    outbox.clear()  # the board-change push isn't under test here
+    assert push_engine.reminder_tick(_now_at(14, 0)) == 0
+
+
 # ---- catch-up: a start that slipped past while the server was down ----------------
 
 

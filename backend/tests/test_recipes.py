@@ -157,16 +157,46 @@ def test_volume_food_scales_by_millilitres(owner):
     assert floz["per_serving"]["calories"] == 7.4  # 25 * 0.295735
 
 
-def test_ingredient_unit_must_match_food_measure(owner):
-    # A solid can't be poured by the cup; a liquid can't be weighed in grams.
+def test_ingredient_units_may_cross_measure_families(owner):
+    # A solid poured by the cup and a liquid weighed in grams both convert, the
+    # same way the diary does it. Neither food's label ever stated both
+    # readings, so both go through water.
+    made = make_recipe(owner, name="Cupful", servings=1,
+                       ingredients=[usda_line(amount=1, unit="cup")])
+    line = made["ingredients"][0]
+    assert line["unit"] == "cup" and line["grams"] == 236.59
+    assert made["per_serving"]["calories"] == 591.5  # 250 cal/100g * 2.36588
+
     milk = _volume_food(owner)
-    solid_by_volume = owner.post("/recipes", json={"name": "Bad1", "ingredients": [
-        usda_line(unit="cup")]})
-    assert solid_by_volume.status_code == 400
-    liquid_by_mass = owner.post("/recipes", json={"name": "Bad2", "ingredients": [
+    weighed = make_recipe(owner, name="Weighed", servings=1, ingredients=[
         {"food_id": milk["id"], "source": "custom", "name": "Almond milk",
-         "amount": 100, "unit": "g"}]})
-    assert liquid_by_mass.status_code == 400
+         "amount": 100, "unit": "g"}])
+    assert weighed["ingredients"][0]["grams"] == 100.0
+    assert weighed["per_serving"]["calories"] == 25.0
+
+
+def test_a_stated_density_drives_the_crossing(owner):
+    # A label that gave both readings: 1.03 g per mL, so 103 g is 100 mL of it.
+    milk = _volume_food(owner, name="Whole milk", density_g_per_ml=1.03)
+    assert milk["density_g_per_ml"] == 1.03
+    made = make_recipe(owner, name="Dense", servings=1, ingredients=[
+        {"food_id": milk["id"], "source": "custom", "name": "Whole milk",
+         "amount": 103, "unit": "g"}])
+    assert made["ingredients"][0]["grams"] == 100.0
+    assert made["per_serving"]["calories"] == 25.0
+
+
+def test_the_recipe_path_persists_a_foods_family_and_density(owner):
+    # A search or scan food is first saved when a recipe uses it. Its measure
+    # family and density are stored with it, so every later surface converts the
+    # way the picker previewed instead of assuming grams.
+    line = usda_line(source_id="778899", name="Olive oil", amount=1, unit="tbsp")
+    line["base_unit"] = "ml"
+    line["density_g_per_ml"] = 0.91
+    made = make_recipe(owner, name="Oiled", servings=1, ingredients=[line])
+    out = made["ingredients"][0]
+    assert out["base_unit"] == "ml" and out["density_g_per_ml"] == 0.91
+    assert out["grams"] == 14.79  # a volume food in tbsp is plain millilitres
 
 
 def test_recipe_mixes_mass_and_volume_ingredients(owner):

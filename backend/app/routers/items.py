@@ -2,7 +2,7 @@ import datetime as dt
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -15,6 +15,7 @@ from app.models import (
     Family,
     Item,
     ItemKind,
+    ItemSkip,
     ReminderLog,
     RepeatType,
     Role,
@@ -355,7 +356,11 @@ def _resolve_assignees(db: Session, ids: list[int], family_id: int) -> list[User
 
 
 def _occurs(item: Item, date: dt.date) -> bool:
-    return recurrence.occurs_on(
+    """Does this recurring card land on the day? The ONE occurrence check: the
+    feed, the calendar, the reminder loop and the digest all come through here,
+    which is why a carved-out day (ItemSkip) is answered no right alongside the
+    pattern itself."""
+    if not recurrence.occurs_on(
         item.repeat_type,
         item.repeat_days,
         item.repeat_interval,
@@ -363,7 +368,9 @@ def _occurs(item: Item, date: dt.date) -> bool:
         item.repeat_month_day,
         item.repeat_until,
         date,
-    )
+    ):
+        return False
+    return not any(skip.date_for == date for skip in item.skips)
 
 
 def _streak(item: Item, completed_dates: set[dt.date], upto: dt.date) -> int:
@@ -900,14 +907,10 @@ def _claim_past_start(db: Session, item: Item) -> None:
             db.rollback()
 
 
-@router.post("", response_model=FeedItemOut, status_code=status.HTTP_201_CREATED)
-def create_item(
-    data: ItemIn,
-    db: Session = Depends(get_db),
-    parent: User = Depends(require_parent),
-):
-    """Parents put cards on their family's board. A card is the creator's own
-    (personal) until it names members or is shared with the whole family."""
+def _new_item(db: Session, data: ItemIn, parent: User) -> Item:
+    """The validated (but unsaved) Item a create payload describes. Shared with
+    the detach path, so an occurrence pulled out of a series is born exactly
+    the way any other card is."""
     assignees = _resolve_assignees(db, data.assignee_ids, parent.family_id)
     rtype, rdays, rinterval, ranchor, rmonthday, runtil = _resolve_repeat(data.repeat)
     shared = data.shared_to_feed if data.shared_to_feed is not None else (
@@ -938,6 +941,18 @@ def create_item(
         location=data.location,
     )
     _validate_item(item)
+    return item
+
+
+@router.post("", response_model=FeedItemOut, status_code=status.HTTP_201_CREATED)
+def create_item(
+    data: ItemIn,
+    db: Session = Depends(get_db),
+    parent: User = Depends(require_parent),
+):
+    """Parents put cards on their family's board. A card is the creator's own
+    (personal) until it names members or is shared with the whole family."""
+    item = _new_item(db, data, parent)
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -966,6 +981,7 @@ def update_item(
     _require_unmanaged(item)
     fields = data.model_fields_set  # only touch keys the client actually sent
     before_schedule = tuple(getattr(item, f) for f in _SCHEDULE_FIELDS)
+    before_repeat = tuple(getattr(item, f) for f in _REPEAT_FIELDS)
     before_location = item.location
     before_title = item.title
     before_notes = item.notes
@@ -1034,6 +1050,13 @@ def update_item(
         # nudge holding (item, day+1), would silently swallow the new day's
         # reminder — an overdue card moved to tomorrow is exactly that case.
         db.execute(delete(ReminderLog).where(ReminderLog.item_id == item.id))
+    if tuple(getattr(item, f) for f in _REPEAT_FIELDS) != before_repeat:
+        # The PATTERN moved, so the days carved out of the old one mean nothing
+        # against the new one — and a stale skip is an invisible permanent hole
+        # in the series nobody can find or undo. Outlook drops its exceptions on
+        # a series edit for the same reason. Only the skips go: a day already
+        # detached into its own card is independent and stays where it is.
+        db.execute(delete(ItemSkip).where(ItemSkip.item_id == item.id))
     db.commit()
     db.refresh(item)
     first = parent.display_name.split()[0]
@@ -1119,6 +1142,150 @@ def delete_item(
         _notify_event_change(db, going, item, f"Called off: {title}", "The organizer removed it")
 
 
+# ---- one occurrence of a repeating appointment ------------------------------------
+
+# Outlook's "open this occurrence": a single day can be dropped from the series
+# or pulled out of it as its own card. Either way the day is carved out with an
+# ItemSkip, which _occurs answers no to from then on. There is no undo — the way
+# back is a new card on that day.
+
+
+def _require_series(item: Item) -> None:
+    if item.kind != ItemKind.appointment or item.repeat_type is None:
+        _bad("Only repeating appointments can drop a single occurrence")
+
+
+def _commit_skip(db: Session) -> None:
+    """Commit a carve-out, turning the one race it can lose into the answer a
+    sequential replay gets. Two requests can both pass _occurs before either
+    commits; the loser hits the (item, day) unique constraint, and the day it
+    was asking about really is gone by then."""
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        _bad("No occurrence on that day")
+
+
+def _clear_day(db: Session, item: Item, date_for: dt.date) -> None:
+    """Drop the reminder claims a carved-out day left behind. A claim outliving
+    its occurrence would swallow the reminder of whatever lands there next."""
+    db.execute(
+        delete(ReminderLog).where(
+            ReminderLog.item_id == item.id, ReminderLog.date_for == date_for
+        )
+    )
+
+
+@router.delete("/{item_id}/occurrence", status_code=status.HTTP_204_NO_CONTENT)
+def delete_occurrence(
+    item_id: int,
+    date_for: dt.date = Query(alias="date"),
+    db: Session = Depends(get_db),
+    parent: User = Depends(require_parent),
+):
+    """Delete just this one: the day leaves the series for good, marks and all.
+
+    Cancelling is the softer move (the day stays, struck through); this is for
+    a week the meeting simply isn't happening."""
+    _check_cancel_date(date_for)
+    item = _get_item(db, item_id, parent.family_id)
+    _require_visible(item, parent)
+    _require_unmanaged(item)
+    _require_series(item)
+    # _occurs is skip-aware, so dropping the same day twice lands here.
+    if not _occurs(item, date_for):
+        _bad("No occurrence on that day")
+    db.add(ItemSkip(item_id=item.id, date_for=date_for))
+    db.execute(
+        delete(Completion).where(
+            Completion.item_id == item.id, Completion.date_for == date_for
+        )
+    )
+    _clear_day(db, item, date_for)
+    _commit_skip(db)
+    _push_board_change(
+        db,
+        _board_change_recipients(db, item, parent),
+        parent.display_name.split()[0],
+        "removed",
+        item.kind,
+        item.title,
+        f"Just {_day_text(date_for)}",
+    )
+
+
+@router.post(
+    "/{item_id}/occurrence", response_model=FeedItemOut, status_code=status.HTTP_201_CREATED
+)
+def detach_occurrence(
+    item_id: int,
+    data: ItemIn,
+    date_for: dt.date = Query(alias="date"),
+    db: Session = Depends(get_db),
+    parent: User = Depends(require_parent),
+):
+    """Edit just this one: the day becomes its own standalone appointment and
+    the series skips it.
+
+    The copy keeps no link back, on purpose — a later edit to the series is
+    about the series, and the day someone moved deliberately must not move
+    again underneath them."""
+    _check_cancel_date(date_for)
+    series = _get_item(db, item_id, parent.family_id)
+    _require_visible(series, parent)
+    _require_unmanaged(series)
+    _require_series(series)
+    if not _occurs(series, date_for):
+        _bad("No occurrence on that day")
+    if data.kind != ItemKind.appointment or data.repeat is not None:
+        _bad("A detached appointment doesn't repeat")
+
+    item = _new_item(db, data, parent)
+    db.add(item)
+    db.flush()  # the moved marks need the new id
+    db.add(ItemSkip(item_id=series.id, date_for=date_for))
+    # The day's marks travel with it: a call-off made before the split still
+    # says this appointment is off.
+    db.execute(
+        update(Completion)
+        .where(Completion.item_id == series.id, Completion.date_for == date_for)
+        .values(item_id=item.id)
+    )
+    _clear_day(db, series, date_for)
+    _commit_skip(db)
+    db.refresh(item)
+    _claim_past_start(db, item)
+
+    # One notification, update_item's rule: a card that moved says so, a
+    # content-only edit writes a quiet Inbox line. "Moved" is measured against
+    # where the occurrence would have been — the source day, on the series'
+    # clock — since that is what the family had in mind.
+    first = parent.display_name.split()[0]
+    recipients = _board_change_recipients(db, item, parent)
+    moved = (
+        item.date_for != date_for
+        or item.end_date is not None
+        or item.all_day != series.all_day
+        or item.time_of_day != series.time_of_day
+        or item.end_time != series.end_time
+    )
+    if moved:
+        _push_board_change(
+            db, recipients, first, "rescheduled", item.kind, item.title,
+            f"Now {_schedule_text(item)}",
+        )
+    else:
+        inbox.record_all(
+            db, recipients, "board",
+            f"{first} edited {_KIND_PHRASE[item.kind]}: {item.title}",
+            f"Just {_day_text(date_for)}",
+        )
+    return _build_feed_item(
+        db, item, parent, dt.date.today(), _completions_by_item(db, [item])[item.id]
+    )
+
+
 # ---- cancelling (appointments and activities) -----------------------------------
 
 _CANCELLABLE = {ItemKind.appointment, ItemKind.activity}
@@ -1151,6 +1318,10 @@ def cancel_item(
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "Only appointments and activities can be cancelled"
         )
+    # A repeating card can only be called off on a day it actually lands on;
+    # off-pattern days and carved-out ones have no occurrence to cancel.
+    if item.repeat_type is not None and not _occurs(item, date_for):
+        _bad("No occurrence on that day")
     for row in db.scalars(_cancel_slot(item, date_for)):
         db.delete(row)  # a cancellation replaces any done/pending mark
     db.flush()  # the deletes must land before the new row reuses the slot
@@ -1207,6 +1378,15 @@ def uncancel_item(
 # can see it hear about it once — ONE push per action, never one per
 # occurrence of a repeating card.
 
+_REPEAT_FIELDS = (
+    "repeat_type",
+    "repeat_days",
+    "repeat_interval",
+    "repeat_month_day",
+    "repeat_anchor",
+    "repeat_until",
+)
+
 _SCHEDULE_FIELDS = (
     "date_for",
     "end_date",
@@ -1222,6 +1402,11 @@ _SCHEDULE_FIELDS = (
     "repeat_anchor",
     "repeat_until",
 )
+
+
+def _day_text(day: dt.date) -> str:
+    """One day, phrased the way a card's WHEN line phrases its date."""
+    return day.strftime("%a %b %-d")
 
 
 def _when_text(
@@ -1241,9 +1426,9 @@ def _when_text(
     if repeat_type is not None:
         base = "Repeats " + ("weekly" if repeat_type == RepeatType.weekly else "monthly")
     elif date_for is not None:
-        base = date_for.strftime("%a %b %-d")
+        base = _day_text(date_for)
         if end_date is not None and end_date > date_for:
-            base += " – " + end_date.strftime("%a %b %-d")
+            base += " – " + _day_text(end_date)
             end = None  # the range already says where it finishes
     else:
         base = "Anytime"

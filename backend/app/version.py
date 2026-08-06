@@ -2,4 +2,4 @@
 round (a test pins the two together). A boot that finds a different version
 stored in app_meta announces itself to every parent."""
 
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.2.0"

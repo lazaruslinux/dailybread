@@ -221,6 +221,10 @@ export function FoodSheet({
       folder: folder.trim() || null,
       barcode,
       base_unit: baseUnit,
+      // Straight from the scanned source, like the health-check fields below:
+      // a saved copy converts between weight and volume the way its cache row
+      // did. Nothing here derives one from the serving sizes typed above.
+      density_g_per_ml: seed?.density_g_per_ml ?? null,
       servings: cleaned,
       basis_index: basis,
       // Carry the source's health-check label data straight through (already

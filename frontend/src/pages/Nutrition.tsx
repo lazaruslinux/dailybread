@@ -19,9 +19,10 @@ import { CrumbFloat } from '../components/CrumbFloat'
 import {
   FoodPicker,
   Sheet,
+  UNIT_GROUPS,
   UNIT_LABEL,
+  portionHint,
   servingIndex,
-  unitsForBase,
 } from '../components/recipes'
 import {
   PortionSheet,
@@ -404,9 +405,15 @@ function EditEntrySheet({
   const servings = entry.food_servings
   const base = entry.food_base_unit
   // A food with named servings and its source still around can be edited by
-  // serving, exactly like the add sheet. Otherwise (recipe, deleted food, or a
-  // food with no servings) we keep the plain amount + fixed unit.
+  // serving, exactly like the add sheet.
   const canServe = !isRecipe && entry.food_id != null && servings.length > 0 && base != null
+  // The unit dropdown opens wider than that: any food whose measure family is
+  // still known can be re-read in ANY unit, its own family or the other one
+  // (millilitres of milk as ounces), which the server converts by density. Only
+  // a recipe (measured in servings) and a deleted food keep the fixed unit.
+  const canUnit = !isRecipe && entry.food_id != null && base != null
+  // What the conversion needs, in the shape toBase takes.
+  const measured = { base_unit: base!, density_g_per_ml: entry.food_density_g_per_ml }
 
   // Reopen on the portion the entry was logged as. When a serving was used, the
   // amount is stored in the base unit and the serving name lives in the label;
@@ -437,13 +444,14 @@ function EditEntrySheet({
 
   const amt = Number(amount) || 0
 
-  // Show what a chosen serving resolves to in the base unit, e.g. "= 160 g".
-  const resolved = useMemo(() => {
-    if (base == null) return null
-    const si = servingIndex(unit)
-    if (si == null || !servings[si]) return null
-    return `${trim(amt * servings[si].grams)} ${base === 'ml' ? 'mL' : 'g'}`
-  }, [amt, unit, base, servings])
+  // What the chosen portion resolves to in the base unit ("= 160 g") — for a
+  // named serving, and for a unit from the other measure family. A cross-family
+  // pick on a food whose label never gave a density says so instead.
+  const hint = useMemo(
+    () => (base == null ? null : portionHint(measured, amt, unit, servings)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [amt, unit, base, servings, entry.food_density_g_per_ml],
+  )
 
   async function save(e: FormEvent) {
     e.preventDefault()
@@ -460,11 +468,17 @@ function EditEntrySheet({
         patch.amount = s ? amt * s.grams : amt
         patch.unit = (s && base ? base : unit) as api.AmountUnit
         patch.label = s ? `${trim(amt)} ${s.name.replace(/^1\s+/, '')}` : null
+      } else if (canUnit) {
+        // No named servings, so the dropdown offers raw units alone. A portion
+        // that really moved drops its old phrasing; a save that changed neither
+        // the amount nor the unit keeps it.
+        patch.amount = amt
+        patch.unit = unit as api.AmountUnit
+        if (amt !== entry.amount || unit !== entry.unit) patch.label = null
       } else {
-        // Recipe entry, deleted food, or a food with no servings: the unit is
-        // fixed and not editable here, so never send it (a recipe's "srv" is
-        // not an AmountUnit). Drop a now-stale serving label only if the
-        // portion actually changed.
+        // Recipe entry or deleted food: the unit is fixed and not editable
+        // here, so never send it (a recipe's "srv" is not an AmountUnit).
+        // Drop a now-stale serving label only if the portion actually changed.
         patch.amount = amt
         if (amt !== entry.amount) patch.label = null
       }
@@ -511,26 +525,32 @@ function EditEntrySheet({
               required
             />
           </div>
-          {canServe ? (
+          {canUnit ? (
             <label className="block min-w-0 flex-1">
               <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">
                 Unit
               </span>
               <select value={unit} onChange={(e) => setUnit(e.target.value)} className="field">
-                <optgroup label="Servings">
-                  {servings.map((s, i) => (
-                    <option key={`s${i}`} value={`serving:${i}`}>
-                      {s.name}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label={base === 'ml' ? 'Volume' : 'Weight'}>
-                  {unitsForBase(base!).map((u) => (
-                    <option key={u} value={u}>
-                      {UNIT_LABEL[u] ?? u}
-                    </option>
-                  ))}
-                </optgroup>
+                {canServe && (
+                  <optgroup label="Servings">
+                    {servings.map((s, i) => (
+                      <option key={`s${i}`} value={`serving:${i}`}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {/* Both families: the server converts a cross-family amount
+                    through the food's density. */}
+                {UNIT_GROUPS.map((g) => (
+                  <optgroup key={g.label} label={g.label}>
+                    {g.units.map((u) => (
+                      <option key={u} value={u}>
+                        {UNIT_LABEL[u] ?? u}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
               </select>
             </label>
           ) : (
@@ -539,7 +559,7 @@ function EditEntrySheet({
             </span>
           )}
         </div>
-        {resolved && <p className="-mt-2 text-xs text-fg/45">= {resolved}</p>}
+        {hint && <p className="-mt-2 text-xs text-fg/45">{hint}</p>}
 
         <div>
           <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-fg/50">

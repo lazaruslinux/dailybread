@@ -1,4 +1,4 @@
-import { Bookmark, BookmarkCheck, ChevronLeft, ScanBarcode, Search } from 'lucide-react'
+import { Bookmark, BookmarkCheck, ChevronLeft, Pencil, ScanBarcode, Search } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import * as api from '../../lib/api'
 import { Button, FormError } from '../ui'
@@ -6,16 +6,22 @@ import { BarcodeScanner } from '../BarcodeScanner'
 import { FoodSheet } from './FoodSheet'
 import { FoodIdentity } from './ui'
 import {
+  EDIT_MACROS,
   SOURCE_LABEL,
+  WATER_ASSUMED_HINT,
+  UNIT_GROUPS,
   UNIT_LABEL,
-  UNIT_TO_BASE,
   baseAmountOf,
+  decimalOnly,
   foldersOf,
+  implausibleMacros,
+  assumesWater,
   lineFromFood,
   r2,
   servingIndex,
-  unitsForBase,
+  toBase,
   type EditLine,
+  type MacroValues,
 } from './shared'
 
 // The food picker: search the USDA database (server-proxied), the family's
@@ -89,6 +95,8 @@ export function FoodPicker({ onPick, onBack }: { onPick: (food: api.Food) => voi
           source_id: food.source_id,
           name: food.name,
           brand: food.brand,
+          base_unit: food.base_unit,
+          density_g_per_ml: food.density_g_per_ml,
           calories: food.calories,
           protein_g: food.protein_g,
           carbs_g: food.carbs_g,
@@ -309,11 +317,60 @@ export function FoodConfirm({
   const base = baseAmountOf(line)
   const cals = line.calories != null ? Math.round((line.calories * base) / 100) : null
   const baseLabel = `${+base.toFixed(base < 10 ? 1 : 0)} ${UNIT_LABEL[line.base_unit]}`
+  const assumed = assumesWater(line, line.unit)
 
   function changeUnit(next: string) {
     const nsi = servingIndex(next)
-    const per = nsi != null ? line.servings[nsi]?.grams || 1 : UNIT_TO_BASE[next as api.AmountUnit] || 1
+    // What ONE of the new unit is worth in base units, density included, so the
+    // physical quantity survives the switch (2 scoops -> 64 g -> 2.26 oz).
+    const per = nsi != null ? line.servings[nsi]?.grams || 1 : toBase(line, 1, next) || 1
     setLine({ ...line, unit: next, amount: r2(base / per) })
+  }
+
+  // The label editor, the same offer the diary's portion sheet makes: scanned
+  // data is often incomplete (Open Food Facts frequently has no carbs) or
+  // self-contradictory, and this is the last look before it becomes a recipe's
+  // nutrition. Always reachable by the pencil; opens by itself when the numbers
+  // are missing or don't add up.
+  const portion = (v: number | null) => (v != null ? (v * base) / 100 : null)
+  const shown = {
+    calories: portion(line.calories),
+    protein_g: portion(line.protein_g),
+    carbs_g: portion(line.carbs_g),
+    fat_g: portion(line.fat_g),
+    // Not shown, but the plausibility check is built on sugars.
+    sugar_g: portion(line.sugar_g),
+  }
+  const missing = EDIT_MACROS.some((f) => shown[f.key] == null)
+  const dontAddUp = !missing && implausibleMacros(shown)
+  const [editing, setEditing] = useState(() => missing || dontAddUp)
+  const seedValues = (): MacroValues => ({
+    calories: shown.calories != null ? String(Math.round(shown.calories)) : '',
+    protein_g: shown.protein_g != null ? String(Math.round(shown.protein_g)) : '',
+    carbs_g: shown.carbs_g != null ? String(Math.round(shown.carbs_g)) : '',
+    fat_g: shown.fat_g != null ? String(Math.round(shown.fat_g)) : '',
+  })
+  const [values, setValues] = useState<MacroValues>(seedValues)
+
+  // Changing the amount or the unit rescales the portion, so the fields re-seed
+  // to the freshly scaled numbers: an edit sits on top of a settled portion,
+  // never beside a stale one. (The diary's portion sheet does the same.)
+  useEffect(() => {
+    setValues(seedValues())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [base])
+
+  // The line stores per-100 figures, so an edited portion is divided back out.
+  // A zero-size portion has nothing to divide by, so the field is only recorded.
+  function editMacro(key: keyof MacroValues, raw: string) {
+    const next = decimalOnly(raw)
+    setValues((prev) => ({ ...prev, [key]: next }))
+    if (base <= 0) return
+    const typed = next.trim() === '' ? null : Number(next)
+    setLine((l) => ({
+      ...l,
+      [key]: typed != null && Number.isFinite(typed) ? r2((typed * 100) / base) : null,
+    }))
   }
 
   return (
@@ -354,17 +411,84 @@ export function FoodConfirm({
                 ))}
               </optgroup>
             )}
-            <optgroup label={line.base_unit === 'ml' ? 'Volume' : 'Weight'}>
-              {unitsForBase(line.base_unit).map((u) => (
-                <option key={u} value={u}>
-                  {UNIT_LABEL[u]}
-                </option>
-              ))}
-            </optgroup>
+            {/* Both families: a cross-family amount converts through the
+                food's density (or water, which the hint below names). */}
+            {UNIT_GROUPS.map((g) => (
+              <optgroup key={g.label} label={g.label}>
+                {g.units.map((u) => (
+                  <option key={u} value={u}>
+                    {UNIT_LABEL[u]}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
           </select>
         </div>
       </div>
       <p className="mt-1.5 px-1 text-xs text-fg/45">{[baseLabel, cals != null ? `${cals} cal` : null].filter(Boolean).join(' · ')}</p>
+      {assumed && <p className="px-1 text-xs text-fg/45">{WATER_ASSUMED_HINT}</p>}
+
+      <div className="mt-3 rounded-xl border border-fg/10 bg-fg/5 px-3.5 py-2.5">
+        {editing ? (
+          <div className="flex flex-col gap-2.5">
+            <div className="flex items-center justify-between">
+              <span className="db-micro">This ingredient</span>
+              <button
+                type="button"
+                onClick={() => setEditing(false)}
+                className="-m-3.5 rounded-lg p-3.5 text-xs font-semibold text-accent-bright"
+              >
+                Done
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {EDIT_MACROS.map((f) => (
+                <label key={f.key} className="block">
+                  <span className="mb-1 block text-[11px] font-medium text-fg/55">
+                    {f.label}
+                    {f.unit ? ` (${f.unit})` : ''}
+                  </span>
+                  <input
+                    inputMode="decimal"
+                    value={values[f.key]}
+                    placeholder="Add"
+                    onChange={(e) => editMacro(f.key, e.target.value)}
+                    className={`field ${values[f.key] === '' ? 'ring-1 ring-amber-400/60' : ''}`}
+                  />
+                </label>
+              ))}
+            </div>
+            {dontAddUp && (
+              <p className="text-[11px] leading-snug text-amber-500">
+                These numbers don't add up; check them against the label.
+              </p>
+            )}
+            {missing && (
+              <p className="text-[11px] leading-snug text-amber-500">
+                The highlighted macros weren't in the scan. Add them from the package label if you have it.
+              </p>
+            )}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="-my-2.5 flex min-h-11 w-full items-center justify-between gap-2 py-2.5 text-left"
+          >
+            <span className="text-sm font-semibold text-accent-bright">
+              {[
+                cals != null ? `${cals} cal` : '— cal',
+                shown.protein_g != null ? `${Math.round(shown.protein_g)}g protein` : null,
+                shown.carbs_g != null ? `${Math.round(shown.carbs_g)}g carbs` : null,
+                shown.fat_g != null ? `${Math.round(shown.fat_g)}g fat` : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
+            <Pencil className="h-4 w-4 shrink-0 text-fg/40" />
+          </button>
+        )}
+      </div>
 
       <Button type="button" onClick={() => onAdd(line)} disabled={line.amount <= 0} className="mt-4 w-full">
         Add to recipe

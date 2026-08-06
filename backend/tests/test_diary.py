@@ -119,9 +119,13 @@ def test_totals_sum_across_entries_and_days_stay_separate(parent):
     assert day(parent, other_day)["consumed"]["calories"] == 100.0
 
 
-def test_mass_food_refuses_volume_units(parent):
+def test_mass_food_accepts_a_volume_unit_through_density(parent):
+    # A cup of oats logged against a per-100g food: the amount crosses measure
+    # families and converts through the food's density, water's when (as here)
+    # no label ever stated both readings. 236.588 mL -> 236.588 g -> 236.6 kcal.
     res = log(parent, amount=1, unit="cup")
-    assert res.status_code == 400
+    assert res.status_code == 201, res.text
+    assert res.json()["calories"] == 236.6
 
 
 def test_future_dates_are_refused_beyond_clock_tolerance(parent):
@@ -385,3 +389,90 @@ def test_minors_have_no_diary(child):
         ).status_code
         == 403
     )
+
+
+# ---- units across the measure families ---------------------------------------------
+# The diary logs a food in ANY unit, weight or volume. Crossing the two goes
+# through the food's density when its label stated the serving both ways, and
+# through water when it didn't. (Recipes are unchanged: a line still has to
+# match its food's own family.)
+
+
+def _scanned_milk(client, monkeypatch, code, density=None):
+    """A cache row for a per-100mL food, optionally carrying a density. Scanning
+    is the only path that derives one, so it's how a test gets a food with one."""
+    from app import foods_api
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "usda_api_key", "")
+    monkeypatch.setattr(
+        foods_api,
+        "lookup_barcode_off",
+        lambda c: foods_api.FoodResult(
+            "off", c, "Whole Milk", "Dairy Co", 61.0, 3.2, 4.8, 3.3,
+            base_unit="ml", density_g_per_ml=density,
+        ),
+    )
+    res = client.get(f"/foods/barcode/{code}")
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def _log_scanned(client, food, amount, unit):
+    return log(
+        client,
+        amount=amount,
+        unit=unit,
+        food_id=food["id"],
+        name=food["name"],
+        source="off",
+        source_id=food["source_id"],
+    )
+
+
+def test_grams_of_a_volume_food_convert_by_its_density(parent, monkeypatch):
+    # 100 g of a milk that weighs 1.03 g per mL is 97.09 mL, so it carries
+    # 97.09% of the per-100mL label: 61 -> 59.2 kcal.
+    milk = _scanned_milk(parent, monkeypatch, "5011111111111", density=1.03)
+    assert milk["density_g_per_ml"] == 1.03
+    res = _log_scanned(parent, milk, amount=100, unit="g")
+    assert res.status_code == 201, res.text
+    assert res.json()["calories"] == 59.2
+    assert res.json()["protein_g"] == 3.1
+
+
+def test_without_a_density_a_crossing_assumes_water(parent, monkeypatch):
+    # No label ever stated both readings, so 100 g reads as 100 mL. The UI says
+    # as much before the entry is saved.
+    milk = _scanned_milk(parent, monkeypatch, "5011111111112")
+    assert milk["density_g_per_ml"] is None
+    res = _log_scanned(parent, milk, amount=100, unit="g")
+    assert res.status_code == 201, res.text
+    assert res.json()["calories"] == 61.0
+
+
+def test_litres_and_gallons_convert(parent, monkeypatch):
+    milk = _scanned_milk(parent, monkeypatch, "5011111111113")
+    # 1 L = 1000 mL = ten times the per-100mL label.
+    assert _log_scanned(parent, milk, amount=1, unit="l").json()["calories"] == 610.0
+    # 1 gal = 3785.41 mL.
+    assert _log_scanned(parent, milk, amount=1, unit="gal").json()["calories"] == 2309.1
+
+
+def test_editing_an_entry_across_measure_families_rescales_it(parent, monkeypatch):
+    milk = _scanned_milk(parent, monkeypatch, "5011111111114", density=1.03)
+    entry = _log_scanned(parent, milk, amount=200, unit="ml").json()
+    assert entry["calories"] == 122.0
+
+    # 2 oz = 56.7 g = 55.05 mL of this milk, so the snapshot scales to 27.5%.
+    res = parent.patch(f"/diary/{entry['id']}", json={"amount": 2, "unit": "oz"})
+    assert res.status_code == 200, res.text
+    assert res.json()["unit"] == "oz" and res.json()["amount"] == 2.0
+    assert res.json()["calories"] == 33.6
+    assert res.json()["protein_g"] == 1.8
+
+
+def test_the_edit_sheet_is_told_the_density(parent, monkeypatch):
+    milk = _scanned_milk(parent, monkeypatch, "5011111111115", density=1.03)
+    _log_scanned(parent, milk, amount=200, unit="ml")
+    assert day(parent)["entries"][0]["food_density_g_per_ml"] == 1.03

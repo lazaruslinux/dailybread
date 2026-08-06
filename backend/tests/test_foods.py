@@ -343,21 +343,32 @@ def test_custom_food_barcode_is_family_private(owner, other, monkeypatch):
 
 
 def test_barcode_resolves_from_the_shared_cache_before_off(owner, monkeypatch):
-    # A product used in a recipe once is cached; the next scan is served from
-    # that cache without an outbound call.
+    # A product used in a recipe once is cached. Nothing ever fetched it by
+    # barcode, so its age is unknown and the first scan re-reads it from the
+    # source; every scan after that is served from the cache, no outbound call.
     from tests.test_recipes import make_recipe, usda_line
 
     line = usda_line(source_id="3017620422003", name="Nutella")
     line["source"] = "off"
     make_recipe(owner, ingredients=[line])
 
+    monkeypatch.setattr(
+        foods_api,
+        "lookup_barcode_off",
+        lambda code: foods_api.FoodResult(
+            "off", code, "Nutella", "Ferrero", 539.0, 6.3, 57.5, 30.9
+        ),
+    )
+    res = owner.get("/foods/barcode/3017620422003")
+    assert res.status_code == 200, res.text
+    assert res.json()["source"] == "off" and res.json()["name"] == "Nutella"
+
     def must_not_be_called(code):
         raise AssertionError("barcode lookup left the server")
 
     monkeypatch.setattr(foods_api, "lookup_barcode_off", must_not_be_called)
-    res = owner.get("/foods/barcode/3017620422003")
-    assert res.status_code == 200, res.text
-    assert res.json()["source"] == "off" and res.json()["name"] == "Nutella"
+    again = owner.get("/foods/barcode/3017620422003").json()
+    assert again["id"] == res.json()["id"] and again["name"] == "Nutella"
 
 
 # ---- the recently-used shelf ------------------------------------------------------
@@ -799,10 +810,12 @@ def test_usda_barcode_requires_exact_gtin(monkeypatch):
 
 def test_volume_text_classifies_a_grams_labelled_liquid_as_millilitres():
     # The real failing case: USDA gives servingSize 30 / servingSizeUnit "g" but
-    # the household text says "2 Tbsp (30mL)"; the metric mark wins.
+    # the household text says "2 Tbsp (30mL)"; the metric mark wins. Stating the
+    # serving both ways also gives up the density, alongside and not instead.
     assert foods_api._serving_fields(30, "g", "2 Tbsp (30mL)") == {
         "serving_amount": 30.0,
         "base_unit": "ml",
+        "density_g_per_ml": 1.0,
     }
     # bare metric and fl oz phrasings both read as a volume
     assert foods_api._serving_fields(None, None, "240 ml") == {
@@ -1091,3 +1104,309 @@ def test_scan_never_renames_a_custom_food(owner):
     assert made.status_code == 201, made.text
     scanned = owner.get("/foods/barcode/4666666666666").json()
     assert scanned["servings"][0]["name"] == "Amount/serving (120 MLT)"
+
+
+# ---- energy consistency ------------------------------------------------------------
+# Calories can never sit materially below what a food's SUGARS alone account for.
+# A source row that breaks that mixed its units up somewhere (his maple syrup
+# read 78 kcal against sugars worth 96); the correction is deliberately
+# one-sided, so a drink whose alcohol carries energy no macro column names is
+# left alone, and the floor is built on sugars so a sugar-alcohol product's
+# perfectly legal label survives untouched.
+
+
+def _result(**overrides):
+    base = {
+        "source": "off", "source_id": "1", "name": "Sample", "brand": "",
+        "calories": None, "protein_g": None, "carbs_g": None, "fat_g": None,
+    }
+    base.update(overrides)
+    return foods_api.FoodResult(**base)
+
+
+def test_calories_below_the_sugars_are_corrected():
+    # Syrup: 90 g of sugar is 360 kcal on its own, whatever the row claimed.
+    fixed = foods_api._fix_energy(
+        _result(calories=260.0, protein_g=0.0, carbs_g=90.0, fat_g=0.0, sugar_g=90.0)
+    )
+    assert fixed.calories == 360.0
+
+
+def test_a_sugar_alcohol_label_is_left_alone():
+    # Erythritol: 98 g of carbohydrate, none of it sugar, 20 kcal. A legal label
+    # and a physically real one — polyols carry next to no energy — and a floor
+    # built on total carbs would have "corrected" it to 392.
+    fixed = foods_api._fix_energy(
+        _result(calories=20.0, protein_g=0.0, carbs_g=98.0, fat_g=0.0, sugar_g=0.0)
+    )
+    assert fixed.calories == 20.0
+
+
+def test_calories_above_the_sugars_are_left_alone():
+    # Alcohol carries 7 kcal a gram and appears in no macro column, so a figure
+    # well above what the macros account for is honest.
+    fixed = foods_api._fix_energy(
+        _result(calories=500.0, protein_g=0.0, carbs_g=20.0, fat_g=0.0, sugar_g=20.0)
+    )
+    assert fixed.calories == 500.0
+
+
+def test_energy_guard_skips_what_it_cannot_judge():
+    # No sugars datum is not judgeable at all, and neither is a row with no
+    # calorie figure to check.
+    assert foods_api._fix_energy(_result(calories=5.0, carbs_g=90.0)).calories == 5.0
+    assert foods_api._fix_energy(_result(carbs_g=90.0, sugar_g=90.0)).calories is None
+    # Trace sugars: the floor is too small for the comparison to mean anything.
+    assert foods_api._fix_energy(_result(calories=1.0, sugar_g=4.0)).calories == 1.0
+
+
+def test_the_repair_gives_fibre_its_allowance():
+    # 30 g of carbs, 25 sugar and 20 fibre, claiming 10 kcal. The sugars alone
+    # trip the floor; the repair is the full Atwater sum less the fibre that
+    # passes through unburned (120 - 40), not the raw 120.
+    fixed = foods_api._fix_energy(
+        _result(calories=10.0, carbs_g=30.0, sugar_g=25.0, fiber_g=20.0)
+    )
+    assert fixed.calories == 80.0
+
+
+def test_off_lookup_corrects_a_broken_energy_row(monkeypatch):
+    # The maple syrup as Open Food Facts served it: energy per 100 g beside
+    # carbohydrate per 100 mL.
+    payload = {
+        "status": 1,
+        "product": {
+            "product_name": "Organic Maple Syrup",
+            "brands": "Kirkland",
+            "nutriments": {
+                "energy-kcal_100g": 78,
+                "carbohydrates_100g": 90,
+                "sugars_100g": 90,
+                "proteins_100g": 0,
+                "fat_100g": 0,
+            },
+        },
+    }
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return payload
+
+    monkeypatch.setattr(foods_api.httpx, "get", lambda *a, **k: FakeResponse())
+    result = foods_api.lookup_barcode_off("0096619016273")
+    assert result.calories == 360.0
+
+
+# ---- shared-cache refresh ----------------------------------------------------------
+# Sources correct their own records; a cache row that never refetched served the
+# mistake forever. A row older than 30 days (or of unknown age) is re-read on its
+# next scan.
+
+
+def _cache_session(app):
+    from sqlalchemy.orm import sessionmaker
+
+    return sessionmaker(bind=app.state.test_engine, expire_on_commit=False)
+
+
+def _cache_row(app, code: str):
+    """The shared cache row for a barcode, servings loaded, detached."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.models import Food
+
+    with _cache_session(app)() as db:
+        return db.scalar(
+            select(Food)
+            .where(Food.source_id == code, Food.family_id.is_(None))
+            .options(selectinload(Food.servings))
+            .order_by(Food.id.desc())
+        )
+
+
+def _age_cache(app, code: str, days=None):
+    """Push a cached row's fetched_at back; None leaves it never-stamped, the
+    way every row written before the column reads."""
+    from sqlalchemy import select
+
+    from app.models import Food
+
+    with _cache_session(app)() as db:
+        row = db.scalar(
+            select(Food)
+            .where(Food.source_id == code, Food.family_id.is_(None))
+            .order_by(Food.id.desc())
+        )
+        row.fetched_at = (
+            None
+            if days is None
+            else dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)
+        )
+        db.commit()
+
+
+def _syrup(calories, carbs, name="Maple Syrup", serving_amount=60.0):
+    def off_hit(code):
+        return foods_api.FoodResult(
+            "off", code, name, "Kirkland", calories, 0.0, carbs, 0.0,
+            serving=f"{serving_amount:g} mL", serving_amount=serving_amount,
+            base_unit="ml",
+        )
+
+    return off_hit
+
+
+CODE = "0096619016273"
+
+
+def test_a_stale_cache_row_is_refetched_on_the_next_scan(app, owner, monkeypatch):
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", _syrup(260.0, 65.0))
+    first = owner.get(f"/foods/barcode/{CODE}").json()
+    assert first["calories"] == 260.0
+
+    _age_cache(app, CODE, days=45)
+    monkeypatch.setattr(
+        foods_api, "lookup_barcode_off",
+        _syrup(360.0, 90.0, name="Organic Maple Syrup", serving_amount=30.0),
+    )
+    again = owner.get(f"/foods/barcode/{CODE}").json()
+    assert again["id"] == first["id"]  # the same row, corrected in place
+    assert again["calories"] == 360.0 and again["carbs_g"] == 90.0
+    assert again["name"] == "Organic Maple Syrup"
+    assert [s["grams"] for s in again["servings"]] == [30.0]
+    assert _cache_row(app, CODE).fetched_at is not None
+
+
+def test_a_cache_row_of_unknown_age_is_refetched(app, owner, monkeypatch):
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", _syrup(260.0, 65.0))
+    owner.get(f"/foods/barcode/{CODE}")
+    _age_cache(app, CODE, days=None)  # as a row written before the column reads
+
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", _syrup(360.0, 90.0))
+    assert owner.get(f"/foods/barcode/{CODE}").json()["calories"] == 360.0
+
+
+def test_a_fresh_cache_row_never_leaves_the_server(owner, monkeypatch):
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", _syrup(260.0, 65.0))
+    owner.get(f"/foods/barcode/{CODE}")
+
+    def must_not_be_called(code):
+        raise AssertionError("a fresh cache row must not refetch")
+
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", must_not_be_called)
+    assert owner.get(f"/foods/barcode/{CODE}").json()["calories"] == 260.0
+
+
+def test_a_family_custom_food_is_never_refetched(app, owner, monkeypatch):
+    # It resolves before the cache lookup, so nothing ages it or re-reads it.
+    def must_not_be_called(code):
+        raise AssertionError("a custom food must not refetch")
+
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", must_not_be_called)
+    made = _custom_food(owner, barcode="4099999999991")
+    scanned = owner.get("/foods/barcode/4099999999991").json()
+    assert scanned["id"] == made["id"]
+    with _cache_session(app)() as db:
+        from app.models import Food
+
+        assert db.get(Food, made["id"]).fetched_at is None
+
+
+def test_a_refetch_that_cannot_reach_the_network_changes_nothing(app, owner, monkeypatch):
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", _syrup(260.0, 65.0))
+    owner.get(f"/foods/barcode/{CODE}")
+    _age_cache(app, CODE, days=45)
+    stamped = _cache_row(app, CODE).fetched_at
+
+    def boom(code):
+        raise foods_api.FoodApiError("down")
+
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", boom)
+    again = owner.get(f"/foods/barcode/{CODE}").json()
+    assert again["calories"] == 260.0  # the cached copy still answers
+    # Left unstamped as well, so the next scan tries again rather than waiting
+    # out another month on a moment's outage.
+    assert _cache_row(app, CODE).fetched_at == stamped
+
+
+def test_a_product_gone_upstream_is_stamped_and_still_served(app, owner, monkeypatch):
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", _syrup(260.0, 65.0))
+    owner.get(f"/foods/barcode/{CODE}")
+    _age_cache(app, CODE, days=45)
+    old = _cache_row(app, CODE).fetched_at
+
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", lambda code: None)
+    again = owner.get(f"/foods/barcode/{CODE}").json()
+    assert again["calories"] == 260.0  # the copy we have is all there is
+    fresh = _cache_row(app, CODE).fetched_at
+    assert fresh != old  # stamped anyway: don't re-ask for another month
+
+    def must_not_be_called(code):
+        raise AssertionError("a stamped miss must not refetch")
+
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", must_not_be_called)
+    assert owner.get(f"/foods/barcode/{CODE}").status_code == 200
+
+
+# ---- density from the label --------------------------------------------------------
+# A label that states its serving BOTH ways ("1 tbsp (21 g)") gives up what a
+# millilitre of the food weighs, which is what lets the diary log it in any unit.
+
+
+def test_density_from_gram_fields_and_a_volume_phrase():
+    # USDA's shape: 21 g in the fields, the spoon in the household text. The
+    # base unit stays grams (a bare spoon is no proof of a liquid) and the
+    # density rides alongside: 21 g in the 14.79 mL the spoon parsed to.
+    fields = foods_api._serving_fields(21, "GRM", "1 tbsp")
+    assert fields["base_unit"] == "g" and fields["serving_amount"] == 21.0
+    assert fields["density_g_per_ml"] == 1.4199
+
+
+def test_density_from_millilitre_fields_and_a_gram_phrase():
+    # The other way round: the fields measure volume and the phrase names the
+    # weight, so the reading is still two-sided.
+    fields = foods_api._serving_fields(15, "ml", "1 tbsp (21 g)")
+    assert fields["base_unit"] == "ml" and fields["serving_amount"] == 15.0
+    assert fields["density_g_per_ml"] == 1.4
+
+
+def test_an_out_of_range_density_is_dropped():
+    # Cereal: 30 g measured by a bare 0.75 cup reads as 0.17 g/mL, which is a
+    # misread rather than a discovery, so nothing is stored.
+    assert "density_g_per_ml" not in foods_api._serving_fields(30, "GRM", "0.75 cup")
+    # And a label naming only one measure has nothing to derive from.
+    assert "density_g_per_ml" not in foods_api._serving_fields(21, "GRM", "1 slice")
+
+
+def test_a_scanned_food_keeps_its_density_through_a_refresh(app, owner, monkeypatch):
+    def syrup(density):
+        return lambda code: foods_api.FoodResult(
+            "off", code, "Maple Syrup", "Kirkland", 260.0, 0.0, 65.0, 0.0,
+            serving="1 tbsp (21 g)", serving_amount=15.0, base_unit="ml",
+            density_g_per_ml=density,
+        )
+
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", syrup(1.4))
+    assert owner.get(f"/foods/barcode/{CODE}").json()["density_g_per_ml"] == 1.4
+
+    # A refetch carries the source's current answer, density included.
+    _age_cache(app, CODE, days=45)
+    monkeypatch.setattr(foods_api, "lookup_barcode_off", syrup(1.32))
+    assert owner.get(f"/foods/barcode/{CODE}").json()["density_g_per_ml"] == 1.32
+
+
+def test_a_custom_food_round_trips_a_scanned_density(owner):
+    # "Save as custom food" after a scan keeps what a millilitre weighs, so the
+    # family's own copy converts exactly like the cache row it came from.
+    made = owner.post(
+        "/foods",
+        json=_food("Maple Syrup", base_unit="ml", density_g_per_ml=1.32),
+    )
+    assert made.status_code == 201, made.text
+    assert made.json()["density_g_per_ml"] == 1.32
+    # An edit that sends it back keeps it; a hand-made food simply has none.
+    plain = owner.post("/foods", json=_food("Hand Made"))
+    assert plain.json()["density_g_per_ml"] is None

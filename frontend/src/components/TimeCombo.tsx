@@ -36,15 +36,28 @@ export function parseTime(raw: string): string | null {
   return `${String(h).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
 }
 
+// The half-hour row a time falls in ("11:15" -> "11:00"), so the list can open
+// where the time already is.
+function halfHourRow(hhmm: string): string | null {
+  const [h, m] = hhmm.split(':').map(Number)
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null
+  return `${String(h).padStart(2, '0')}:${m < 30 ? '00' : '30'}`
+}
+
 export function TimeCombo({
   label,
   value,
+  anchor,
   onChange,
   required = false,
   placeholder = '8:00 AM',
 }: {
   label: string
   value: string // "HH:MM", or "" for none
+  // Where to open the list when the field is EMPTY: a To field takes the From
+  // field's time, so picking 11:00 AM to start opens the end list right there
+  // instead of at midnight. Positions the scroll only; it never selects.
+  anchor?: string
   onChange: (value: string) => void
   required?: boolean
   placeholder?: string
@@ -54,6 +67,7 @@ export function TimeCombo({
   const [open, setOpen] = useState(false)
   const [unread, setUnread] = useState(false)
   const box = useRef<HTMLDivElement>(null)
+  const list = useRef<HTMLUListElement>(null)
   // What we last handed the form, so a value the form changed on its own (an
   // all-day switch clearing the times, a card loading for edit) refreshes the
   // text while someone's own half-typed entry is left alone.
@@ -65,6 +79,20 @@ export function TimeCombo({
     setText(value ? to12h(value) : '')
     setUnread(false)
   }, [value])
+
+  // The list mounts with `open`, so by the time this runs the rows exist. Its
+  // own scrollTop is set rather than scrollIntoView: that would scroll every
+  // ancestor too, dragging the sheet behind the dropdown around.
+  useEffect(() => {
+    if (!open) return
+    const key = halfHourRow(value || anchor || '')
+    if (!key) return
+    const row = list.current?.querySelector<HTMLElement>(`[data-time="${key}"]`)
+    if (row) list.current!.scrollTop = row.offsetTop
+    // Only on the OPEN: the position is where the list starts, not something
+    // that chases the value while it is being picked.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -145,12 +173,15 @@ export function TimeCombo({
           aria-label={`Pick a time for ${label.toLowerCase()}`}
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
-          className="absolute right-0.5 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-xl text-fg/45 transition-colors hover:bg-fg/10 hover:text-fg"
+          // A resting tint, not a hover-only one: phones have no hover, and
+          // without it the clock reads as decoration rather than a button.
+          className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-xl bg-fg/10 text-fg/70 transition-colors hover:bg-fg/20 hover:text-fg active:bg-fg/25"
         >
           <Clock className="h-4 w-4" strokeWidth={2} />
         </button>
         {open && (
           <ul
+            ref={list}
             role="listbox"
             aria-label={label}
             // Held open through the click: pressing a row would otherwise blur
@@ -163,6 +194,7 @@ export function TimeCombo({
                 <button
                   type="button"
                   role="option"
+                  data-time={t}
                   aria-selected={t === value}
                   onClick={() => pick(t)}
                   className={`flex min-h-11 w-full items-center px-4 text-sm font-semibold transition-colors ${

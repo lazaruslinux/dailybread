@@ -248,10 +248,21 @@ export function Home({
   const focusStamp = useRef<{ id: number; date: string | null; at: number } | null>(null)
   // Read-ordering guard for refresh(); see there.
   const boardSeq = useRef(0)
-  const [sheet, setSheet] = useState<{ open: boolean; item: api.FeedItem | null }>({ open: false, item: null })
+  // occurrence is set only when editing ONE day of a repeating appointment.
+  const [sheet, setSheet] = useState<{
+    open: boolean
+    item: api.FeedItem | null
+    occurrence?: string
+  }>({ open: false, item: null })
   // checkable rides along so the detail sheet knows whether completion is even
-  // on offer; the sheet layers the kind/role gating on top of it.
-  const [detail, setDetail] = useState<{ item: api.FeedItem; checkable: boolean } | null>(null)
+  // on offer; the sheet layers the kind/role gating on top of it. day is the
+  // occurrence the row was opened on, which a repeating card's own date_for
+  // cannot say (all its rows share one id, and today's carries no date).
+  const [detail, setDetail] = useState<{
+    item: api.FeedItem
+    checkable: boolean
+    day?: string
+  } | null>(null)
   const [toast, setToast] = useState<api.FeedItem | null>(null)
   const toastTimer = useRef<number | undefined>(undefined)
   // Re-rendering once a minute keeps the section buckets honest without polling.
@@ -559,14 +570,17 @@ export function Home({
     }
   }
 
+  // Which day an open sheet is acting on: the day it was opened from (a peeked
+  // timeline day), else the row's own date, else today.
+  const dayOf = (d: { item: api.FeedItem; day?: string }) =>
+    d.day ?? d.item.date_for ?? api.localDate()
+
   // Same shape as the calendar's: a refused cancel used to reject into nothing.
-  // The sheet closes either way, because the error line lives behind it. The
-  // day is the card's own: a next-7 row (or a repeating occurrence, which
-  // stamps its day) calls off THAT day, not today. Undated cards fall back.
-  async function cancelFromDetail(item: api.FeedItem) {
+  // The sheet closes either way, because the error line lives behind it.
+  async function cancelFromDetail(item: api.FeedItem, day: string) {
     const call = item.cancelled ? api.uncancelItem : api.cancelItem
     try {
-      await call(item.id, item.date_for ?? api.localDate())
+      await call(item.id, day)
       setDetail(null)
       refreshAndAnnounce()
     } catch (err) {
@@ -575,9 +589,29 @@ export function Home({
     }
   }
 
+  // "Remove just this one" on a repeating appointment: the day leaves the
+  // series for good and everything else keeps running.
+  async function deleteOccurrenceFromDetail(item: api.FeedItem, day: string) {
+    try {
+      await api.deleteItemOccurrence(item.id, day)
+      setDetail(null)
+      refreshAndAnnounce()
+    } catch (err) {
+      setDetail(null)
+      setError(err instanceof api.ApiError ? err.message : 'Could not remove that day.')
+    }
+  }
+
   const openEditor = (item: api.FeedItem | null) => {
     setDetail(null)
     setSheet({ open: true, item })
+  }
+
+  // "Edit just this one": the same sheet, prefilled from the series, saving a
+  // standalone card on that day.
+  const openOccurrenceEditor = (item: api.FeedItem, day: string) => {
+    setDetail(null)
+    setSheet({ open: true, item, occurrence: day })
   }
 
   // Whether the detail sheet may offer this card's completion at all; the
@@ -990,7 +1024,7 @@ export function Home({
                               day={timelineDate}
                               viewerId={user?.id}
                               viewerIsParent={isParent}
-                              onOpen={() => setDetail({ item, checkable: false })}
+                              onOpen={() => setDetail({ item, checkable: false, day: timelineDate })}
                             />
                           ))}
                         </AnimatePresence>
@@ -1002,7 +1036,7 @@ export function Home({
                             items={peekTimed}
                             nowMinutes={clock.getHours() * 60 + clock.getMinutes()}
                             isToday={false}
-                            onOpen={(item) => setDetail({ item, checkable: false })}
+                            onOpen={(item) => setDetail({ item, checkable: false, day: timelineDate })}
                           />
                         </div>
                       ) : (
@@ -1146,6 +1180,10 @@ export function Home({
             detail.item.kind === 'activity' &&
             Boolean(detail.item.date_for) &&
             !detail.item.repeat
+          // A repeating appointment can be edited or removed one day at a time.
+          const perOccurrence =
+            isParent && !managed && detail.item.kind === 'appointment' && Boolean(detail.item.repeat)
+          const day = dayOf(detail)
           return (
             <ItemDetail
               item={detail.item}
@@ -1155,12 +1193,18 @@ export function Home({
               onToggle={() => toggle(detail.item)}
               onToggleFor={(userId, done) => toggleFor(detail.item, userId, done)}
               onEdit={isParent && !managed ? () => openEditor(detail.item) : undefined}
+              onEditOccurrence={
+                perOccurrence ? () => openOccurrenceEditor(detail.item, day) : undefined
+              }
               onDelete={isParent && !managed ? () => deleteFromDetail(detail.item) : undefined}
+              onDeleteOccurrence={
+                perOccurrence ? () => deleteOccurrenceFromDetail(detail.item, day) : undefined
+              }
               onCancel={
                 isParent &&
                 !managed &&
                 (detail.item.kind === 'appointment' || detail.item.kind === 'activity')
-                  ? () => cancelFromDetail(detail.item)
+                  ? () => cancelFromDetail(detail.item, day)
                   : undefined
               }
               villageEvent={matchedEvent}
@@ -1213,6 +1257,8 @@ export function Home({
           <ItemSheet
             item={sheet.item}
             family={family}
+            defaultDate={sheet.occurrence}
+            occurrenceDate={sheet.occurrence}
             onClose={() => setSheet({ open: false, item: null })}
             onSaved={() => {
               setSheet({ open: false, item: null })

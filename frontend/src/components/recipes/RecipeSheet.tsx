@@ -7,15 +7,17 @@ import { DiscardGuard, Sheet, useFormDraft } from './Sheet'
 import { FoodConfirm, FoodPicker } from './FoodPicker'
 import { NutritionPanel } from './ui'
 import {
+  UNIT_GROUPS,
   UNIT_LABEL,
-  UNIT_TO_BASE,
   baseAmountOf,
   lineFromSaved,
   nextKey,
+  WATER_ASSUMED_HINT,
+  assumesWater,
   perServing,
   r2,
   servingIndex,
-  unitsForBase,
+  toBase,
   type EditLine,
 } from './shared'
 
@@ -36,12 +38,17 @@ function LineRow({
   const showBase = servingIndex(line.unit) != null || line.unit !== line.base_unit
   const baseLabel = `${+base.toFixed(base < 10 ? 1 : 0)} ${UNIT_LABEL[line.base_unit]}`
   const sub = [showBase ? baseLabel : null, cals != null ? `${cals} cal` : null].filter(Boolean).join(' · ')
+  // The resolved base amount is already in `sub`, so the only thing left to say
+  // is when that resolution had to assume water.
+  const assumed = assumesWater(line, line.unit)
 
   // Switching units keeps the physical quantity: convert the amount so the base
   // stays put (2 scoops -> 64 g -> 2.26 oz).
   function changeUnit(next: string) {
     const nsi = servingIndex(next)
-    const per = nsi != null ? line.servings[nsi]?.grams || 1 : UNIT_TO_BASE[next as api.AmountUnit] || 1
+    // What ONE of the new unit is worth in base units, density included, so the
+    // physical quantity survives the switch (2 scoops -> 64 g -> 2.26 oz).
+    const per = nsi != null ? line.servings[nsi]?.grams || 1 : toBase(line, 1, next) || 1
     onChange({ ...line, unit: next, amount: r2(base / per) })
   }
 
@@ -95,16 +102,21 @@ function LineRow({
                 ))}
               </optgroup>
             )}
-            <optgroup label={line.base_unit === 'ml' ? 'Volume' : 'Weight'}>
-              {unitsForBase(line.base_unit).map((u) => (
-                <option key={u} value={u}>
-                  {UNIT_LABEL[u]}
-                </option>
-              ))}
-            </optgroup>
+            {/* Both families: a cross-family amount converts through the
+                food's density (or water, which the hint below names). */}
+            {UNIT_GROUPS.map((g) => (
+              <optgroup key={g.label} label={g.label}>
+                {g.units.map((u) => (
+                  <option key={u} value={u}>
+                    {UNIT_LABEL[u]}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
           </select>
         </div>
       </div>
+      {assumed && <p className="mt-1 px-1 text-xs text-fg/45">{WATER_ASSUMED_HINT}</p>}
     </div>
   )
 }
@@ -189,6 +201,8 @@ export function RecipeSheet({
             source_id: l.source_id,
             name: l.name,
             brand: l.brand,
+            base_unit: l.base_unit,
+            density_g_per_ml: l.density_g_per_ml,
             calories: l.calories,
             protein_g: l.protein_g,
             carbs_g: l.carbs_g,

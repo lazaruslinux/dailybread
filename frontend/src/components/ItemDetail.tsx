@@ -62,7 +62,9 @@ export function ItemDetail({
   onToggle,
   onToggleFor,
   onEdit,
+  onEditOccurrence,
   onDelete,
+  onDeleteOccurrence,
   onCancel,
   onClose,
   villageEvent,
@@ -76,7 +78,11 @@ export function ItemDetail({
   onToggle?: () => void
   onToggleFor?: (userId: number, done: boolean) => void
   onEdit?: () => void
+  // Repeating appointments only: the "just this one" halves of Edit and
+  // Remove. Passing both is what turns those two buttons into a chooser.
+  onEditOccurrence?: () => void
   onDelete?: () => Promise<void>
+  onDeleteOccurrence?: () => Promise<void>
   // Appointments/activities only: call it off (or put it back on) without
   // pretending it was done.
   onCancel?: () => Promise<void>
@@ -117,6 +123,39 @@ export function ItemDetail({
   const [busy, setBusy] = useState(false)
 
   const [cancelBusy, setCancelBusy] = useState(false)
+
+  // A repeating appointment is several days sharing one card, so Edit and
+  // Remove have to ask which they mean before they do anything.
+  const perOccurrence =
+    item.kind === 'appointment' &&
+    Boolean(item.repeat) &&
+    Boolean(onEditOccurrence) &&
+    Boolean(onDeleteOccurrence)
+  const [choosing, setChoosing] = useState<'edit' | 'remove' | null>(null)
+  const [occArmed, setOccArmed] = useState(false)
+  const [occBusy, setOccBusy] = useState(false)
+
+  function backOut() {
+    setChoosing(null)
+    setArmed(false)
+    setOccArmed(false)
+  }
+
+  // Two-tap like the series delete beside it: dropping a day is just as
+  // irreversible, and picking it out of a chooser is not a confirmation.
+  async function handleDeleteOccurrence() {
+    if (!onDeleteOccurrence) return
+    if (!occArmed) {
+      setOccArmed(true)
+      return
+    }
+    setOccBusy(true)
+    try {
+      await onDeleteOccurrence()
+    } finally {
+      setOccBusy(false)
+    }
+  }
 
   async function handleCancel() {
     if (!onCancel) return
@@ -174,7 +213,8 @@ export function ItemDetail({
           </button>
         </div>
 
-        <h2 className={`font-display text-xl font-semibold tracking-[-0.01em] ${item.completed ? 'text-fg/60 line-through decoration-fg/30' : ''}`}>
+        {/* Struck through when it is settled either way: done, or called off. */}
+        <h2 className={`font-display text-xl font-semibold tracking-[-0.01em] ${item.completed || item.cancelled ? 'text-fg/60 line-through decoration-fg/30' : ''}`}>
           {item.title}
         </h2>
         {item.notes && <p className="mt-2 text-sm leading-relaxed text-fg/70">{item.notes}</p>}
@@ -345,6 +385,38 @@ export function ItemDetail({
           </div>
         )}
 
+        {/* One day, or every day? The chooser stands in for the whole action
+            list so there is nothing else to tap while the question is open. */}
+        {choosing !== null ? (
+          <div className="mt-6 flex flex-col gap-2.5">
+            <p className="text-sm text-fg/70">
+              {choosing === 'edit'
+                ? 'This appointment repeats. Edit one day, or every day?'
+                : 'This appointment repeats. Remove one day, or every day?'}
+            </p>
+            <Button
+              type="button"
+              variant={choosing === 'remove' ? 'danger' : 'primary'}
+              disabled={occBusy}
+              onClick={choosing === 'edit' ? onEditOccurrence : handleDeleteOccurrence}
+            >
+              {choosing === 'remove' && occArmed
+                ? 'Tap again to remove this day'
+                : 'Just this appointment'}
+            </Button>
+            <Button
+              type="button"
+              variant={choosing === 'remove' ? 'danger' : 'ghost'}
+              disabled={busy || occBusy}
+              onClick={choosing === 'edit' ? onEdit : handleDelete}
+            >
+              {choosing === 'remove' && armed ? 'Tap again to remove them all' : 'The whole series'}
+            </Button>
+            <Button type="button" variant="ghost" onClick={backOut}>
+              Back
+            </Button>
+          </div>
+        ) : (
         <div className="mt-6 flex flex-col gap-2.5">
           {/* Kid mode: the kid's own waiting mark gets a withdraw button; a
               parent gets the same Approve / Put back pair as the "Waiting on
@@ -397,7 +469,12 @@ export function ItemDetail({
             </Button>
           )}
           {onEdit && !item.cancelled && (
-            <Button type="button" variant="ghost" onClick={onEdit} className="flex items-center justify-center gap-1.5">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={perOccurrence ? () => setChoosing('edit') : onEdit}
+              className="flex items-center justify-center gap-1.5"
+            >
               <Pencil className="h-4 w-4" /> Edit card
             </Button>
           )}
@@ -432,15 +509,16 @@ export function ItemDetail({
             <Button
               type="button"
               variant="danger"
-              onClick={handleDelete}
+              onClick={perOccurrence ? () => setChoosing('remove') : handleDelete}
               disabled={busy}
               className="flex items-center justify-center gap-1.5"
             >
               <Trash2 className="h-4 w-4" />
-              {armed ? 'Tap again to remove' : 'Remove from board'}
+              {armed && !perOccurrence ? 'Tap again to remove' : 'Remove from board'}
             </Button>
           )}
         </div>
+        )}
       </motion.div>
     </motion.div>
   )

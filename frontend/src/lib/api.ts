@@ -773,6 +773,19 @@ export const updateItem = (id: number, payload: Partial<ItemPayload>) =>
 
 export const deleteItem = (id: number) => request<void>(`/items/${id}`, { method: 'DELETE' })
 
+// One day of a repeating appointment, Outlook style. Delete carves the day out
+// of the series for good; the POST detaches it into its own standalone card
+// (the payload is a normal create body) and the series skips it from then on.
+// Neither has an undo: putting the day back means adding a card for it.
+export const deleteItemOccurrence = (id: number, date: string) =>
+  request<void>(`/items/${id}/occurrence?date=${date}`, { method: 'DELETE' })
+
+export const createItemOccurrence = (id: number, date: string, payload: ItemPayload) =>
+  request<FeedItem>(`/items/${id}/occurrence?date=${date}`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+
 export const cancelItem = (id: number, date: string) =>
   request<FeedItem>(`/items/${id}/cancel?date=${date}`, { method: 'POST' })
 
@@ -889,6 +902,10 @@ export interface Food {
   // "Shared" chip. Empty for cache rows and search results.
   shared_to: RecipeShare[]
   base_unit: BaseUnit
+  // Grams one millilitre of this food weighs, read off a label that stated its
+  // serving both ways ("1 tbsp (21 g)"). null when it never said, and then a
+  // cross-family amount is converted as if it were water.
+  density_g_per_ml?: number | null
   serving: string // display label for the source's serving, e.g. "1 slice (21 g)"; "" when unknown
   servings: FoodServing[]
   calories: number | null
@@ -946,6 +963,9 @@ export interface CustomFoodPayload {
   // Product barcode digits, so a later scan resolves straight to this food.
   barcode?: string | null
   base_unit?: BaseUnit
+  // Carried through from a scan so a saved copy converts like the row it came
+  // from. Nothing derives one from the servings typed here.
+  density_g_per_ml?: number | null
   servings: FoodServing[]
   basis_index: number
   calories?: number | null
@@ -1029,10 +1049,11 @@ export const pushRecipeToGrocery = (recipeId: number, listId: number | null) =>
 
 // ---- recipes ------------------------------------------------------------------
 
-// Mass units (a solid) and volume units (a liquid). An ingredient's unit must
-// match its food's base measure; the two never mix on one line.
+// Mass units (a solid) and volume units (a liquid). Either family may be used
+// against any food, on every surface: an amount that crosses the two converts
+// through the food's density (or water, when its label never gave one).
 export type MassUnit = 'g' | 'oz' | 'lb'
-export type VolumeUnit = 'ml' | 'floz' | 'cup' | 'tbsp' | 'tsp'
+export type VolumeUnit = 'ml' | 'floz' | 'cup' | 'tbsp' | 'tsp' | 'l' | 'gal'
 export type AmountUnit = MassUnit | VolumeUnit
 
 // One saved ingredient line: what food, how much, and the macros that amount
@@ -1048,6 +1069,11 @@ export interface RecipeIngredient {
   amount: number
   unit: string
   grams: number
+  // The FOOD's measure family and density, not the line's: a line may be
+  // written in either family now, so the editor can't read the food's own off
+  // the stored unit, and the live totals need the same density the server used.
+  base_unit: BaseUnit
+  density_g_per_ml?: number | null
   calories: number | null
   protein_g: number | null
   carbs_g: number | null
@@ -1104,6 +1130,11 @@ export interface RecipeIngredientPayload {
   source_id?: string | null
   name: string
   brand?: string
+  // Sent so a food first persisted through this line is stored the way the
+  // picker showed it: its own measure family, and the density that lets an
+  // amount cross into the other one.
+  base_unit?: BaseUnit
+  density_g_per_ml?: number | null
   calories?: number | null
   protein_g?: number | null
   carbs_g?: number | null
@@ -1218,7 +1249,7 @@ export const unlockDiaryDay = (date: string) =>
 
 export const getSavedFoods = () => request<Food[]>('/foods/saved')
 
-export const saveFood = (food: Omit<Food, 'id' | 'folder' | 'shared_to' | 'base_unit' | 'serving' | 'servings'> & { food_id?: number | null }) =>
+export const saveFood = (food: Omit<Food, 'id' | 'folder' | 'shared_to' | 'serving' | 'servings'> & { food_id?: number | null }) =>
   request<Food>('/foods/saved', { method: 'POST', body: JSON.stringify(food) })
 
 export const unsaveFood = (foodId: number) =>
@@ -1345,6 +1376,9 @@ export interface DiaryEntry {
   // linked food is deleted.
   food_servings: FoodServing[]
   food_base_unit: BaseUnit | null
+  // The source food's density, so the edit sheet resolves a cross-family unit
+  // exactly as the server will. null once the food is gone (or it never said).
+  food_density_g_per_ml?: number | null
   calories: number | null
   protein_g: number | null
   carbs_g: number | null

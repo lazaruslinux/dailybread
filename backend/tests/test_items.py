@@ -1176,6 +1176,162 @@ def test_cancel_refuses_a_day_past_the_horizon(owner):
     assert owner.post(f"/items/{appt['id']}/cancel?date={way_out}").status_code == 400
 
 
+# ---- one occurrence of a repeating appointment -------------------------------------
+
+
+def standup(client, **overrides):
+    return make_item(client, kind="appointment", title="Standup", time_of_day="09:00",
+                     end_time="09:30", repeat=all_days(), **overrides)
+
+
+def day_after(n: int) -> str:
+    return (dt.date.today() + dt.timedelta(days=n)).isoformat()
+
+
+def test_deleting_one_occurrence_carves_out_that_day(owner):
+    meeting = standup(owner)
+    gone = day_after(2)
+    assert owner.delete(f"/items/{meeting['id']}/occurrence?date={gone}").status_code == 204
+
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    days = [i["date_for"] for i in feed["next7"] if i["id"] == meeting["id"]]
+    assert gone not in days
+    assert day_after(1) in days and day_after(3) in days
+    # Today's occurrence, and every other day, are untouched.
+    assert any(i["id"] == meeting["id"] for i in feed["today"])
+    cal = owner.get(f"/items/calendar?start={gone}&end={gone}").json()
+    assert not any(i["id"] == meeting["id"] for i in cal["days"][0]["items"])
+
+
+def test_deleting_the_same_occurrence_twice_is_refused(owner):
+    meeting = standup(owner)
+    assert owner.delete(f"/items/{meeting['id']}/occurrence?date={TODAY}").status_code == 204
+    res = owner.delete(f"/items/{meeting['id']}/occurrence?date={TODAY}")
+    assert res.status_code == 400
+    assert res.json()["detail"] == "No occurrence on that day"
+
+
+def test_a_carved_out_day_cannot_be_cancelled(owner):
+    meeting = standup(owner)
+    assert owner.delete(f"/items/{meeting['id']}/occurrence?date={TODAY}").status_code == 204
+    assert owner.post(f"/items/{meeting['id']}/cancel?date={TODAY}").status_code == 400
+
+
+def test_only_repeating_appointments_drop_an_occurrence(owner, child):
+    one_off = make_item(owner, kind="appointment", title="Dentist", date_for=TODAY,
+                        time_of_day="14:00", end_time="15:00")
+    routine = make_item(owner, kind="routine", title="Brush teeth",
+                        assignee_ids=[user_id(child)], repeat=all_days())
+    for item in (one_off, routine):
+        res = owner.delete(f"/items/{item['id']}/occurrence?date={TODAY}")
+        assert res.status_code == 400
+        assert res.json()["detail"] == "Only repeating appointments can drop a single occurrence"
+
+
+def test_dropping_an_occurrence_is_parent_only(owner, child):
+    meeting = standup(owner, visibility="family")
+    assert child.delete(f"/items/{meeting['id']}/occurrence?date={TODAY}").status_code == 403
+
+
+def test_dropping_an_occurrence_refuses_a_day_past_the_horizon(owner):
+    meeting = standup(owner)
+    way_out = (dt.date.today() + dt.timedelta(days=500)).isoformat()
+    assert owner.delete(f"/items/{meeting['id']}/occurrence?date={way_out}").status_code == 400
+
+
+def test_detaching_an_occurrence_leaves_a_standalone_card(owner):
+    meeting = standup(owner)
+    res = owner.post(
+        f"/items/{meeting['id']}/occurrence?date={TODAY}",
+        json={"kind": "appointment", "title": "Standup (moved)", "date_for": TODAY,
+              "time_of_day": "11:00", "end_time": "11:30"},
+    )
+    assert res.status_code == 201, res.text
+    detached = res.json()
+    assert detached["id"] != meeting["id"]
+    assert detached["repeat"] is None
+
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    today_ids = [i["id"] for i in feed["today"]]
+    assert detached["id"] in today_ids
+    assert meeting["id"] not in today_ids
+    # The series keeps every other day.
+    days = [i["date_for"] for i in feed["next7"] if i["id"] == meeting["id"]]
+    assert days == [day_after(n) for n in range(1, 8)]
+
+
+def test_detaching_carries_a_call_off_across(owner):
+    meeting = standup(owner)
+    assert owner.post(f"/items/{meeting['id']}/cancel?date={TODAY}").json()["cancelled"] is True
+    res = owner.post(
+        f"/items/{meeting['id']}/occurrence?date={TODAY}",
+        json={"kind": "appointment", "title": "Standup", "date_for": TODAY,
+              "time_of_day": "09:00", "end_time": "09:30"},
+    )
+    assert res.status_code == 201, res.text
+    assert res.json()["cancelled"] is True
+
+
+def test_a_detached_occurrence_cannot_repeat(owner):
+    meeting = standup(owner)
+    res = owner.post(
+        f"/items/{meeting['id']}/occurrence?date={TODAY}",
+        json={"kind": "appointment", "title": "Standup", "time_of_day": "09:00",
+              "end_time": "09:30", "repeat": all_days()},
+    )
+    assert res.status_code == 400
+    assert res.json()["detail"] == "A detached appointment doesn't repeat"
+    # And the day it would have carved out is still on the board.
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    assert any(i["id"] == meeting["id"] for i in feed["today"])
+
+
+def test_reshaping_the_pattern_drops_its_carved_out_days(owner):
+    # A skip is an exception to ONE pattern. Edit the pattern and it means
+    # nothing, so it goes rather than leaving an invisible hole in the series.
+    meeting = standup(owner)
+    assert owner.delete(f"/items/{meeting['id']}/occurrence?date={TODAY}").status_code == 204
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    assert not any(i["id"] == meeting["id"] for i in feed["today"])
+
+    today_wd = dt.date.today().weekday()
+    res = owner.patch(
+        f"/items/{meeting['id']}",
+        json={"repeat": {"type": "weekly", "days": [today_wd]}},
+    )
+    assert res.status_code == 200, res.text
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    assert any(i["id"] == meeting["id"] for i in feed["today"])
+
+
+def test_a_time_only_edit_keeps_the_carved_out_days(owner):
+    # Moving the meeting an hour later doesn't reshape which days it lands on,
+    # so the week it isn't happening stays carved out.
+    meeting = standup(owner)
+    assert owner.delete(f"/items/{meeting['id']}/occurrence?date={TODAY}").status_code == 204
+    res = owner.patch(
+        f"/items/{meeting['id']}", json={"time_of_day": "10:00", "end_time": "10:30"}
+    )
+    assert res.status_code == 200, res.text
+    feed = owner.get(f"/items/feed?date={TODAY}").json()
+    assert not any(i["id"] == meeting["id"] for i in feed["today"])
+
+
+def test_detaching_a_day_the_series_skips_is_refused(owner):
+    landing = dt.date.today() + dt.timedelta(days=3)
+    off_day = (landing + dt.timedelta(days=1)).isoformat()
+    meeting = make_item(owner, kind="appointment", title="Weekly sync",
+                        time_of_day="09:00", end_time="09:30",
+                        repeat={"type": "weekly", "days": [landing.weekday()]})
+    res = owner.post(
+        f"/items/{meeting['id']}/occurrence?date={off_day}",
+        json={"kind": "appointment", "title": "Weekly sync", "date_for": off_day,
+              "time_of_day": "09:00", "end_time": "09:30"},
+    )
+    assert res.status_code == 400
+    assert res.json()["detail"] == "No occurrence on that day"
+
+
 # ---- repeating appointments in the next 7 days -------------------------------------
 
 

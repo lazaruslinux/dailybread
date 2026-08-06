@@ -59,6 +59,9 @@ class FoodResult:
     # gives a household phrase ("1 cup") with no fixed size to trust.
     serving_amount: float | None = None
     base_unit: str = "g"  # "g" | "ml"
+    # Grams one millilitre weighs, when the label stated its serving both ways
+    # ("1 tbsp (21 g)"). None when it named only one measure.
+    density_g_per_ml: float | None = None
     # Health-check extras (barcode scans only; search/recipe paths ignore them).
     # ingredients_text is the raw label string; added_sugar_g is per 100 of the
     # base unit like the macros; additives is the OFF additives_tags list comma-
@@ -96,6 +99,38 @@ def _energy_kcal(kcal, kj) -> float | None:
         return direct
     kj_num = _num(kj)
     return round(kj_num / 4.184, 1) if kj_num is not None else None
+
+
+# A food's energy can't sit materially below what its own macros carry. The floor
+# is built on SUGARS, not total carbohydrate: sugar alcohols count as carbs on a
+# label and carry 0-2.4 kcal a gram, so erythritol's truthful "98 g carbs, 20
+# kcal" reads as impossible against a carb-based floor and would be corrupted.
+# Sugars are never polyols, so 4 kcal a gram holds there without exception —
+# which makes the floor conservative enough to tighten the tolerance right up.
+# Below the floor minimum, label rounding on trace macros says nothing worth
+# acting on. What trips this is a row whose units got mixed up: the maple syrup
+# that read 78 kcal against sugars that alone account for 96.
+_ATWATER_FLOOR_MIN = 20.0
+_ATWATER_TOLERANCE = 0.9
+
+
+def _fix_energy(r: FoodResult) -> FoodResult:
+    """Raise a calorie figure its own macros contradict, in place.
+
+    ONE-SIDED on purpose: calories ABOVE the macros are legitimate (alcohol
+    carries 7 kcal a gram and appears in no macro column), so nothing here ever
+    lowers a value. A row with no sugars datum isn't judgeable at all."""
+    if r.calories is None or r.sugar_g is None:
+        return r
+    floor = 4 * (r.protein_g or 0) + 4 * r.sugar_g + 9 * (r.fat_g or 0)
+    if floor < _ATWATER_FLOOR_MIN or r.calories >= _ATWATER_TOLERANCE * floor:
+        return r
+    # The repair is the FULL Atwater sum, less an allowance for the insoluble
+    # fibre that passes through unburned — raw Atwater over-states a high-fibre
+    # food. Never below what the row already claimed.
+    atwater = 4 * (r.protein_g or 0) + 4 * (r.carbs_g or 0) + 9 * (r.fat_g or 0)
+    r.calories = float(round(max(r.calories, atwater - 2 * (r.fiber_g or 0))))
+    return r
 
 
 def _scale(v, mult: float) -> float | None:
@@ -157,20 +192,12 @@ _MASS_WORDS = {"g", "gram", "grams", "mg", "kg", "oz", "ounce", "ounces", "lb", 
 _MAX_SERVING_ML = 10000
 
 
-def _volume_from_text(text: str, has_mass: bool = False) -> float | None:
-    """Millilitres for a serving phrase that names a volume, else None. A metric
-    reading (ml/cl/l) wins because it's the figure the label rounded to; fl oz
-    is the next most trustworthy (US labels use it for liquids only); a bare
-    cup/spoon is ambiguous (it measures cereal as readily as milk) and its
-    conversion is lossy, so it counts only as a last resort. has_mass seeds the
-    guard that suppresses that ambiguous tier: callers set it when a better
-    reading exists outside the phrase (USDA's servingSize/servingSizeUnit,
-    whether grams for a solid or an exact millilitre size) or when the phrase
-    is merely unproven (the cache heal, which flips rows only on an unambiguous
-    metric/fl-oz mark). Fractions ("1/4 cup") have no float shape we can read,
-    so their tokens are skipped and the caller's size/unit fields decide."""
-    if not text:
-        return None
+def _volume_tiers(text: str, has_mass: bool = False):
+    """The scan behind _volume_from_text: (metric, imperial, household, has_mass)
+    millilitre readings found in a serving phrase. Split out so the density
+    derivation can consult the household tier that classification suppresses.
+    Fractions ("1/4 cup") have no float shape we can read, so their tokens are
+    skipped and the caller's size/unit fields decide."""
     norm = text.lower()
     for phrase in ("fluid ounces", "fluid ounce", "fl. oz.", "fl oz", "fl.oz", "fl-oz"):
         norm = norm.replace(phrase, "floz")
@@ -193,11 +220,89 @@ def _volume_from_text(text: str, has_mass: bool = False) -> float | None:
             imperial = imperial if imperial is not None else ml
         elif household is None:
             household = ml
+    return metric, imperial, household, has_mass
+
+
+def _volume_from_text(text: str, has_mass: bool = False) -> float | None:
+    """Millilitres for a serving phrase that names a volume, else None. A metric
+    reading (ml/cl/l) wins because it's the figure the label rounded to; fl oz
+    is the next most trustworthy (US labels use it for liquids only); a bare
+    cup/spoon is ambiguous (it measures cereal as readily as milk) and its
+    conversion is lossy, so it counts only as a last resort. has_mass seeds the
+    guard that suppresses that ambiguous tier: callers set it when a better
+    reading exists outside the phrase (USDA's servingSize/servingSizeUnit,
+    whether grams for a solid or an exact millilitre size) or when the phrase
+    is merely unproven (the cache heal, which flips rows only on an unambiguous
+    metric/fl-oz mark)."""
+    if not text:
+        return None
+    metric, imperial, household, has_mass = _volume_tiers(text, has_mass)
     if metric is not None:
         return metric
     if imperial is not None:
         return imperial
     return household if not has_mass else None
+
+
+# Metric mass marks only. A bare "oz" on a label may be an ounce or a fluid
+# ounce, and guessing wrong would corrupt a density outright.
+_G_PER_MASS_WORD = {
+    "g": 1.0, "gram": 1.0, "grams": 1.0, "gramme": 1.0, "grammes": 1.0,
+    "mg": 0.001, "kg": 1000.0,
+}
+_MAX_SERVING_G = 10000
+
+
+def _mass_from_text(text: str) -> float | None:
+    """Grams a serving phrase names ("1 tbsp (21 g)" -> 21), else None. The
+    mirror of _volume_from_text's job for the other measure family, and
+    deliberately flat: a metric mass mark is never ambiguous the way a cup or a
+    spoon is, so the first reading wins with no tiers to weigh."""
+    if not text:
+        return None
+    for amount, unit in re.findall(r"(?<![\d/.])(\d+(?:\.\d+)?)\s*([a-z]+)", text.lower()):
+        factor = _G_PER_MASS_WORD.get(unit)
+        if factor is None:
+            continue
+        grams = round(float(amount) * factor, 2)
+        if math.isfinite(grams) and 0 < grams < _MAX_SERVING_G:
+            return grams
+    return None
+
+
+# A derived density outside this range means a reading was misread, not that we
+# found an unusual food: nothing edible is lighter than aerated cream or heavier
+# than salt slurry, and the usual culprit is a bare "0.75 cup" of cereal being
+# weighed against its 30 g. Out of range, we say nothing rather than lie.
+_DENSITY_MIN = 0.2
+_DENSITY_MAX = 3.0
+
+
+def _density_from(parsed: tuple[float, str] | None, text: str) -> float | None:
+    """Grams a millilitre of the food weighs, when the label stated its serving
+    BOTH ways: one reading from the structured fields and the other from the
+    phrase, or both from the phrase ("1 tbsp (21 g)").
+
+    The volume side deliberately accepts the ambiguous cup/spoon tier that
+    classification refuses: that tier IS the useful signal here, since a label
+    that pairs a spoon with a gram weight is telling us exactly what we want.
+    A misread lands outside the range check instead of in the database."""
+    grams = ml = None
+    if parsed is not None:
+        amount, base = parsed
+        if base == "g":
+            grams = amount
+        else:
+            ml = amount
+    if grams is None:
+        grams = _mass_from_text(text)
+    if ml is None:
+        metric, imperial, household, _ = _volume_tiers(text)
+        ml = metric if metric is not None else (imperial if imperial is not None else household)
+    if not grams or not ml:
+        return None
+    density = round(grams / ml, 4)
+    return density if _DENSITY_MIN <= density <= _DENSITY_MAX else None
 
 
 def _norm_gtin(s) -> str:
@@ -322,7 +427,7 @@ def _usda_serving(f: dict) -> str:
 def _usda_food_result(f: dict) -> FoodResult:
     """A FoodResult from one FDC search hit (shared by search and barcode)."""
     by_number = {str(n.get("nutrientNumber")): n.get("value") for n in f.get("foodNutrients", [])}
-    return FoodResult(
+    return _fix_energy(FoodResult(
         source="usda",
         source_id=str(f.get("fdcId")),
         name=_display((f.get("description") or "").strip()),
@@ -348,7 +453,7 @@ def _usda_food_result(f: dict) -> FoodResult:
             f.get("servingSizeUnit"),
             f.get("householdServingFullText") or "",
         ),
-    )
+    ))
 
 
 def search_usda(query: str, api_key: str, limit: int = 25) -> list[FoodResult]:
@@ -400,15 +505,24 @@ def _serving_fields(size, unit, text: str = "") -> dict:
     parseable fields: gram fields make it a cup-measured solid (USDA's text is
     typically just "1 cup" with the 39 g in servingSize/servingSizeUnit), and
     exact volume fields beat its lossy spoon-to-mL conversion. Only when the
-    fields give no measurable size does the household tier convert."""
+    fields give no measurable size does the household tier convert.
+
+    A label that names its serving both ways also gives up the food's density,
+    which is what lets the diary log it in any unit. That reading is taken
+    alongside, never instead: the base_unit choice above is unchanged by it."""
     parsed = _serving_in_base(size, unit)
     ml = _volume_from_text(text, has_mass=parsed is not None)
     if ml is not None:
-        return {"serving_amount": ml, "base_unit": "ml"}
-    if parsed is None:
-        return {}
-    amount, base = parsed
-    return {"serving_amount": amount, "base_unit": base}
+        fields = {"serving_amount": ml, "base_unit": "ml"}
+    elif parsed is not None:
+        amount, base = parsed
+        fields = {"serving_amount": amount, "base_unit": base}
+    else:
+        fields = {}
+    density = _density_from(parsed, text)
+    if density is not None:
+        fields["density_g_per_ml"] = density
+    return fields
 
 
 def lookup_barcode_usda(barcode: str, api_key: str) -> FoodResult | None:
@@ -481,7 +595,7 @@ def lookup_barcode_off(barcode: str) -> FoodResult | None:
         return None
     p = data.get("product", {})
     nut = p.get("nutriments", {})
-    return FoodResult(
+    return _fix_energy(FoodResult(
         source="off",
         source_id=str(barcode),
         name=_display((p.get("product_name") or "Unknown product").strip()),
@@ -513,4 +627,4 @@ def lookup_barcode_off(barcode: str) -> FoodResult | None:
             p.get("serving_quantity_unit"),
             p.get("serving_size") or "",
         ),
-    )
+    ))

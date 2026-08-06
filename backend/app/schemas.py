@@ -432,12 +432,15 @@ class GroceryStateOut(BaseModel):
 # ---- recipes -------------------------------------------------------------------
 
 
-# Measurement units for an ingredient amount. Mass units (a solid) and volume
-# units (a liquid) never mix within one ingredient — the unit must match its
-# food's base measure, enforced when the recipe is saved.
+# Measurement units for an amount. Either measure family is allowed against any
+# food, on every surface: milk poured in millilitres and logged in grams, a
+# solid poured by the cup. An amount that crosses the two converts through the
+# food's density, or water when its label never stated both (models.to_base).
 MassUnit = Literal["g", "oz", "lb"]
-VolumeUnit = Literal["ml", "floz", "cup", "tbsp", "tsp"]
-AmountUnit = Literal["g", "oz", "lb", "ml", "floz", "cup", "tbsp", "tsp"]
+VolumeUnit = Literal["ml", "floz", "cup", "tbsp", "tsp", "l", "gal"]
+AmountUnit = Literal[
+    "g", "oz", "lb", "ml", "floz", "cup", "tbsp", "tsp", "l", "gal"
+]
 BaseUnit = Literal["g", "ml"]
 
 
@@ -454,6 +457,12 @@ class RecipeIngredientIn(BaseModel):
     source_id: str | None = Field(default=None, max_length=64)
     name: str = Field(min_length=1, max_length=200)
     brand: str = Field(default="", max_length=120)
+    # The food's own measure family and, when its label stated a serving both
+    # ways, what a millilitre of it weighs. Both ride along so a food first
+    # persisted through this path is stored exactly as the client was shown it
+    # (see FoodOut); density is what lets an amount cross the two families.
+    base_unit: BaseUnit = "g"
+    density_g_per_ml: float | None = Field(default=None, ge=0.2, le=3.0)
     calories: float | None = Field(default=None, ge=0, le=100000)
     protein_g: float | None = Field(default=None, ge=0, le=10000)
     carbs_g: float | None = Field(default=None, ge=0, le=10000)
@@ -503,6 +512,12 @@ class RecipeIngredientOut(BaseModel):
     amount: float
     unit: str
     grams: float
+    # The FOOD's measure family and density, not the line's. A line may now be
+    # written in either family, so the editor can't infer the food's own from
+    # the stored unit — and without the density it would redraw a cross-family
+    # line's live totals differently from the way the server computed them.
+    base_unit: BaseUnit = "g"
+    density_g_per_ml: float | None = None
     calories: float | None
     protein_g: float | None
     carbs_g: float | None
@@ -631,6 +646,10 @@ class SavedFoodIn(BaseModel):
     source_id: str | None = Field(default=None, max_length=64)
     name: str = Field(min_length=1, max_length=200)
     brand: str = Field(default="", max_length=120)
+    # As on RecipeIngredientIn: kept so a pin that first persists the food
+    # stores its measure family and density too.
+    base_unit: BaseUnit = "g"
+    density_g_per_ml: float | None = Field(default=None, ge=0.2, le=3.0)
     calories: float | None = Field(default=None, ge=0, le=100000)
     protein_g: float | None = Field(default=None, ge=0, le=10000)
     carbs_g: float | None = Field(default=None, ge=0, le=10000)
@@ -657,6 +676,10 @@ class FoodOut(BaseModel):
     # unfiled custom foods. Client-side grouping only.
     folder: str | None = None
     base_unit: BaseUnit = "g"  # measure family: "g" (mass) or "ml" (volume)
+    # Grams one millilitre weighs, when the label stated its serving both ways.
+    # The client needs it to preview a cross-family portion the way the server
+    # will compute it; None means water-like is assumed.
+    density_g_per_ml: float | None = None
     serving: str = ""  # display label for the source's serving; "" when unknown
     servings: list[FoodServingOut] = []  # structured named portions (custom foods)
     # Where this custom food currently sits on village shelves, for the
@@ -704,6 +727,10 @@ class FoodIn(BaseModel):
     # "g" (measure servings by weight) or "ml" (by volume, for a liquid). The
     # serving sizes below are in this unit, and nutrition is stored per 100 of it.
     base_unit: BaseUnit = "g"
+    # Carried through from a scanned food so "save as custom food" keeps what a
+    # millilitre of it weighs. Passthrough only: nothing derives one from the
+    # serving sizes typed here.
+    density_g_per_ml: float | None = Field(default=None, ge=0.2, le=3.0)
     servings: list[FoodServingIn] = Field(min_length=1, max_length=20)
     basis_index: int = Field(default=0, ge=0)  # which serving the values are per
     # Nutrition as entered, per servings[basis_index]. mg for cholesterol/sodium.
@@ -817,6 +844,8 @@ class DiaryEntryIn(BaseModel):
     source_id: str | None = Field(default=None, max_length=64)
     name: str | None = Field(default=None, min_length=1, max_length=200)
     brand: str = Field(default="", max_length=120)
+    base_unit: BaseUnit = "g"
+    density_g_per_ml: float | None = Field(default=None, ge=0.2, le=3.0)
     calories: float | None = Field(default=None, ge=0, le=100000)
     protein_g: float | None = Field(default=None, ge=0, le=10000)
     carbs_g: float | None = Field(default=None, ge=0, le=10000)
@@ -865,6 +894,9 @@ class DiaryEntryOut(BaseModel):
     # once the linked food is deleted (edits then fall back to the base unit).
     food_servings: list[FoodServingOut] = []
     food_base_unit: BaseUnit | None = None
+    # Grams a millilitre of the source food weighs, when its label said; lets
+    # the edit sheet resolve a cross-family unit exactly as the server will.
+    food_density_g_per_ml: float | None = None
     calories: float | None
     protein_g: float | None
     carbs_g: float | None

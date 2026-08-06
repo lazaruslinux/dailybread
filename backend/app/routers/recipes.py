@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session, selectinload
 from app import inbox
 from app.db import get_db
 from app.deps import require_family, require_parent
-from app.models import GroceryItem, Food, FoodSource, Recipe, RecipeIngredient, User, base_unit_of
+from app.models import GroceryItem, Food, FoodSource, Recipe, RecipeIngredient, User
 from app.schemas import (
     RecipeShareOut,
     RecipeToGroceryIn,
@@ -89,6 +89,12 @@ def _resolve_food(db: Session, family_id: int, line: RecipeIngredientIn) -> Food
         source_id=line.source_id,
         name=line.name.strip(),
         brand=line.brand.strip(),
+        # The measure family and density ride along from the payload so the row
+        # is stored as the client was shown it (FoodOut carries both). Without
+        # them a liquid landed here as a mass food and every later conversion
+        # started from the wrong side.
+        base_unit=line.base_unit,
+        density_g_per_ml=line.density_g_per_ml,
         **{n: getattr(line, n) for n in _MACROS},
     )
     db.add(food)
@@ -102,14 +108,11 @@ def _set_ingredients(db: Session, recipe: Recipe, lines: list[RecipeIngredientIn
     recipe.ingredients.clear()
     for i, line in enumerate(lines):
         food = _resolve_food(db, recipe.family_id, line)
-        # A solid is measured by weight, a liquid by volume; the unit must match
-        # the food's measure family (we can't turn cups into grams without a
-        # density we don't have).
-        if base_unit_of(line.unit) != food.base_unit:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                f"'{food.name}' is measured by {'volume' if food.base_unit == 'ml' else 'weight'}",
-            )
+        # Either measure family is allowed: a line in cups against a per-100g
+        # food converts through the food's density (RecipeIngredient.base_amount
+        # -> models.to_base), the same way a diary entry does. A food whose label
+        # never stated both readings falls back to water, which the editor says
+        # out loud before the cook saves.
         recipe.ingredients.append(
             RecipeIngredient(food_id=food.id, position=i, amount=line.amount, unit=line.unit)
         )
@@ -161,6 +164,8 @@ def _serialize(recipe: Recipe, village_names: dict[int, str] | None = None) -> R
                 amount=ing.amount,
                 unit=ing.unit,
                 grams=round(ing.grams, 2),
+                base_unit=food.base_unit,
+                density_g_per_ml=food.density_g_per_ml,
                 **{m: _r(contrib[m]) for m in _MACROS},
             )
         )

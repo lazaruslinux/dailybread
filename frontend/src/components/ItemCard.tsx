@@ -56,8 +56,8 @@ function ParticipantAvatar({
 // target that opens the detail sheet, and every state change is an explicit
 // button in there. Rows that are settled — done, called off, or a calendar
 // entry whose moment has gone by — stay in place but visibly retire by
-// dimming. The strike through the title is reserved for done: it is this
-// app's word for finished, and a passed row has not claimed that.
+// dimming. The strike through the title means the row was answered: done, or
+// called off. A passed row answered nothing, so it dims only.
 export function ItemCard({
   item,
   index,
@@ -183,12 +183,13 @@ export function ItemCard({
         </span>
 
         <div className="min-w-0 flex-1">
-          {/* A passed row is dimmed but NEVER struck: in this app a line
-              through a title means done, and a routine nobody has done yet
+          {/* Done and called off both strike: each is an answer, and a
+              cancelled appointment reads as crossed off the week. A passed row
+              is dimmed but NEVER struck — nobody answered it, and a routine
               would be claiming otherwise a minute after its time. */}
           <p
             className={`truncate text-[14.5px] font-semibold leading-tight ${
-              item.completed
+              item.completed || item.cancelled
                 ? 'text-fg/60 line-through decoration-fg/30'
                 : passed
                   ? 'text-fg/60'
@@ -213,6 +214,13 @@ export function ItemCard({
             {/* The kind's own icon already sits in the slot on the left, so the
                 meta line just names it. */}
             <span className="min-w-0 truncate">{label}</span>
+            {/* The strike and the gold X in the state slot both say "settled";
+                this says WHICH, in a word, without opening the card. */}
+            {item.cancelled && (
+              <span className="shrink-0 rounded-full bg-red-400/15 px-1.5 text-[11px] font-bold text-red-400">
+                Cancelled
+              </span>
+            )}
             {flag === 'overdue' && (
               <span className="shrink-0 rounded-full bg-rose-500/20 px-1.5 text-[11px] font-bold text-rose-300">
                 Overdue

@@ -2,21 +2,129 @@ import * as api from '../../lib/api'
 
 // How many base units (g for a solid, mL for a liquid) one of each unit is.
 // Mirrors the backend UNIT_TO_BASE — nutrition is computed live here as the cook
-// edits. A food is measured in only one family; the two never mix on a line.
+// edits. A food is measured in one family but may be MEASURED OUT in either;
+// an amount that crosses the two converts through its density (toBase).
 export const UNIT_TO_BASE: Record<api.AmountUnit, number> = {
   g: 1, oz: 28.3495, lb: 453.592,
-  ml: 1, floz: 29.5735, cup: 236.588, tbsp: 14.7868, tsp: 4.92892,
+  ml: 1, floz: 29.5735, cup: 236.588, tbsp: 14.7868, tsp: 4.92892, l: 1000, gal: 3785.41,
 }
 const MASS_UNITS: api.MassUnit[] = ['g', 'oz', 'lb']
-const VOLUME_UNITS: api.VolumeUnit[] = ['ml', 'floz', 'cup', 'tbsp', 'tsp']
+const VOLUME_UNITS: api.VolumeUnit[] = ['ml', 'floz', 'cup', 'tbsp', 'tsp', 'l', 'gal']
 export const unitsForBase = (base: api.BaseUnit): api.AmountUnit[] => (base === 'ml' ? VOLUME_UNITS : MASS_UNITS)
 const baseUnitOf = (unit: string): api.BaseUnit =>
   (VOLUME_UNITS as string[]).includes(unit) ? 'ml' : 'g'
-// How each unit reads on screen (only "floz" differs from its token).
+// How each unit reads on screen (only "floz" and "l" differ from their tokens).
 export const UNIT_LABEL: Record<string, string> = {
   g: 'g', oz: 'oz', lb: 'lb', ml: 'mL', floz: 'fl oz', cup: 'cup', tbsp: 'tbsp', tsp: 'tsp',
+  l: 'L', gal: 'gal',
 }
+
+// Both measure families, for the portion pickers: any food may be measured out
+// in any of them (see toBase). unitsForBase is the narrower list, still used
+// where a food's OWN family is what's being typed in (its serving sizes).
+export const UNIT_GROUPS: { label: string; units: api.AmountUnit[] }[] = [
+  { label: 'Weight', units: MASS_UNITS },
+  { label: 'Volume', units: VOLUME_UNITS },
+]
+
+// What a millilitre weighs when the label never said. Mirrors the backend
+// WATER_DENSITY; the UI names the assumption out loud whenever it applies.
+const WATER_DENSITY = 1
+
+// A food carrying only what the conversion needs, so this works on an api.Food
+// and on a diary entry's food_* fields alike.
+interface Measured {
+  base_unit: api.BaseUnit
+  density_g_per_ml?: number | null
+}
+
+// `amount` of `unit` in the food's own base unit. Mirrors the backend to_base
+// (models.py) exactly: within one family a plain conversion, across families
+// through the food's density, water when it has none.
+export function toBase(food: Measured, amount: number, unit: string): number {
+  const baseAmount = amount * (UNIT_TO_BASE[unit as api.AmountUnit] ?? 1)
+  if (baseUnitOf(unit) === food.base_unit) return baseAmount
+  const density = food.density_g_per_ml || WATER_DENSITY
+  return food.base_unit === 'g' ? baseAmount * density : baseAmount / density
+}
+
+// Is this pick a real unit from the OTHER measure family? (A serving pick is
+// neither: it is already in base units.)
+export const crossesFamily = (base: api.BaseUnit, unit: string): boolean =>
+  servingIndex(unit) == null && unit in UNIT_TO_BASE && baseUnitOf(unit) !== base
+
+// The line under a portion's amount row: what a named serving weighs, what a
+// cross-family pick resolves to, or - when the label never gave a density -
+// that the resolution assumed water. Same-family picks need no line: the number
+// typed IS the number stored. Shared by the add sheet and the edit sheet so the
+// two can never explain the same portion differently.
+export function portionHint(
+  food: Measured,
+  amount: number,
+  unit: string,
+  servings: api.FoodServing[],
+): string | null {
+  const label = food.base_unit === 'ml' ? 'mL' : 'g'
+  const si = servingIndex(unit)
+  if (si != null && servings[si]) return `= ${r2(amount * servings[si].grams)} ${label}`
+  if (!crossesFamily(food.base_unit, unit)) return null
+  if (food.density_g_per_ml) return `= ${r2(toBase(food, amount, unit))} ${label}`
+  return WATER_ASSUMED_HINT
+}
+
+// Said on its own by surfaces that already show the resolved base amount (the
+// recipe rows): all that is left to add there is what the resolution assumed.
+export const WATER_ASSUMED_HINT = '≈ assumes water-like density (1 mL = 1 g)'
+export const assumesWater = (food: Measured, unit: string): boolean =>
+  crossesFamily(food.base_unit, unit) && !food.density_g_per_ml
 export const r2 = (n: number) => Math.round(n * 100) / 100
+
+// Do a portion's macros contradict its calories? Mirrors foods_api._fix_energy
+// on the server, floor and tolerance included: 4 kcal a gram of protein and
+// carbohydrate, 9 for fat, with an allowance for fibre that passes through
+// unburned. ONE-SIDED like the server's - calories ABOVE the macros are
+// legitimate (alcohol carries energy no macro column names), so a high figure
+// is never suspect.
+//
+// The server corrects what it can on the way in, so this mostly catches rows
+// cached before that landed, and anything it had too little data to judge.
+const ATWATER_FLOOR_MIN = 20
+const ATWATER_TOLERANCE = 0.75
+
+// The four numbers a member may correct on a scanned food: calories and the big
+// three. One home, so the diary's portion sheet and the recipe's confirm step
+// always offer the same fields.
+export const EDIT_MACROS = [
+  { key: 'calories', label: 'Calories', unit: '' },
+  { key: 'protein_g', label: 'Protein', unit: 'g' },
+  { key: 'carbs_g', label: 'Carbs', unit: 'g' },
+  { key: 'fat_g', label: 'Fat', unit: 'g' },
+] as const
+export type EditMacroKey = (typeof EDIT_MACROS)[number]['key']
+export type MacroValues = Record<EditMacroKey, string>
+
+// Digits and a single decimal point. A second dot would make Number() NaN,
+// which reads as "unknown" while the field looks filled in.
+export function decimalOnly(raw: string): string {
+  let s = raw.replace(/[^0-9.]/g, '')
+  const dot = s.indexOf('.')
+  if (dot !== -1) s = s.slice(0, dot + 1) + s.slice(dot + 1).replace(/\./g, '')
+  return s
+}
+
+export function implausibleMacros(m: {
+  calories: number | null
+  protein_g: number | null
+  carbs_g: number | null
+  fat_g: number | null
+  fiber_g?: number | null
+}): boolean {
+  if (m.calories == null) return false
+  if (m.protein_g == null && m.carbs_g == null && m.fat_g == null) return false
+  const atwater = 4 * (m.protein_g ?? 0) + 4 * (m.carbs_g ?? 0) + 9 * (m.fat_g ?? 0)
+  const floor = Math.max(atwater - 2 * (m.fiber_g ?? 0), 0)
+  return floor >= ATWATER_FLOOR_MIN && m.calories < ATWATER_TOLERANCE * floor
+}
 
 // A serving selection is encoded as the pseudo-unit "serving:<index>", so one
 // dropdown can offer both a food's named servings and its raw units.
@@ -35,6 +143,7 @@ export interface EditLine {
   name: string
   brand: string
   base_unit: api.BaseUnit
+  density_g_per_ml?: number | null
   servings: api.FoodServing[]
   calories: number | null
   protein_g: number | null
@@ -65,6 +174,7 @@ export function lineFromFood(food: api.Food): EditLine {
     name: food.name,
     brand: food.brand,
     base_unit: food.base_unit,
+    density_g_per_ml: food.density_g_per_ml,
     servings: food.servings,
     calories: food.calories,
     protein_g: food.protein_g,
@@ -95,7 +205,10 @@ export function lineFromSaved(ing: api.RecipeIngredient): EditLine {
     source_id: ing.source_id,
     name: ing.name,
     brand: ing.brand,
-    base_unit: baseUnitOf(unit),
+    // The FOOD's family, sent with the line: a line written in the other
+    // family would otherwise redisplay as if the food itself had changed.
+    base_unit: ing.base_unit,
+    density_g_per_ml: ing.density_g_per_ml,
     servings: [],
     calories: per100(ing.calories),
     protein_g: per100(ing.protein_g),
@@ -113,11 +226,13 @@ export function lineFromSaved(ing: api.RecipeIngredient): EditLine {
 }
 
 // The line's amount expressed in the food's base unit (grams or millilitres),
-// resolving a by-serving selection to its base size.
+// resolving a by-serving selection to its base size and a unit from the other
+// measure family through the food's density (toBase), exactly as the server
+// will when the recipe is saved.
 export function baseAmountOf(l: EditLine): number {
   const si = servingIndex(l.unit)
   if (si != null) return l.amount * (l.servings[si]?.grams ?? 0)
-  return l.amount * (UNIT_TO_BASE[l.unit as api.AmountUnit] ?? 1)
+  return toBase(l, l.amount, l.unit)
 }
 const gramsOf = baseAmountOf
 

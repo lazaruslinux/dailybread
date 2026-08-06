@@ -504,6 +504,13 @@ class Item(Base):
         Boolean, default=False, server_default="false"
     )
 
+    # Days carved out of a repeating card's pattern. Loaded with every Item so
+    # the one occurrence check (routers.items._occurs) answers without a query
+    # per card, on every surface. delete-orphan because item_id can't go NULL.
+    skips: Mapped[list["ItemSkip"]] = relationship(
+        lazy="selectin", cascade="all, delete-orphan"
+    )
+
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
@@ -544,6 +551,19 @@ class Completion(Base):
     approved_by_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+
+
+class ItemSkip(Base):
+    """A skipped occurrence of a repeating card: the date is carved out of the
+    series (deleted, or detached as a standalone copy) and no surface may show
+    or remind it."""
+
+    __tablename__ = "item_skips"
+    __table_args__ = (UniqueConstraint("item_id", "date_for", name="uq_item_skip_day"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"), index=True)
+    date_for: Mapped[dt.date] = mapped_column(Date)
 
 
 class GroceryList(Base):
@@ -626,10 +646,11 @@ class Recipe(Base):
 
 
 # A food is measured in one of two families: mass (base unit gram) or volume
-# (base unit millilitre). We never convert between them — that needs the food's
-# density, which the databases don't give us. Instead a food declares its base
-# unit (Food.base_unit) and its nutrition is stored per 100 of that base, so a
-# liquid labelled in mL never has to pretend it knows its weight.
+# (base unit millilitre). A food declares its base unit (Food.base_unit) and its
+# nutrition is stored per 100 of that base, so a liquid labelled in mL never has
+# to pretend it knows its weight. Converting BETWEEN the families needs a
+# density: labels that state a serving both ways give one up (Food.density_g_per_ml),
+# and to_base falls back on water when they didn't.
 MASS_UNITS: dict[str, float] = {"g": 1.0, "oz": 28.3495, "lb": 453.592}
 VOLUME_UNITS: dict[str, float] = {
     "ml": 1.0,
@@ -637,6 +658,8 @@ VOLUME_UNITS: dict[str, float] = {
     "cup": 236.588,
     "tbsp": 14.7868,
     "tsp": 4.92892,
+    "l": 1000.0,
+    "gal": 3785.41,
 }
 # How many base units (g or mL) one of each unit is. Every token is <=4 chars,
 # so the stored `unit` column stays String(4).
@@ -644,10 +667,33 @@ UNIT_TO_BASE: dict[str, float] = {**MASS_UNITS, **VOLUME_UNITS}
 # Back-compat alias: earlier code (and mirrors) referred to GRAMS_PER_UNIT.
 GRAMS_PER_UNIT = MASS_UNITS
 
+# What a millilitre weighs when the label never said. Water is right for milk,
+# juice, broth and most of what a kitchen pours, and it is the assumption the
+# UI names out loud whenever it is the one being used.
+WATER_DENSITY = 1.0
+
 
 def base_unit_of(unit: str) -> str:
     """The base unit ("g" or "ml") a measurement unit belongs to."""
     return "ml" if unit in VOLUME_UNITS else "g"
+
+
+def to_base(food: "Food", amount: float, unit: str) -> float:
+    """`amount` of `unit` expressed in the food's own base unit.
+
+    Within one measure family that is the plain conversion. ACROSS families
+    (milk poured in millilitres but logged in grams) it goes through the food's
+    own density when its label stated both readings, and water's 1 g per mL
+    when it didn't. EVERY surface comes through here — diary entries, recipe
+    ingredient lines, the portion sheets' previews — so one amount can never
+    resolve two ways."""
+    base_amount = amount * UNIT_TO_BASE.get(unit, 1.0)
+    if base_unit_of(unit) == food.base_unit:
+        return base_amount
+    density = food.density_g_per_ml or WATER_DENSITY
+    # A millilitre of this food weighs `density` grams; a gram of it takes up
+    # 1/density millilitres.
+    return base_amount * density if food.base_unit == "g" else base_amount / density
 
 
 class RecipeIngredient(Base):
@@ -672,8 +718,12 @@ class RecipeIngredient(Base):
 
     @property
     def base_amount(self) -> float:
-        """Amount in the food's base unit (grams or millilitres)."""
-        return self.amount * UNIT_TO_BASE.get(self.unit, 1.0)
+        """Amount in the food's base unit (grams or millilitres). A line written
+        in the other family (a cup of milk against a per-100g food) converts
+        through to_base, exactly like a diary entry."""
+        if self.food is None:  # never in practice: food_id is not nullable
+            return self.amount * UNIT_TO_BASE.get(self.unit, 1.0)
+        return to_base(self.food, self.amount, self.unit)
 
     # Legacy name kept for callers that predate volume support; for a volume food
     # this is millilitres, not grams. Prefer base_amount.
@@ -815,6 +865,18 @@ class Food(Base):
     added_sugar_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     additives: Mapped[str | None] = mapped_column(Text, nullable=True)
     nova_group: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    # Grams one millilitre of this food weighs, derived when a label states its
+    # serving both ways ("1 tbsp (21 g)"). NULL when the label never told us,
+    # and then a cross-family measurement falls back to water (see to_base).
+    density_g_per_ml: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # When this row's nutrition was last pulled from its source. Shared cache
+    # rows refetch once it ages out (the sources correct their own data, and a
+    # row that never refetched would serve a mistake forever); NULL means the
+    # age is unknown (it predates this column) and counts as stale. A family's
+    # own custom food is never fetched, so it never carries one.
+    fetched_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     # Named real-world portions (e.g. "1 slice" = 21 g). Nutrition stays per-100g;
@@ -953,6 +1015,12 @@ class DiaryEntry(Base):
     @property
     def food_base_unit(self) -> str | None:
         return self.food.base_unit if self.food else None
+
+    @property
+    def food_density_g_per_ml(self) -> float | None:
+        """So the edit sheet can resolve a cross-family unit the same way the
+        server would. None once the food is gone (or its label never said)."""
+        return self.food.density_g_per_ml if self.food else None
 
 
 class TargetMode(str, enum.Enum):
