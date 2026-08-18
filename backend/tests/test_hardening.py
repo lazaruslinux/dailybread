@@ -159,7 +159,7 @@ def _sub(endpoint: str) -> dict:
 def test_push_endpoint_must_be_public_https(owner, configured):
     for bad in (
         "http://push.example/device",
-        "https://192.168.50.1/device",
+        "https://192.168.1.1/device",
         "https://[::1]/device",
         "https://localhost/device",
         "https://nas.local/device",
